@@ -36,7 +36,13 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { spawn } from 'node:child_process';
-import { openTerminal } from '../../../src/main/ipc/window-handlers';
+import { ipcMain, BrowserWindow } from 'electron';
+import {
+  attachFocusDimming,
+  openTerminal,
+  registerWindowHandlers,
+} from '../../../src/main/ipc/window-handlers';
+import type { MainLogger } from '../../../src/main/ipc/logger';
 
 type FakeChild = EventEmitter & { unref: jest.Mock };
 
@@ -186,5 +192,109 @@ describe('openTerminal', () => {
     // When/Then: validation fails before any spawn
     await expect(openTerminal(file, 'darwin')).rejects.toThrow('Directory does not exist');
     expect(mockSpawn).not.toHaveBeenCalled();
+  });
+});
+
+// A minimal window double for the focus-dimming logic: real event emitter
+// (blur/focus), mocked opacity and focus state.
+type FakeWindow = EventEmitter & {
+  setOpacity: jest.Mock;
+  isFocused: jest.Mock;
+};
+
+function fakeWindow(focused: boolean): FakeWindow {
+  const win = new EventEmitter() as FakeWindow;
+  win.setOpacity = jest.fn();
+  win.isFocused = jest.fn().mockReturnValue(focused);
+  return win;
+}
+
+// Register the handlers and return the listener for window:setNoticeActive
+// plus a helper to drive it as the given window's renderer.
+function noticeListener(): (event: unknown, rawActive: unknown) => void {
+  registerWindowHandlers(mockLog as unknown as MainLogger);
+  const call = (ipcMain.on as jest.Mock).mock.calls.find(
+    ([channel]) => channel === 'window:setNoticeActive'
+  );
+  expect(call).toBeDefined();
+  return call![1] as (event: unknown, rawActive: unknown) => void;
+}
+
+function sendNotice(listener: (event: unknown, rawActive: unknown) => void, win: FakeWindow, rawActive: unknown): void {
+  (BrowserWindow.fromWebContents as jest.Mock).mockReturnValue(win);
+  listener({ sender: {} }, rawActive);
+}
+
+describe('focus dimming with notice override', () => {
+  it('dims to 70% on blur and restores full opacity on focus while no notice is active', () => {
+    // Given: an attached window with the notice explicitly cleared
+    const win = fakeWindow(false);
+    sendNotice(noticeListener(), win, false);
+    win.setOpacity.mockClear();
+    attachFocusDimming(win as unknown as BrowserWindow);
+
+    // When: the window blurs
+    win.emit('blur');
+
+    // Then: it dims
+    expect(win.setOpacity).toHaveBeenLastCalledWith(0.7);
+
+    // When: the window regains focus
+    win.isFocused.mockReturnValue(true);
+    win.emit('focus');
+
+    // Then: it is fully opaque again
+    expect(win.setOpacity).toHaveBeenLastCalledWith(1.0);
+  });
+
+  it('stays fully opaque on blur while the notice is active', () => {
+    // Given: an attached, unfocused window whose renderer reported an active notice
+    const win = fakeWindow(false);
+    sendNotice(noticeListener(), win, true);
+    attachFocusDimming(win as unknown as BrowserWindow);
+
+    // When: the window blurs
+    win.emit('blur');
+
+    // Then: no dimming — the notice pulse must stay visible
+    expect(win.setOpacity).toHaveBeenLastCalledWith(1.0);
+  });
+
+  it('re-applies opacity immediately when the notice flag changes', () => {
+    // Given: an unfocused window that is dimmed with no notice
+    const win = fakeWindow(false);
+    const listener = noticeListener();
+    sendNotice(listener, win, false);
+    expect(win.setOpacity).toHaveBeenLastCalledWith(0.7);
+
+    // When: the notice activates while still unfocused
+    sendNotice(listener, win, true);
+
+    // Then: the window un-dims right away (no blur/focus event needed)
+    expect(win.setOpacity).toHaveBeenLastCalledWith(1.0);
+
+    // When: the notice clears while still unfocused
+    sendNotice(listener, win, false);
+
+    // Then: normal dimming resumes
+    expect(win.setOpacity).toHaveBeenLastCalledWith(0.7);
+  });
+
+  it('logs and ignores an invalid notice payload', () => {
+    // Given: a registered handler and a window with a known notice state
+    const win = fakeWindow(false);
+    const listener = noticeListener();
+    sendNotice(listener, win, false);
+    win.setOpacity.mockClear();
+
+    // When: the renderer sends a non-boolean payload
+    sendNotice(listener, win, 'yes');
+
+    // Then: it is logged and the opacity is left untouched
+    expect(mockLog.error).toHaveBeenCalledWith(
+      'Invalid setNoticeActive payload',
+      expect.objectContaining({ operation: 'window:setNoticeActive' })
+    );
+    expect(win.setOpacity).not.toHaveBeenCalled();
   });
 });

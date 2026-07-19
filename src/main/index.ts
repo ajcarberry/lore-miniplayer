@@ -2,6 +2,7 @@ import { app, BrowserWindow, screen, session } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { registerIpcHandlers } from './ipc/handlers';
+import { attachFocusDimming } from './ipc/window-handlers';
 import { RepositoryService } from './services/repository';
 import { initializeLoreSdk, shutdownLoreSdk } from './services/lore-sdk';
 import { LoreRepositoryService } from './services/lore-repository';
@@ -154,14 +155,9 @@ async function createWindow(): Promise<void> {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
   }
 
-  // Set opacity based on focus state
-  mainWindow.on('blur', () => {
-    mainWindow?.setOpacity(0.7); // 70% opacity when not focused
-  });
-
-  mainWindow.on('focus', () => {
-    mainWindow?.setOpacity(1.0); // 100% opacity when focused
-  });
+  // Dim to 70% when unfocused, unless a notice (sync needed) is active —
+  // see attachFocusDimming in window-handlers.ts.
+  attachFocusDimming(mainWindow);
 
   attachPositionPersistence(mainWindow);
 

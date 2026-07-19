@@ -34,6 +34,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     move: (x: number, y: number): void => {
       ipcRenderer.send('window:move', x, y);
     },
+    setNoticeActive: (active: boolean): void => {
+      ipcRenderer.send('window:setNoticeActive', active);
+    },
     setExpanded: async (expanded: boolean): Promise<{ anchor: 'bottom' | 'top' }> => {
       return ipcRenderer.invoke('window:setExpanded', expanded) as Promise<{
         anchor: 'bottom' | 'top';

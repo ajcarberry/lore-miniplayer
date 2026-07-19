@@ -65,11 +65,13 @@ test.describe('Pill <-> card morph', () => {
     // bounds, so a flush edge cuts the hover glow flat on that side.
     const gutters = await window.evaluate(() => {
       const rect = document.querySelector('.morph-pill-bar')!.getBoundingClientRect();
+      // `globalThis`, not `window`: the enclosing test names its Page variable
+      // `window`, which TypeScript would resolve here instead of the DOM global.
       return {
         top: rect.top,
         left: rect.left,
-        right: window.innerWidth - rect.right,
-        bottom: window.innerHeight - rect.bottom,
+        right: globalThis.innerWidth - rect.right,
+        bottom: globalThis.innerHeight - rect.bottom,
       };
     });
     const MIN_GLOW_GUTTER = 12;

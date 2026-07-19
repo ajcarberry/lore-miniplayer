@@ -24,6 +24,9 @@ declare global {
         minimize: () => void;
         close: () => void;
         move: (x: number, y: number) => void;
+        // One-way: while active, main keeps the window fully opaque even
+        // when unfocused so the pill's notice pulse stays visible.
+        setNoticeActive: (active: boolean) => void;
         setExpanded: (expanded: boolean) => Promise<{ anchor: 'bottom' | 'top' }>;
         openTerminal: (path: string) => Promise<VoidResult>;
       };

@@ -9,8 +9,27 @@ import {
 } from '../../shared/window-position';
 import type { Bounds, ExpandAnchor } from '../../shared/window-position';
 import { handleResult } from './result-helpers';
-import { WindowOpenTerminalArgsSchema } from './validators';
+import { WindowNoticeActiveSchema, WindowOpenTerminalArgsSchema } from './validators';
 import type { MainLogger } from './logger';
+
+// Focus dimming with a notice override. The window dims to 70% opacity when it
+// loses focus so the ambient pill recedes; while the renderer reports an
+// active notice (sync needed), it stays fully opaque even unfocused — the
+// pill's notice pulse must be visible precisely when the user works elsewhere.
+const FOCUSED_OPACITY = 1.0;
+const UNFOCUSED_OPACITY = 0.7;
+
+let noticeActive = false;
+
+function applyFocusOpacity(win: BrowserWindow): void {
+  win.setOpacity(noticeActive || win.isFocused() ? FOCUSED_OPACITY : UNFOCUSED_OPACITY);
+}
+
+// Attach the blur/focus dimming listeners to the ambient window (index.ts).
+export function attachFocusDimming(win: BrowserWindow): void {
+  win.on('blur', () => applyFocusOpacity(win));
+  win.on('focus', () => applyFocusOpacity(win));
+}
 
 // Programmatic resize is ignored on a non-resizable window on some platforms;
 // briefly allow it around the setBounds call, then restore the flag.
@@ -143,6 +162,26 @@ export function registerWindowHandlers(log: MainLogger): void {
       return;
     }
     BrowserWindow.fromWebContents(event.sender)?.setPosition(Math.round(x), Math.round(y));
+  });
+
+  // One-way notice flag from the renderer (fired on sync-needed changes, so
+  // low-rate). Validated; an invalid payload is logged and ignored. Opacity is
+  // re-applied immediately so an active notice un-dims an already-blurred
+  // window and a cleared one resumes normal dimming without a focus event.
+  ipcMain.on('window:setNoticeActive', (event, rawActive: unknown) => {
+    const parsed = WindowNoticeActiveSchema.safeParse(rawActive);
+    if (!parsed.success) {
+      log.error('Invalid setNoticeActive payload', {
+        rawActive,
+        operation: 'window:setNoticeActive',
+      });
+      return;
+    }
+    noticeActive = parsed.data;
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win) {
+      applyFocusOpacity(win);
+    }
   });
 
   // The last expansion anchor, so a subsequent collapse shrinks back to the

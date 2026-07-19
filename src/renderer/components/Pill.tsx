@@ -79,6 +79,9 @@ export function Pill({ repository, branchName, signals, onClose }: PillProps): R
   return (
     <Paper
       className='morph-pill-bar'
+      // The notice attribute keys the slow attention pulse in morph.css; only
+      // the sync signal pulses — commit/push stay glyph-only.
+      data-notice={signals.syncNeeded ? 'sync' : undefined}
       radius='xl'
       shadow='md'
       px='lg'

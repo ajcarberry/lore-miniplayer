@@ -645,5 +645,48 @@ describe('MiniPlayer', () => {
       // Then: it folds back to the pill
       await waitFor(() => expect(expanded()).toBe('false'));
     });
+
+    describe('sync-needed notice', () => {
+      it('reports an active notice to main when the branch falls behind the remote', async () => {
+        // Given: a checked-out repository whose branch is behind the remote
+        const repo = makeRepository();
+        (api.repository.list as jest.Mock).mockResolvedValue({ success: true, data: [repo] });
+        (api.lore.repository.listBranches as jest.Mock).mockResolvedValue({
+          success: true,
+          data: [{ name: 'main', isDefault: true, isCurrent: true }],
+        });
+        (api.lore.branchInfo as jest.Mock).mockResolvedValue({
+          success: true,
+          data: { state: 'behindOrDiverged', latest: 'aaa', latestRemote: 'bbb' },
+        });
+
+        // When: rendering the connected player
+        renderMiniPlayer();
+        await screen.findByText('On branch');
+
+        // Then: the notice flag reaches main so the window skips blur dimming
+        // and the pill's pulse stays visible while the user works elsewhere
+        await waitFor(() => expect(api.window.setNoticeActive).toHaveBeenLastCalledWith(true));
+      });
+
+      it('keeps the notice clear while the workspace is in sync', async () => {
+        // Given: a checked-out repository with no divergence (default mocks)
+        const repo = makeRepository();
+        (api.repository.list as jest.Mock).mockResolvedValue({ success: true, data: [repo] });
+        (api.lore.repository.listBranches as jest.Mock).mockResolvedValue({
+          success: true,
+          data: [{ name: 'main', isDefault: true, isCurrent: true }],
+        });
+
+        // When: rendering the connected player
+        renderMiniPlayer();
+        await screen.findByText('On branch');
+        await waitFor(() => expect(api.lore.branchInfo as jest.Mock).toHaveBeenCalled());
+
+        // Then: the notice is reported inactive and never activated
+        await waitFor(() => expect(api.window.setNoticeActive).toHaveBeenCalledWith(false));
+        expect(api.window.setNoticeActive).not.toHaveBeenCalledWith(true);
+      });
+    });
   });
 });

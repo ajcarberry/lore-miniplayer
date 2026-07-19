@@ -15,6 +15,7 @@ export function createMockElectronAPI(): ElectronAPI {
       minimize: jest.fn(),
       close: jest.fn(),
       move: jest.fn(),
+      setNoticeActive: jest.fn(),
       setExpanded: jest.fn().mockResolvedValue({ anchor: 'bottom' }),
       openTerminal: jest.fn().mockResolvedValue({ success: true, data: undefined }),
     },

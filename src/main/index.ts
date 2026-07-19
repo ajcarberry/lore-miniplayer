@@ -155,8 +155,6 @@ async function createWindow(): Promise<void> {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
   }
 
-  // Dim to 70% when unfocused, unless a notice (sync needed) is active —
-  // see attachFocusDimming in window-handlers.ts.
   attachFocusDimming(mainWindow);
 
   attachPositionPersistence(mainWindow);

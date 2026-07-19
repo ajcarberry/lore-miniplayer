@@ -296,7 +296,7 @@ export function MiniPlayer(): ReactElement {
 
   // Report the sync notice to main: while active, the window skips its
   // unfocused 70% dim so the pill's notice pulse stays visible (see
-  // attachFocusDimming in window-handlers.ts). Cleared on unmount.
+  // attachFocusDimming in window-handlers.ts).
   const noticeActive = server.isConnected && signals.syncNeeded;
   useEffect(() => {
     window.electronAPI.window.setNoticeActive(noticeActive);

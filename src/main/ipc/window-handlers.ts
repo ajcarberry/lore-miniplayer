@@ -25,7 +25,6 @@ function applyFocusOpacity(win: BrowserWindow): void {
   win.setOpacity(noticeActive || win.isFocused() ? FOCUSED_OPACITY : UNFOCUSED_OPACITY);
 }
 
-// Attach the blur/focus dimming listeners to the ambient window (index.ts).
 export function attachFocusDimming(win: BrowserWindow): void {
   win.on('blur', () => applyFocusOpacity(win));
   win.on('focus', () => applyFocusOpacity(win));
@@ -164,10 +163,9 @@ export function registerWindowHandlers(log: MainLogger): void {
     BrowserWindow.fromWebContents(event.sender)?.setPosition(Math.round(x), Math.round(y));
   });
 
-  // One-way notice flag from the renderer (fired on sync-needed changes, so
-  // low-rate). Validated; an invalid payload is logged and ignored. Opacity is
-  // re-applied immediately so an active notice un-dims an already-blurred
-  // window and a cleared one resumes normal dimming without a focus event.
+  // Opacity is re-applied immediately so an active notice un-dims an
+  // already-blurred window and a cleared one resumes normal dimming without
+  // a focus event.
   ipcMain.on('window:setNoticeActive', (event, rawActive: unknown) => {
     const parsed = WindowNoticeActiveSchema.safeParse(rawActive);
     if (!parsed.success) {

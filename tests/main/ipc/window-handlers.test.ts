@@ -209,8 +209,7 @@ function fakeWindow(focused: boolean): FakeWindow {
   return win;
 }
 
-// Register the handlers and return the listener for window:setNoticeActive
-// plus a helper to drive it as the given window's renderer.
+// Register the handlers and return the listener for window:setNoticeActive.
 function noticeListener(): (event: unknown, rawActive: unknown) => void {
   registerWindowHandlers(mockLog as unknown as MainLogger);
   const call = (ipcMain.on as jest.Mock).mock.calls.find(

@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm init)",
+      "Bash(pnpm install:*)",
+      "Bash(pnpm format)",
+      "Bash(pnpm format:fix)",
+      "Bash(pnpm claude:pre-commit)",
+      "Bash(pnpm claude:test)",
+      "Bash(pnpm claude:test:jest)",
+      "Bash(pnpm claude:test:play)",
+      "Bash(pnpm claude:lint)",
+      "Bash(pnpm claude:type-check)",
+      "Bash(cat:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(lore status:*)",
+      "Bash(lore diff:*)",
+      "Bash(lore branch:*)",
+      "Bash(lore log:*)",
+      "mcp__context7__resolve-library-id",
+      "mcp__context7__get-library-docs"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

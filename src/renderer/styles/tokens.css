@@ -1,0 +1,58 @@
+/* Codex parchment token system — light (verbatim from approved design) and a
+   derived warm-dark inversion. Consumed by globals.css and theme.ts; Mantine
+   sets [data-mantine-color-scheme] on the document root. */
+
+:root {
+  --font-disp: 'Cormorant Garamond', Georgia, serif;
+  --font-ui: 'Hanken Grotesk', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+[data-mantine-color-scheme='light'] {
+  --paper: oklch(0.957 0.014 84);
+  --paper-deep: oklch(0.928 0.018 80);
+  --paper-raised: oklch(0.978 0.011 86);
+  --paper-sink: oklch(0.905 0.02 78);
+
+  --ink: oklch(0.305 0.022 56);
+  --ink-soft: oklch(0.455 0.024 58);
+  --ink-faint: oklch(0.595 0.02 62);
+  --ink-ghost: oklch(0.305 0.022 56 / 0.1);
+
+  --hair: oklch(0.305 0.022 56 / 0.14);
+  --hair-soft: oklch(0.305 0.022 56 / 0.08);
+
+  --acc: oklch(0.66 0.11 74);
+  --acc-deep: oklch(0.46 0.1 74);
+  --acc-soft: oklch(0.88 0.045 74);
+  --acc-glow: oklch(0.72 0.13 74);
+  --acc-line: oklch(0.74 0.09 74);
+
+  --radius: 20px;
+}
+
+/* Derived warm-dark inversion: deep umber paper, warm bone ink. Contrast
+   relationships (paper-raised lighter than paper, paper-sink darker,
+   ink-soft/-faint stepping toward ink-ghost) mirror the light scheme. */
+[data-mantine-color-scheme='dark'] {
+  --paper: oklch(0.24 0.02 68);
+  --paper-deep: oklch(0.19 0.018 66);
+  --paper-raised: oklch(0.29 0.022 70);
+  --paper-sink: oklch(0.16 0.016 64);
+
+  --ink: oklch(0.9 0.02 80);
+  --ink-soft: oklch(0.78 0.022 78);
+  --ink-faint: oklch(0.62 0.02 74);
+  --ink-ghost: oklch(0.9 0.02 80 / 0.1);
+
+  --hair: oklch(0.9 0.02 80 / 0.14);
+  --hair-soft: oklch(0.9 0.02 80 / 0.08);
+
+  --acc: oklch(0.74 0.12 74);
+  --acc-deep: oklch(0.56 0.11 74);
+  --acc-soft: oklch(0.38 0.06 74);
+  --acc-glow: oklch(0.8 0.14 74);
+  --acc-line: oklch(0.7 0.1 74);
+
+  --radius: 20px;
+}

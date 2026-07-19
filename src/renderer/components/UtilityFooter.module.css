@@ -1,0 +1,32 @@
+.footer {
+  border-top: 1px solid var(--hair);
+  flex-shrink: 0;
+}
+
+.icon {
+  color: var(--ink-faint);
+}
+
+.icon:hover:not(:disabled) {
+  color: var(--acc);
+}
+
+.repoRow {
+  border-radius: 4px;
+}
+
+.repoRow:hover {
+  background: var(--hair-soft);
+}
+
+.repoRow[data-active='true'] {
+  background: var(--acc-soft);
+}
+
+.accentDot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}

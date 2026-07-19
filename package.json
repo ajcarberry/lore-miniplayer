@@ -1,0 +1,166 @@
+{
+  "name": "lore-miniplayer",
+  "version": "0.1.0",
+  "description": "Lore MiniPlayer - A modern desktop client interface for the Lore revision control system",
+  "main": "out/main/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:electron": "electron-vite dev",
+    "build": "electron-vite build",
+    "dist": "rimraf out dist && pnpm build && electron-builder",
+    "dist:mac": "rimraf out dist && pnpm build && electron-builder --mac",
+    "dist:mac:dev": "rimraf out dist && pnpm build && electron-builder --mac --dir",
+    "dist:win": "rimraf out dist && pnpm build && electron-builder --win",
+    "dist:win:dev": "rimraf out dist && pnpm build && electron-builder --win --dir",
+    "dist:linux": "pnpm build && electron-builder --linux",
+    "preview": "electron-vite preview",
+    "test": "jest && pnpm build && playwright test",
+    "test:jest": "jest --silent",
+    "test:jest:coverage": "jest --coverage --silent && echo Coverage report: coverage/lcov-report/index.html",
+    "test:jest:verbose": "jest --verbose",
+    "test:play": "pnpm build && playwright test --headed",
+    "test:play:ui": "pnpm build && playwright test --ui",
+    "test:play:debug": "pnpm build && playwright test --debug --headed",
+    "test:play:codegen": "concurrently --kill-others --success command-1 \"vite --port 5174\" \"wait-on http://localhost:5174 && playwright codegen http://localhost:5174\"",
+    "lint": "eslint src --ext .ts,.tsx",
+    "lint:fix": "eslint src --ext .ts,.tsx --fix",
+    "type-check": "tsc --noEmit",
+    "format": "prettier --check src",
+    "format:fix": "prettier --write src",
+    "pre-commit": "concurrently --group --prefix-colors \"cyan,yellow,magenta\" -n type,lint,format \"pnpm type-check\" \"pnpm lint\" \"pnpm format\" && pnpm test:jest:coverage",
+    "claude:test:jest": "jest --ci --silent --bail --colors=false --json --coverage",
+    "claude:test:play": "pnpm build && playwright test --reporter=json",
+    "claude:test": "pnpm claude:test:jest && pnpm claude:test:play",
+    "claude:lint": "eslint src --ext .ts,.tsx --format json",
+    "claude:type-check": "tsc --noEmit --pretty false",
+    "claude:quick-check": "pnpm claude:type-check && pnpm format && pnpm claude:lint && pnpm claude:test:jest",
+    "claude:pre-commit": "pnpm claude:type-check && pnpm format && pnpm claude:lint && pnpm claude:test"
+  },
+  "keywords": [
+    "lore",
+    "version-control",
+    "electron",
+    "desktop"
+  ],
+  "author": "Alex Carberry",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ajcarberry/lore-miniplayer.git"
+  },
+  "homepage": "https://github.com/ajcarberry/lore-miniplayer#readme",
+  "bugs": {
+    "url": "https://github.com/ajcarberry/lore-miniplayer/issues"
+  },
+  "packageManager": "pnpm@10.17.1",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
+  "dependencies": {
+    "@fontsource/cormorant-garamond": "^5.2.11",
+    "@fontsource/hanken-grotesk": "^5.2.8",
+    "@fontsource/jetbrains-mono": "^5.2.8",
+    "@lore-vcs/sdk": "^0.8.5",
+    "@mantine/core": "^9.4.1",
+    "@mantine/hooks": "^9.4.1",
+    "@mantine/notifications": "^9.4.1",
+    "@tabler/icons-react": "^3.35.0",
+    "electron-log": "^5.4.3",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "uuid": "^14.0.1",
+    "zod": "^4.1.11"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@playwright/test": "^1.55.1",
+    "@testing-library/jest-dom": "^6.8.0",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^26.1.1",
+    "@types/react": "^19.1.13",
+    "@types/react-dom": "^19.1.9",
+    "@typescript-eslint/eslint-plugin": "^8.64.0",
+    "@typescript-eslint/parser": "^8.64.0",
+    "@vitejs/plugin-react": "^6.0.3",
+    "concurrently": "^10.0.3",
+    "electron": "^43.1.1",
+    "electron-builder": "^26.0.12",
+    "electron-vite": "^5.0.0",
+    "eslint": "^9.39.5",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "jest": "^30.1.3",
+    "jest-environment-jsdom": "^30.1.2",
+    "postcss": "^8.5.6",
+    "postcss-preset-mantine": "^1.18.0",
+    "postcss-simple-vars": "^7.0.1",
+    "prettier": "^3.6.2",
+    "rimraf": "^6.0.1",
+    "ts-jest": "^29.4.4",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.2",
+    "vite": "^8.1.5",
+    "wait-on": "^9.0.1"
+  },
+  "build": {
+    "appId": "com.lore.miniplayer",
+    "productName": "Lore MiniPlayer",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "out/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/@lore-vcs/**/*.dylib",
+      "node_modules/@lore-vcs/**/*.dll",
+      "node_modules/@lore-vcs/**/*.so",
+      "node_modules/.pnpm/@lore-vcs+*/**/*.dylib",
+      "node_modules/.pnpm/@lore-vcs+*/**/*.dll",
+      "node_modules/.pnpm/@lore-vcs+*/**/*.so",
+      "node_modules/koffi/**/*.node"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ]
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}

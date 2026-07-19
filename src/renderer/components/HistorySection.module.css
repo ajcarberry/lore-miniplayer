@@ -1,0 +1,9 @@
+/* Mantine's ScrollArea sizes its viewport inner wrapper with
+   display: table / width: max-content, which lets ledger rows grow to their
+   content width — Text truncation then never engages and row secondaries get
+   clipped off the right edge. Force the wrapper to behave as a width-bound
+   block so rows are constrained and ellipsis works. */
+.ledgerViewport > div {
+  display: block !important;
+  width: 100% !important;
+}

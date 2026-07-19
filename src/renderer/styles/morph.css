@@ -1,0 +1,132 @@
+/* Pill ↔ card morph. The Electron window resizes between the pill and card
+   footprints in main (window:setExpanded); this CSS lays out the content within
+   whatever bounds the window currently has. The morph root fills the window and
+   places the pill + card at the anchored edge:
+     data-anchor='bottom' (default) — pill at the bottom, card unfolds upward;
+     data-anchor='top'               — pill at the top, card unfolds downward
+   (used when the pill sits too near the screen top to grow upward). Main and
+   renderer agree on the anchor via the setExpanded reply. */
+
+.morph-shell {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: transparent;
+}
+
+.morph-root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.morph-root[data-anchor='bottom'] {
+  justify-content: flex-end;
+}
+
+.morph-root[data-anchor='top'] {
+  justify-content: flex-start;
+}
+
+.morph-card {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    grid-template-rows 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.3s ease,
+    transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.morph-root[data-anchor='bottom'] .morph-card {
+  bottom: 0;
+  transform: translateY(8px);
+}
+
+.morph-root[data-anchor='top'] .morph-card {
+  top: 0;
+  transform: translateY(-8px);
+}
+
+.morph-root[data-expanded='true'] .morph-card {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+/* The single grid row must be able to collapse to zero height. */
+.morph-card-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Staggered reveal of the card's major sections as it unfolds. */
+.morph-card-inner > * {
+  transition:
+    opacity 0.3s ease,
+    transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.morph-root:not([data-expanded='true']) .morph-card-inner > * {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+/* The pill is a fit-content capsule pinned to the bottom-right of the window
+   (the full-width card unfolds above it). It cross-fades out as the card
+   takes over. */
+.morph-pill {
+  /* Right-aligned with a small gutter so the hover-peek scale/shadow/glow has
+     room inside the collapsed window bounds without clipping. */
+  margin: 0 10px 0 auto;
+  width: fit-content;
+  max-width: 320px;
+  transition: opacity 0.3s ease;
+}
+
+.morph-root[data-expanded='true'] .morph-pill {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Hover peek: a CSS-only affordance that invites the click — a slight grow, a
+   deeper lift, and an accent glow. No timers and no partial card reveal. */
+.morph-pill-bar {
+  cursor: grab;
+  transition:
+    transform 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.18s ease;
+}
+
+.morph-pill-bar:hover {
+  transform: scale(1.04);
+  box-shadow:
+    0 12px 32px -8px rgba(0, 0, 0, 0.35),
+    0 0 0 1px var(--acc-line),
+    0 0 18px -2px var(--acc-glow);
+}
+
+.morph-pill-bar:active {
+  cursor: grabbing;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .morph-card,
+  .morph-card-inner > *,
+  .morph-pill,
+  .morph-pill-bar {
+    transition: none;
+    transform: none;
+  }
+
+  .morph-pill-bar:hover {
+    transform: none;
+  }
+}

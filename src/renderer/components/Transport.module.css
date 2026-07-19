@@ -1,0 +1,45 @@
+.cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 100%;
+  padding: 10px 4px;
+  border-radius: var(--radius);
+  background: var(--paper-raised);
+  border: 1px solid var(--hair);
+  color: var(--ink);
+  transition:
+    transform 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.cell:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px var(--hair-soft);
+}
+
+.cell:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cell[data-primary='true'] {
+  background: linear-gradient(135deg, var(--acc), var(--acc-deep));
+  border-color: var(--acc-line);
+  color: var(--paper);
+}
+
+.syncCell {
+  position: relative;
+}
+
+/* Parent-scoped to out-specify Mantine's own root rules (ActionIcon/Badge
+   set position: relative and load after this module in the cascade) */
+.syncCell .chevron {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+}

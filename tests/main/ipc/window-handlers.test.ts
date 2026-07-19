@@ -1,0 +1,190 @@
+// Mock electron module before imports
+jest.mock('electron', () => ({
+  ipcMain: {
+    handle: jest.fn(),
+    on: jest.fn(),
+  },
+  BrowserWindow: {
+    fromWebContents: jest.fn(),
+  },
+  screen: {
+    getDisplayMatching: jest.fn(),
+  },
+}));
+
+// Mock electron-log as a module with default export
+const mockLog = {
+  error: jest.fn(),
+  info: jest.fn(),
+  warn: jest.fn(),
+  log: jest.fn(),
+  verbose: jest.fn(),
+  debug: jest.fn(),
+};
+
+jest.mock('electron-log/main.js', () => ({
+  __esModule: true,
+  default: mockLog,
+}));
+
+jest.mock('node:child_process', () => ({
+  spawn: jest.fn(),
+}));
+
+import { EventEmitter } from 'node:events';
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { spawn } from 'node:child_process';
+import { openTerminal } from '../../../src/main/ipc/window-handlers';
+
+type FakeChild = EventEmitter & { unref: jest.Mock };
+
+function fakeChild(): FakeChild {
+  const child = new EventEmitter() as FakeChild;
+  child.unref = jest.fn();
+  return child;
+}
+
+const mockSpawn = spawn as jest.MockedFunction<typeof spawn>;
+
+describe('openTerminal', () => {
+  // A real directory whose name contains shell/AppleScript metacharacters —
+  // command substitution, backticks, double quotes, and a backslash. If any
+  // launcher builds a shell string from the path, these would execute.
+  let hostileDir: string;
+
+  beforeAll(async () => {
+    hostileDir = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-$(touch pwned)-`id`-"\\-'));
+  });
+
+  afterAll(async () => {
+    await fs.rm(hostileDir, { recursive: true, force: true });
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('darwin', () => {
+    it('should pass the directory as a standalone argv element, never inside a shell string', async () => {
+      // Given: a directory containing shell metacharacters and a spawn that exits cleanly
+      mockSpawn.mockImplementation(() => {
+        const child = fakeChild();
+        setTimeout(() => child.emit('close', 0), 0);
+        return child as never;
+      });
+
+      // When: the terminal is opened on macOS
+      await openTerminal(hostileDir, 'darwin');
+
+      // Then: the path is its own argv element of an argv-safe launcher —
+      // no argument embeds the path inside a larger command string
+      expect(mockSpawn).toHaveBeenCalledTimes(1);
+      const [command, argv] = mockSpawn.mock.calls[0]! as unknown as [string, string[]];
+      expect(command).toBe('open');
+      expect(argv).toEqual(['-a', 'Terminal', hostileDir]);
+    });
+
+    it('should reject when the launcher exits with a non-zero code', async () => {
+      // Given: the launcher fails
+      mockSpawn.mockImplementation(() => {
+        const child = fakeChild();
+        setTimeout(() => child.emit('close', 1));
+        return child as never;
+      });
+
+      // When/Then: the promise rejects
+      await expect(openTerminal(hostileDir, 'darwin')).rejects.toThrow(/exited with code 1/);
+    });
+  });
+
+  describe('linux', () => {
+    it('should pass the directory to gnome-terminal as a flag value, not a shell string', async () => {
+      // Given: gnome-terminal launches and closes
+      mockSpawn.mockImplementation(() => {
+        const child = fakeChild();
+        setTimeout(() => child.emit('close', 0), 0);
+        return child as never;
+      });
+
+      // When: the terminal is opened on Linux
+      await openTerminal(hostileDir, 'linux');
+
+      // Then: the path rides in the --working-directory flag verbatim
+      expect(mockSpawn).toHaveBeenCalledTimes(1);
+      const [command, argv] = mockSpawn.mock.calls[0]! as unknown as [string, string[]];
+      expect(command).toBe('gnome-terminal');
+      expect(argv).toEqual([`--working-directory=${hostileDir}`]);
+    });
+
+    it('should fall back to xterm started via cwd with no shell command built from the path', async () => {
+      // Given: gnome-terminal is missing and xterm spawns successfully
+      mockSpawn.mockImplementation((command: string) => {
+        const child = fakeChild();
+        if (command === 'gnome-terminal') {
+          setTimeout(() => child.emit('error', new Error('ENOENT')));
+        } else {
+          setTimeout(() => child.emit('spawn'));
+        }
+        return child as never;
+      });
+
+      // When: the terminal is opened on Linux
+      await openTerminal(hostileDir, 'linux');
+
+      // Then: xterm receives no command arguments; the directory is set via cwd
+      expect(mockSpawn).toHaveBeenCalledTimes(2);
+      const [command, argv, options] = mockSpawn.mock.calls[1]! as unknown as [
+        string,
+        string[],
+        { cwd?: string },
+      ];
+      expect(command).toBe('xterm');
+      expect(argv).toEqual([]);
+      expect(options.cwd).toBe(hostileDir);
+    });
+
+    it('should reject when the xterm fallback also fails to spawn', async () => {
+      // Given: neither terminal is available
+      mockSpawn.mockImplementation(() => {
+        const child = fakeChild();
+        setTimeout(() => child.emit('error', new Error('ENOENT')));
+        return child as never;
+      });
+
+      // When/Then: the promise rejects instead of resolving optimistically
+      await expect(openTerminal(hostileDir, 'linux')).rejects.toThrow('ENOENT');
+    });
+  });
+
+  describe('win32', () => {
+    it('should pass the location through an argv array with the shell disabled', async () => {
+      // Given: a detached PowerShell launch
+      mockSpawn.mockImplementation(() => fakeChild() as never);
+
+      // When: the terminal is opened on Windows
+      await openTerminal(hostileDir, 'win32');
+
+      // Then: argv array form with shell:false — single quotes doubled for -LiteralPath
+      const [command, argv, options] = mockSpawn.mock.calls[0]! as unknown as [
+        string,
+        string[],
+        { shell?: boolean },
+      ];
+      expect(command).toBe('cmd.exe');
+      expect(argv).toContain('-NoExit');
+      expect(options.shell).toBe(false);
+    });
+  });
+
+  it('should reject when the path is not a directory', async () => {
+    // Given: a file rather than a directory
+    const file = path.join(hostileDir, 'a-file.txt');
+    await fs.writeFile(file, 'x');
+
+    // When/Then: validation fails before any spawn
+    await expect(openTerminal(file, 'darwin')).rejects.toThrow('Directory does not exist');
+    expect(mockSpawn).not.toHaveBeenCalled();
+  });
+});

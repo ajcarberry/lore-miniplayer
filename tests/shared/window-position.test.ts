@@ -126,54 +126,54 @@ describe('resolveRestorePosition', () => {
   });
 });
 
-const COLLAPSED: WindowSize = { width: 344, height: 92 };
+const COLLAPSED: WindowSize = { width: 368, height: 108 };
 const EXPANDED: WindowSize = { width: 360, height: 680 };
 const WORK_AREA: WorkArea = { x: 0, y: 25, width: 1440, height: 875 };
 
 describe('computeExpandedBounds', () => {
   it('grows upward (bottom anchor) when there is room above the pill', () => {
     // Given: a collapsed window near the bottom of the display
-    const collapsed: Bounds = { x: 100, y: 800, width: 344, height: 92 };
+    const collapsed: Bounds = { x: 100, y: 800, width: 368, height: 108 };
 
     // When: expanding
     const result = computeExpandedBounds(collapsed, EXPANDED, WORK_AREA);
 
     // Then: bottom-right stays fixed, the card grows up and left
     expect(result.anchor).toBe('bottom');
-    expect(result.bounds).toEqual({ x: 84, y: 212, width: 360, height: 680 });
+    expect(result.bounds).toEqual({ x: 108, y: 228, width: 360, height: 680 });
   });
 
   it('grows downward (top anchor) when the pill is too near the screen top', () => {
     // Given: a collapsed window near the top of the display
-    const collapsed: Bounds = { x: 100, y: 10, width: 344, height: 92 };
+    const collapsed: Bounds = { x: 100, y: 10, width: 368, height: 108 };
 
     // When: expanding
     const result = computeExpandedBounds(collapsed, EXPANDED, WORK_AREA);
 
     // Then: the top edge stays fixed, the card grows down
     expect(result.anchor).toBe('top');
-    expect(result.bounds).toEqual({ x: 84, y: 10, width: 360, height: 680 });
+    expect(result.bounds).toEqual({ x: 108, y: 10, width: 360, height: 680 });
   });
 });
 
 describe('computeCollapsedBounds', () => {
   it('shrinks to the bottom-right corner for a bottom-anchored card', () => {
-    const expanded: Bounds = { x: 84, y: 212, width: 360, height: 680 };
+    const expanded: Bounds = { x: 108, y: 228, width: 360, height: 680 };
     expect(computeCollapsedBounds(expanded, COLLAPSED, 'bottom')).toEqual({
       x: 100,
       y: 800,
-      width: 344,
-      height: 92,
+      width: 368,
+      height: 108,
     });
   });
 
   it('shrinks to the top-right corner for a top-anchored card', () => {
-    const expanded: Bounds = { x: 84, y: 10, width: 360, height: 680 };
+    const expanded: Bounds = { x: 108, y: 10, width: 360, height: 680 };
     expect(computeCollapsedBounds(expanded, COLLAPSED, 'top')).toEqual({
       x: 100,
       y: 10,
-      width: 344,
-      height: 92,
+      width: 368,
+      height: 108,
     });
   });
 });

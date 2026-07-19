@@ -174,6 +174,7 @@ The application uses **electron-log** for structured error logging with automati
 - **Commit operations**: File staging/unstaging (`fileStage`, `fileUnstage`), commit + push
 - **Working directory status**: `repositoryStatus` streams `REPOSITORY_STATUS_FILE` events with staged/dirty/conflict flags
 - **Push channels to the renderer**: server notifications (`lore:notification`) and clone progress (`lore:repository:clone-progress`) are one-way `webContents.send` pushes forwarded from service EventEmitter events; payloads cross the bridge as `unknown` and are Zod-validated in the renderer before use
+- **Notice channel to main**: `window:setNoticeActive` is a one-way renderer→main send (Zod-validated boolean) reporting the sync-needed signal; while active, the window skips its unfocused 70% dim so the collapsed pill's notice pulse stays visible (see `attachFocusDimming` in `window-handlers.ts`)
 
 ## Cross-Platform Support
 - **Windows compatibility**: Full support with platform-specific path validation (MAX_PATH limits, reserved names, invalid characters)

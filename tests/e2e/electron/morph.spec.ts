@@ -11,7 +11,7 @@ import { launchApp, removeTempUserDataDir } from './launch';
 // so Playwright's real pointer clicks reach it.
 
 const CARD_SIZE = [360, 680];
-const PILL_SIZE = [344, 92];
+const PILL_SIZE = [368, 108];
 
 function isExpanded(window: Page): Promise<boolean> {
   return window.evaluate(
@@ -47,6 +47,38 @@ test.describe('Pill <-> card morph', () => {
     await expect.poll(() => windowSize(electronApp)).toEqual(CARD_SIZE);
     await expect.poll(() => isExpanded(window)).toBe(true);
     await expect(window.getByText('On branch')).toBeVisible();
+
+    await window.evaluate(() => localStorage.removeItem('lore-server-address'));
+    await electronApp.close();
+    removeTempUserDataDir(userDataDir);
+  });
+
+  test('the pill floats clear of every window edge so the glow can render all around', async () => {
+    const { app: electronApp, userDataDir } = await launchApp();
+    const window = await electronApp.firstWindow();
+
+    // Given: connected — the player rests as the collapsed pill
+    await connectAndSettleToPill(window, electronApp);
+
+    // Then: the pill bar keeps a gutter on all four sides — the window is
+    // transparent and nothing (box-shadow included) renders outside its
+    // bounds, so a flush edge cuts the hover glow flat on that side.
+    const gutters = await window.evaluate(() => {
+      const rect = document.querySelector('.morph-pill-bar')!.getBoundingClientRect();
+      // `globalThis`, not `window`: the enclosing test names its Page variable
+      // `window`, which TypeScript would resolve here instead of the DOM global.
+      return {
+        top: rect.top,
+        left: rect.left,
+        right: globalThis.innerWidth - rect.right,
+        bottom: globalThis.innerHeight - rect.bottom,
+      };
+    });
+    const MIN_GLOW_GUTTER = 12;
+    expect(gutters.top).toBeGreaterThanOrEqual(MIN_GLOW_GUTTER);
+    expect(gutters.left).toBeGreaterThanOrEqual(MIN_GLOW_GUTTER);
+    expect(gutters.right).toBeGreaterThanOrEqual(MIN_GLOW_GUTTER);
+    expect(gutters.bottom).toBeGreaterThanOrEqual(MIN_GLOW_GUTTER);
 
     await window.evaluate(() => localStorage.removeItem('lore-server-address'));
     await electronApp.close();

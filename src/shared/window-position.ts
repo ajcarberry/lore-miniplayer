@@ -38,10 +38,11 @@ export interface Bounds {
 export type ExpandAnchor = 'bottom' | 'top';
 
 // Window footprints. Collapsed is the pill plus breathing room for the
-// hover-peek scale and shadow (derived from Pill.tsx: max-width 320 + minHeight
-// 64, padded); expanded is the full card. Same width keeps the pill's right
+// hover-peek scale, shadow, and glow (derived from Pill.tsx: max-width 320 +
+// minHeight 64, plus the 24px/22px gutters in morph.css `.morph-pill` — keep
+// them in sync); expanded is the full card. Same width keeps the pill's right
 // edge aligned across the morph.
-export const COLLAPSED_WINDOW_SIZE: WindowSize = { width: 344, height: 92 };
+export const COLLAPSED_WINDOW_SIZE: WindowSize = { width: 368, height: 108 };
 export const EXPANDED_WINDOW_SIZE: WindowSize = { width: 360, height: 680 };
 
 // Clamp a single axis so the window stays inside [origin, origin + extent].

@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactElement } from 'react';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Box, Image, Paper, Stack, useComputedColorScheme } from '@mantine/core';
 import LogomarkPath from '/Lore_Icon_White_V1.svg';
 import type { LoreSyncOptions, Repository } from '../../shared/types';
@@ -290,6 +290,24 @@ export function MiniPlayer(): ReactElement {
   const morph = useExpansion({ isConnected: server.isConnected });
   const colorScheme = useComputedColorScheme('light');
 
+  const signals = computeActionSignals({
+    divergenceState: divergence.divergence?.state,
+    currentRevision: graph.graph.current,
+    branchTipRevision: graph.graph.branch.revisions[0]?.revision ?? '',
+    dirtyCount: fileStaging.transferListData[0].length + fileStaging.transferListData[1].length,
+  });
+
+  // Report the sync notice to main: while active, the window skips its
+  // unfocused 70% dim so the pill's notice pulse stays visible (see
+  // attachFocusDimming in window-handlers.ts).
+  const noticeActive = server.isConnected && signals.syncNeeded;
+  useEffect(() => {
+    window.electronAPI.window.setNoticeActive(noticeActive);
+    return (): void => {
+      window.electronAPI.window.setNoticeActive(false);
+    };
+  }, [noticeActive]);
+
   return (
     <div className='morph-shell'>
       <div
@@ -331,13 +349,7 @@ export function MiniPlayer(): ReactElement {
             <Pill
               repository={repos.selectedRepo}
               branchName={branches.currentBranch}
-              signals={computeActionSignals({
-                divergenceState: divergence.divergence?.state,
-                currentRevision: graph.graph.current,
-                branchTipRevision: graph.graph.branch.revisions[0]?.revision ?? '',
-                dirtyCount:
-                  fileStaging.transferListData[0].length + fileStaging.transferListData[1].length,
-              })}
+              signals={signals}
               onClose={() => window.electronAPI.window.close()}
             />
           </div>

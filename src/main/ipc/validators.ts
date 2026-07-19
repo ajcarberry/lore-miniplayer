@@ -79,6 +79,9 @@ export const RepositoryOpenInExplorerArgsSchema = z.tuple([z.string('Invalid pat
 // window:open-terminal
 export const WindowOpenTerminalArgsSchema = z.tuple([z.string('Invalid working directory')]);
 
+// window:setNoticeActive
+export const WindowNoticeActiveSchema = z.boolean();
+
 // lore:* — channels taking only a repository (or local) path
 export const LoreRepositoryPathArgsSchema = z.tuple([repositoryPathArg]);
 export const LoreLocalPathArgsSchema = z.tuple([z.string('Invalid local path')]);

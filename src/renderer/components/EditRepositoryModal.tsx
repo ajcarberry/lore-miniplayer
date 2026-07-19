@@ -12,6 +12,7 @@ import {
   Box,
   ColorSwatch,
   UnstyledButton,
+  useComputedColorScheme,
 } from '@mantine/core';
 import {
   IconAlertTriangle,
@@ -38,6 +39,7 @@ interface AccentSwatchPickerProps {
 }
 
 function AccentSwatchPicker({ selectedHue, onSelect }: AccentSwatchPickerProps): ReactElement {
+  const colorScheme = useComputedColorScheme('light');
   return (
     <Box>
       <Text size='sm' fw={500} mb={5}>
@@ -54,7 +56,7 @@ function AccentSwatchPicker({ selectedHue, onSelect }: AccentSwatchPickerProps):
               onClick={() => onSelect(option.hue)}
             >
               <ColorSwatch
-                color={loreAccent(option.hue).base}
+                color={loreAccent(option.hue, colorScheme).base}
                 size={28}
                 style={
                   isSelected

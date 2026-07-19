@@ -18,7 +18,7 @@ export type AccentScheme = 'light' | 'dark';
 
 // Ramp values mirror the per-scheme accent tokens in
 // src/renderer/styles/tokens.css — keep the two in sync.
-export function loreAccent(hue: number, scheme: AccentScheme = 'light'): AccentRamp {
+export function loreAccent(hue: number, scheme: AccentScheme): AccentRamp {
   if (scheme === 'dark') {
     return {
       base: `oklch(0.74 0.12 ${hue})`,
@@ -45,7 +45,7 @@ export interface AccentStyleVars {
   readonly '--acc-line': string;
 }
 
-export function accentStyleVars(hue: number, scheme: AccentScheme = 'light'): AccentStyleVars {
+export function accentStyleVars(hue: number, scheme: AccentScheme): AccentStyleVars {
   const ramp = loreAccent(hue, scheme);
   return {
     '--acc': ramp.base,

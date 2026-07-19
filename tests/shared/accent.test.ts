@@ -15,7 +15,7 @@ describe('LORE_ACCENT_HUES', () => {
 describe('loreAccent', () => {
   it('should produce the OKLCH ramp for the amber hue', () => {
     // When: building the ramp for hue 74
-    const ramp = loreAccent(74);
+    const ramp = loreAccent(74, 'light');
 
     // Then: it matches the approved design ramp
     expect(ramp).toEqual({
@@ -30,9 +30,9 @@ describe('loreAccent', () => {
   it('should substitute the hue channel for other named accents', () => {
     // When: building ramps for the remaining named hues
     // Then: only the hue channel changes, the ramp shape stays the same
-    expect(loreAccent(172).base).toBe('oklch(0.66 0.11 172)');
-    expect(loreAccent(296).deep).toBe('oklch(0.46 0.10 296)');
-    expect(loreAccent(38).line).toBe('oklch(0.74 0.09 38)');
+    expect(loreAccent(172, 'light').base).toBe('oklch(0.66 0.11 172)');
+    expect(loreAccent(296, 'light').deep).toBe('oklch(0.46 0.10 296)');
+    expect(loreAccent(38, 'light').line).toBe('oklch(0.74 0.09 38)');
   });
 
   it('should produce the warm-dark ramp when the dark scheme is requested', () => {
@@ -49,16 +49,12 @@ describe('loreAccent', () => {
     });
   });
 
-  it('should treat an explicit light scheme the same as the default', () => {
-    // Then: passing 'light' matches the no-argument ramp
-    expect(loreAccent(74, 'light')).toEqual(loreAccent(74));
-  });
 });
 
 describe('accentStyleVars', () => {
   it('should return a CSS custom property record for inline style injection', () => {
     // When: building style vars for the ember hue
-    const vars = accentStyleVars(38);
+    const vars = accentStyleVars(38, 'light');
 
     // Then: each CSS variable maps to the matching ramp value
     expect(vars).toEqual({

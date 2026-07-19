@@ -18,6 +18,7 @@ interface RenderOptions {
   readonly selectedRepo?: Repository | null;
   readonly repositories?: Repository[];
   readonly serverUrl?: string | null;
+  readonly colorScheme?: 'light' | 'dark';
   readonly onSelectRepo?: jest.Mock;
   readonly onAddRepo?: jest.Mock;
   readonly onEditRepo?: jest.Mock;
@@ -40,7 +41,7 @@ function renderFooter(options: RenderOptions = {}): {
 
   render(
     (
-      <MantineProvider>
+      <MantineProvider {...(options.colorScheme ? { forceColorScheme: options.colorScheme } : {})}>
         <UtilityFooter
           selectedRepo={options.selectedRepo ?? null}
           repositories={options.repositories ?? []}
@@ -181,6 +182,23 @@ describe('UtilityFooter', () => {
 
       // Then: the refresh callback fires
       expect(onRefreshRepos).toHaveBeenCalled();
+    });
+  });
+
+  describe('repository accent dot', () => {
+    it('should use the dark accent base for the dot in dark mode', async () => {
+      // Given: a repository with the amber accent under the dark color scheme
+      const repo = makeRepository();
+      const user = userEvent.setup();
+      renderFooter({ selectedRepo: repo, repositories: [repo], colorScheme: 'dark' });
+
+      // When: opening the repository picker
+      await user.click(screen.getByRole('button', { name: 'Repositories' }));
+      await screen.findByText('MyRepo', {}, { timeout: 8000 });
+
+      // Then: the row's dot carries the dark ramp base, not the light base
+      const dot = document.querySelector('span[style*="background-color: oklch"]');
+      expect(dot?.getAttribute('style')).toContain('oklch(0.74 0.12 74)');
     });
   });
 

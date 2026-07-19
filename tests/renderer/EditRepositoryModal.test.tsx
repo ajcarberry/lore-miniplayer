@@ -19,14 +19,15 @@ import { makeRepository } from '../mocks/repository-fixture';
 const repository = makeRepository();
 
 function renderModal(
-  overrides: Partial<Parameters<typeof EditRepositoryModal>[0]> = {}
+  overrides: Partial<Parameters<typeof EditRepositoryModal>[0]> = {},
+  colorScheme?: 'light' | 'dark'
 ): ReturnType<typeof render> & { onSave: jest.Mock; onDelete: jest.Mock; onClose: jest.Mock } {
   const onSave = jest.fn();
   const onDelete = jest.fn();
   const onClose = jest.fn();
   const utils = render(
     (
-      <MantineProvider>
+      <MantineProvider {...(colorScheme ? { forceColorScheme: colorScheme } : {})}>
         <EditRepositoryModal
           opened
           onClose={onClose}
@@ -70,6 +71,15 @@ describe('EditRepositoryModal', () => {
       expect(input.getAttribute('style')).toContain('--paper-sink');
       expect(input.getAttribute('style')).toContain('--ink-faint');
     }
+  });
+
+  it('should render the accent swatches with the dark ramp base in dark mode', () => {
+    // Given: the edit view under the dark color scheme
+    renderModal({}, 'dark');
+
+    // Then: the Amber swatch carries the dark ramp base, not the light base
+    const swatch = screen.getByRole('button', { name: 'Amber accent' });
+    expect(swatch.innerHTML).toContain('oklch(0.74 0.12 74)');
   });
 
   it('should save the renamed repository', async () => {

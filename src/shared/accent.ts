@@ -14,7 +14,20 @@ export interface AccentRamp {
   readonly line: string;
 }
 
-export function loreAccent(hue: number): AccentRamp {
+export type AccentScheme = 'light' | 'dark';
+
+// Ramp values mirror the per-scheme accent tokens in
+// src/renderer/styles/tokens.css — keep the two in sync.
+export function loreAccent(hue: number, scheme: AccentScheme): AccentRamp {
+  if (scheme === 'dark') {
+    return {
+      base: `oklch(0.74 0.12 ${hue})`,
+      deep: `oklch(0.56 0.11 ${hue})`,
+      soft: `oklch(0.38 0.06 ${hue})`,
+      glow: `oklch(0.80 0.14 ${hue})`,
+      line: `oklch(0.70 0.10 ${hue})`,
+    };
+  }
   return {
     base: `oklch(0.66 0.11 ${hue})`,
     deep: `oklch(0.46 0.10 ${hue})`,
@@ -32,8 +45,8 @@ export interface AccentStyleVars {
   readonly '--acc-line': string;
 }
 
-export function accentStyleVars(hue: number): AccentStyleVars {
-  const ramp = loreAccent(hue);
+export function accentStyleVars(hue: number, scheme: AccentScheme): AccentStyleVars {
+  const ramp = loreAccent(hue, scheme);
   return {
     '--acc': ramp.base,
     '--acc-deep': ramp.deep,

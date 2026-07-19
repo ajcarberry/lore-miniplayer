@@ -10,6 +10,7 @@ import {
   Text,
   Tooltip,
   UnstyledButton,
+  useComputedColorScheme,
 } from '@mantine/core';
 import {
   IconCheck,
@@ -70,6 +71,7 @@ interface RepositoryRowProps {
 }
 
 function RepositoryRow({ repo, isSelected, onSelect, onEdit }: RepositoryRowProps): ReactElement {
+  const colorScheme = useComputedColorScheme('light');
   return (
     <Group
       justify='space-between'
@@ -83,7 +85,7 @@ function RepositoryRow({ repo, isSelected, onSelect, onEdit }: RepositoryRowProp
         <Group gap={6} wrap='nowrap'>
           <span
             className={classes.accentDot}
-            style={{ backgroundColor: loreAccent(repo.accentHue).base }}
+            style={{ backgroundColor: loreAccent(repo.accentHue, colorScheme).base }}
           />
           <Text size='sm' truncate>
             {repo.name}

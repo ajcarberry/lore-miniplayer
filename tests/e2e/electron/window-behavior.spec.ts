@@ -4,7 +4,7 @@ import { launchApp, removeTempUserDataDir } from './launch';
 // Requires `pnpm build` first — launches the built app at out/main/index.js.
 
 const CARD_SIZE = [360, 680];
-const PILL_SIZE = [344, 92];
+const PILL_SIZE = [368, 108];
 
 function windowSize(electronApp: Awaited<ReturnType<typeof launchApp>>['app']): Promise<number[]> {
   return electronApp.evaluate(async ({ BrowserWindow }) =>

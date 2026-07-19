@@ -83,9 +83,14 @@
    (the full-width card unfolds above it). It cross-fades out as the card
    takes over. */
 .morph-pill {
-  /* Right-aligned with a small gutter so the hover-peek scale/shadow/glow has
-     room inside the collapsed window bounds without clipping. */
-  margin: 0 10px 0 auto;
+  /* Right-aligned, with symmetric gutters on every side so the hover-peek
+     scale/shadow/glow has room inside the collapsed window bounds without
+     clipping — the window is transparent and nothing renders outside it.
+     Vertical gutters match both anchors (the pill sits flush to the anchored
+     edge's margin, top or bottom). COLLAPSED_WINDOW_SIZE in
+     shared/window-position.ts is derived from the pill footprint plus these
+     gutters — keep them in sync. */
+  margin: 22px 24px 22px auto;
   width: fit-content;
   max-width: 320px;
   transition: opacity 0.3s ease;
@@ -107,10 +112,13 @@
 
 .morph-pill-bar:hover {
   transform: scale(1.04);
+  /* Two glow layers: a bright core hugging the capsule plus a wider soft
+     bloom. Their combined reach must stay inside the .morph-pill gutters. */
   box-shadow:
     0 12px 32px -8px rgba(0, 0, 0, 0.35),
     0 0 0 1px var(--acc-line),
-    0 0 18px -2px var(--acc-glow);
+    0 0 12px 1px var(--acc-glow),
+    0 0 22px 2px var(--acc-glow);
 }
 
 .morph-pill-bar:active {

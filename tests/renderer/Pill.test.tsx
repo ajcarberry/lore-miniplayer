@@ -98,6 +98,32 @@ describe('Pill', () => {
     expect(screen.getByLabelText('Commits to push')).toBeInTheDocument();
   });
 
+  it('marks the pill bar with the sync notice so the CSS pulse can engage', () => {
+    // Given: the workspace is behind the remote
+    const signals: ActionSignals = { ...QUIET, syncNeeded: true };
+
+    // When: rendering the pill
+    const { container } = renderPill(
+      <Pill branchName='main' signals={signals} onClose={jest.fn()} repository={null} />
+    );
+
+    // Then: the pill bar carries the notice attribute the pulse keyframes key on
+    expect(container.querySelector('.morph-pill-bar')).toHaveAttribute('data-notice', 'sync');
+  });
+
+  it('carries no notice mark when the workspace is not behind the remote', () => {
+    // Given: other signals may be active, but sync is not needed
+    const signals: ActionSignals = { ...QUIET, uncommitted: true, unpushed: true };
+
+    // When: rendering the pill
+    const { container } = renderPill(
+      <Pill branchName='main' signals={signals} onClose={jest.fn()} repository={null} />
+    );
+
+    // Then: no notice attribute — the pill must not pulse
+    expect(container.querySelector('.morph-pill-bar')).not.toHaveAttribute('data-notice');
+  });
+
   it('does NOT make its root a native -webkit-app-region drag region (regression guard)', () => {
     // Regression guard for the click-expand bug: a native drag region routes
     // real mouse events to the OS, so the renderer never sees pointerdown/click

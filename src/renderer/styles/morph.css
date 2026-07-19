@@ -125,6 +125,37 @@
   cursor: grabbing;
 }
 
+/* Sync-needed notice: the pill breathes a slow accent glow — strong enough to
+   catch peripheral vision, calm enough to ignore deliberately. The peak
+   matches the hover halo; both keyframes keep Mantine's resting shadow and
+   carry four layers so the shadow list interpolates smoothly. */
+@keyframes pill-notice-pulse {
+  0%,
+  100% {
+    box-shadow:
+      var(--mantine-shadow-md),
+      0 0 0 1px var(--acc-line),
+      0 0 6px 0 var(--acc-glow),
+      0 0 10px 0 var(--acc-glow);
+  }
+  50% {
+    box-shadow:
+      var(--mantine-shadow-md),
+      0 0 0 1px var(--acc-line),
+      0 0 12px 1px var(--acc-glow),
+      0 0 22px 2px var(--acc-glow);
+  }
+}
+
+.morph-pill-bar[data-notice='sync'] {
+  animation: pill-notice-pulse 3s ease-in-out infinite;
+}
+
+/* Hover wins over the pulse: the steady hover halo is the click affordance. */
+.morph-pill-bar[data-notice='sync']:hover {
+  animation: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .morph-card,
   .morph-card-inner > *,
@@ -136,5 +167,15 @@
 
   .morph-pill-bar:hover {
     transform: none;
+  }
+
+  /* Reduced motion: a steady notice glow instead of the breathing pulse. */
+  .morph-pill-bar[data-notice='sync'] {
+    animation: none;
+    box-shadow:
+      var(--mantine-shadow-md),
+      0 0 0 1px var(--acc-line),
+      0 0 12px 1px var(--acc-glow),
+      0 0 22px 2px var(--acc-glow);
   }
 }

@@ -1,8 +1,9 @@
 import type { CSSProperties, ReactElement } from 'react';
 import { useCallback, useState } from 'react';
-import { Box, Image, Paper, Stack } from '@mantine/core';
+import { Box, Image, Paper, Stack, useComputedColorScheme } from '@mantine/core';
 import LogomarkPath from '/Lore_Icon_White_V1.svg';
 import type { LoreSyncOptions, Repository } from '../../shared/types';
+import type { AccentScheme } from '../../shared/accent';
 import { accentStyleVars } from '../../shared/accent';
 import { useServerConnection } from '../hooks/useServerConnection';
 import { useRepositories } from '../hooks/useRepositories';
@@ -28,8 +29,8 @@ import { PlayerDialogs } from './PlayerDialogs';
 
 // Accent vars for the collapsed pill, matching the card's scope. React's
 // CSSProperties has no entry for CSS custom properties, hence the assertion.
-function pillAccent(repo: Repository | null): CSSProperties | undefined {
-  return repo ? (accentStyleVars(repo.accentHue) as unknown as CSSProperties) : undefined;
+function pillAccent(repo: Repository | null, scheme: AccentScheme): CSSProperties | undefined {
+  return repo ? (accentStyleVars(repo.accentHue, scheme) as unknown as CSSProperties) : undefined;
 }
 
 interface PlayerCardProps {
@@ -72,6 +73,7 @@ function PlayerCard({
   onEditRepo,
   onCollapse,
 }: PlayerCardProps): ReactElement {
+  const colorScheme = useComputedColorScheme('light');
   const currentBranchObj = branches.branches.find(branch => branch.isCurrent);
   const needsBranchSwitch =
     currentBranchObj !== undefined && currentBranchObj.name !== branches.currentBranch;
@@ -89,7 +91,7 @@ function PlayerCard({
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
-        ...(repos.selectedRepo ? accentStyleVars(repos.selectedRepo.accentHue) : {}),
+        ...(repos.selectedRepo ? accentStyleVars(repos.selectedRepo.accentHue, colorScheme) : {}),
       }}
     >
       <TitleBar {...(server.isConnected ? { onCollapse } : {})} />
@@ -286,6 +288,7 @@ export function MiniPlayer(): ReactElement {
 
   const isBusy = syncActions.isCloning || syncActions.isSyncing || status.isChecking;
   const morph = useExpansion({ isConnected: server.isConnected });
+  const colorScheme = useComputedColorScheme('light');
 
   return (
     <div className='morph-shell'>
@@ -320,7 +323,7 @@ export function MiniPlayer(): ReactElement {
         {server.isConnected && (
           <div
             className='morph-pill'
-            style={pillAccent(repos.selectedRepo)}
+            style={pillAccent(repos.selectedRepo, colorScheme)}
             onPointerDown={morph.onPillPointerDown}
             onPointerMove={morph.onPillPointerMove}
             onPointerUp={morph.onPillPointerUp}

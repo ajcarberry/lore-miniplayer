@@ -158,6 +158,34 @@ describe('MiniPlayer', () => {
       });
     });
 
+    it('should apply the dark accent ramp when the dark color scheme is active', async () => {
+      // Given: a stored repository with the verdigris accent
+      const repo = makeRepository({ accentHue: 172 });
+      (api.repository.list as jest.Mock).mockResolvedValue({ success: true, data: [repo] });
+
+      // When: rendering under the dark color scheme
+      const { container } = render(
+        (
+          <MantineProvider forceColorScheme='dark'>{<MiniPlayer />}</MantineProvider>
+        ) as ReactElement
+      );
+      await screen.findByText('On branch');
+
+      // Then: the card carries the dark ramp — the light ramp's near-white
+      // --acc-soft would wash selected history rows with a light background
+      // under light ink, making their text unreadable on dark paper
+      await waitFor(() => {
+        const card = container.querySelector('[style*="--acc"]');
+        expect(card?.getAttribute('style')).toContain('--acc-soft: oklch(0.38 0.06 172)');
+      });
+
+      // And: the collapsed pill picks up the same dark ramp
+      await waitFor(() => {
+        const pillWrap = container.querySelector('.morph-pill');
+        expect(pillWrap?.getAttribute('style')).toContain('--acc-soft: oklch(0.38 0.06 172)');
+      });
+    });
+
     it('should offer Clone for a repository that is not checked out yet', async () => {
       // Given: a stored repository whose path is not a working copy
       const repo = makeRepository();

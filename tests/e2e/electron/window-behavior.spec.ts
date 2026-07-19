@@ -134,7 +134,9 @@ test.describe('Electron Window Behavior', () => {
 
   test('an active notice suspends the unfocused dimming until it clears', async () => {
     const { app: electronApp, userDataDir } = await launchApp();
-    const window = await electronApp.firstWindow();
+    // Named `page` (not `window` like the sibling tests) so the evaluate
+    // callbacks below can reach the DOM global `window.electronAPI`.
+    const page = await electronApp.firstWindow();
     const getOpacity = (): Promise<number> =>
       electronApp.evaluate(async ({ BrowserWindow }) =>
         BrowserWindow.getAllWindows()[0]!.getOpacity()
@@ -151,19 +153,19 @@ test.describe('Electron Window Behavior', () => {
     test.skip(focused, 'OS kept the window focused in this environment');
 
     // When: the renderer reports no notice — through the real preload bridge
-    await window.evaluate(() => window.electronAPI.window.setNoticeActive(false));
+    await page.evaluate(() => window.electronAPI.window.setNoticeActive(false));
 
     // Then: the unfocused window is dimmed
     await expect.poll(getOpacity).toBe(0.7);
 
     // When: a notice activates (sync needed)
-    await window.evaluate(() => window.electronAPI.window.setNoticeActive(true));
+    await page.evaluate(() => window.electronAPI.window.setNoticeActive(true));
 
     // Then: the window un-dims immediately so the pill pulse stays visible
     await expect.poll(getOpacity).toBe(1.0);
 
     // When: the notice clears
-    await window.evaluate(() => window.electronAPI.window.setNoticeActive(false));
+    await page.evaluate(() => window.electronAPI.window.setNoticeActive(false));
 
     // Then: normal unfocused dimming resumes
     await expect.poll(getOpacity).toBe(0.7);

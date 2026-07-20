@@ -265,7 +265,8 @@ describe('validateWindowsPath', () => {
     // When: validating a path containing 'con' for a POSIX platform
     const result = validateWindowsPath('/tmp/con/file.txt', 'linux');
 
-    // Then: no Windows reserved-name rule applies
-    expect(result).toEqual({ valid: true, normalizedPath: '/tmp/con/file.txt' });
+    // Then: no Windows reserved-name rule applies (normalization still uses
+    // the host platform's separators)
+    expect(result).toEqual({ valid: true, normalizedPath: path.normalize('/tmp/con/file.txt') });
   });
 });

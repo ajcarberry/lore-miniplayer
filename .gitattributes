@@ -1,0 +1,4 @@
+# Normalize all text files to LF in the repo and on checkout, so Prettier's
+# endOfLine: lf check passes on Windows checkouts (git autocrlf would
+# otherwise materialize CRLF).
+* text=auto eol=lf

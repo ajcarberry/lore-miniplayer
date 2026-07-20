@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: validate (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check
+        run: pnpm claude:type-check
+
+      - name: Format check
+        run: pnpm format
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Unit tests with coverage
+        run: pnpm test:jest:coverage
+
+      # Electron E2E runs headed; hosted macOS/Windows runners have a display,
+      # Linux does not, so it stays fast-checks-only.
+      - name: Build app for E2E
+        if: runner.os != 'Linux'
+        run: pnpm build
+
+      # The hosted macOS runner's display is 1024x768 (fixed — no other modes),
+      # and the menu bar + Dock leave a 677px work area, 3px short of the app's
+      # 680px expanded window, so macOS clamps the morph and the geometry tests
+      # fail. Auto-hiding the Dock frees ~744px of work area.
+      - name: Auto-hide the Dock so the 680px window fits (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          defaults write com.apple.dock autohide -bool true
+          killall Dock || true
+
+      - name: Playwright E2E
+        if: runner.os != 'Linux'
+        run: pnpm exec playwright test
+
+      - name: Upload Playwright failure artifacts
+        if: failure() && runner.os != 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results-${{ matrix.os }}
+          path: test-results/
+          if-no-files-found: ignore

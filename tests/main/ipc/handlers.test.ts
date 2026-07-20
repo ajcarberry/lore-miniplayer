@@ -240,16 +240,18 @@ describe('repository handlers', () => {
     // Given: the service echoes its input
     mockRepositoryService.create.mockImplementation(async input => input as never);
 
-    // When: creating with a denormalized path
+    // When: creating with a denormalized path that is absolute on the host
+    // platform (the schema rejects drive-relative paths like \tmp on Windows)
+    const isWindows = process.platform === 'win32';
     await invoke('repository:create', {
       name: 'A',
       url: 'lore.example.com/A',
-      localPath: '/tmp//repos/../repos/a',
+      localPath: isWindows ? 'C:\\tmp\\\\repos\\..\\repos\\a' : '/tmp//repos/../repos/a',
     });
 
     // Then: the path reaching the service is normalized
     expect(mockRepositoryService.create).toHaveBeenCalledWith(
-      expect.objectContaining({ localPath: '/tmp/repos/a' })
+      expect.objectContaining({ localPath: isWindows ? 'C:\\tmp\\repos\\a' : '/tmp/repos/a' })
     );
   });
 
@@ -396,10 +398,10 @@ describe('lore repository happy paths', () => {
       '/tmp//repos/../repos/checkout'
     );
 
-    // Then: the normalized path reaches the service
+    // Then: the normalized path reaches the service (platform separators)
     expect(mockLoreRepositoryService.cloneRepository).toHaveBeenCalledWith(
       'lore.example.com/Repo',
-      '/tmp/repos/checkout'
+      path.normalize('/tmp/repos/checkout')
     );
     expect(result).toEqual({ success: true, data: undefined });
   });

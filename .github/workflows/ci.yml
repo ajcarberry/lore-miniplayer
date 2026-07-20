@@ -52,17 +52,15 @@ jobs:
         if: runner.os != 'Linux'
         run: pnpm build
 
-      # The hosted macOS runner's virtual display is shorter than the app's
-      # 680px expanded window, so macOS clamps the morph and the geometry
-      # tests fail. Enlarge the display before running E2E.
-      - name: Enlarge virtual display (macOS)
+      # The hosted macOS runner's display is 1024x768 (fixed — no other modes),
+      # and the menu bar + Dock leave a 677px work area, 3px short of the app's
+      # 680px expanded window, so macOS clamps the morph and the geometry tests
+      # fail. Auto-hiding the Dock frees ~744px of work area.
+      - name: Auto-hide the Dock so the 680px window fits (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew install displayplacer
-          displayplacer list
-          SCREEN_ID=$(displayplacer list | awk '/Persistent screen id:/ {print $4; exit}')
-          displayplacer "id:${SCREEN_ID} res:1920 1080" || echo "::warning::displayplacer could not set 1920x1080"
-          displayplacer list | grep -i resolution || true
+          defaults write com.apple.dock autohide -bool true
+          killall Dock || true
 
       - name: Playwright E2E
         if: runner.os != 'Linux'

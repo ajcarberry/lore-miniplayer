@@ -57,8 +57,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # --publish never: electron-builder would otherwise try to publish to
+      # GitHub itself when it detects a CI tag build; the release job below
+      # owns publishing.
       - name: Build installer
-        run: pnpm ${{ matrix.dist-script }}
+        run: pnpm ${{ matrix.dist-script }} --publish never
 
       - uses: actions/upload-artifact@v4
         with:

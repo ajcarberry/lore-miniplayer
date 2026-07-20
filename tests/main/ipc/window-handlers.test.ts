@@ -58,10 +58,16 @@ describe('openTerminal', () => {
   // A real directory whose name contains shell/AppleScript metacharacters —
   // command substitution, backticks, double quotes, and a backslash. If any
   // launcher builds a shell string from the path, these would execute.
+  // NTFS filenames cannot contain " or \, so on a Windows host the template
+  // drops them and keeps the PowerShell-hostile set instead.
   let hostileDir: string;
 
   beforeAll(async () => {
-    hostileDir = await fs.mkdtemp(path.join(os.tmpdir(), 'lore-$(touch pwned)-`id`-"\\-'));
+    const template =
+      process.platform === 'win32'
+        ? 'lore-$(touch pwned)-`id`-&;-'
+        : 'lore-$(touch pwned)-`id`-"\\-';
+    hostileDir = await fs.mkdtemp(path.join(os.tmpdir(), template));
   });
 
   afterAll(async () => {

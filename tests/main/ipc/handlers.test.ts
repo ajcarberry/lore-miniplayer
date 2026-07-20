@@ -247,9 +247,9 @@ describe('repository handlers', () => {
       localPath: '/tmp//repos/../repos/a',
     });
 
-    // Then: the path reaching the service is normalized
+    // Then: the path reaching the service is normalized (platform separators)
     expect(mockRepositoryService.create).toHaveBeenCalledWith(
-      expect.objectContaining({ localPath: '/tmp/repos/a' })
+      expect.objectContaining({ localPath: path.normalize('/tmp/repos/a') })
     );
   });
 
@@ -396,10 +396,10 @@ describe('lore repository happy paths', () => {
       '/tmp//repos/../repos/checkout'
     );
 
-    // Then: the normalized path reaches the service
+    // Then: the normalized path reaches the service (platform separators)
     expect(mockLoreRepositoryService.cloneRepository).toHaveBeenCalledWith(
       'lore.example.com/Repo',
-      '/tmp/repos/checkout'
+      path.normalize('/tmp/repos/checkout')
     );
     expect(result).toEqual({ success: true, data: undefined });
   });

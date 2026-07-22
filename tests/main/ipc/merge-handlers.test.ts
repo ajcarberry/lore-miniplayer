@@ -42,6 +42,7 @@ const mergeState: MergeState = {
   targetBranch: 'main',
   files: [{ path: 'conf.txt', state: 'conflict' }],
   allResolved: false,
+  hasChangesToLand: true,
 };
 
 beforeAll(() => {

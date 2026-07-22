@@ -314,6 +314,14 @@ export const MergeStateSchema = z.object({
   targetBranch: z.string().min(1),
   files: z.array(MergeFileStateSchema),
   allResolved: z.boolean(),
+  // Whether the source branch has revisions the target lacks — i.e. the merge
+  // would actually land something. This is NOT implied by `files`: when the
+  // target has not moved since the branch diverged, phase 1 (merging the target
+  // into the branch) legitimately reports no conflicts and no auto-merges, yet
+  // the branch's own commits still need to land. Distinguishes "ahead, nothing
+  // to reconcile — ready to land" (true) from "branch tip already on the target
+  // — nothing to merge" (false).
+  hasChangesToLand: z.boolean(),
 });
 
 // Which contextual primary action the review window's bottom bar shows.

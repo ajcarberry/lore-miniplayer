@@ -987,12 +987,13 @@ describe('MergeFileStateSchema and MergeStateSchema', () => {
   });
 
   it('accepts a merge state with an empty files array (clean merge)', () => {
-    // When: parsing a merge with nothing to reconcile
+    // When: parsing a merge with nothing to reconcile but commits still to land
     const result = MergeStateSchema.safeParse({
       sourceBranch: 'feat/agent-1',
       targetBranch: 'main',
       files: [],
       allResolved: true,
+      hasChangesToLand: true,
     });
 
     // Then: parsing succeeds
@@ -1009,10 +1010,38 @@ describe('MergeFileStateSchema and MergeStateSchema', () => {
         { path: 'src/b.ts', state: 'conflict' },
       ],
       allResolved: false,
+      hasChangesToLand: true,
     });
 
     // Then: parsing succeeds
     expect(result.success).toBe(true);
+  });
+
+  it('accepts a merge state with nothing to land (branch tip already on target)', () => {
+    // When: parsing an empty, ready merge whose branch is not ahead
+    const result = MergeStateSchema.safeParse({
+      sourceBranch: 'feat/agent-1',
+      targetBranch: 'main',
+      files: [],
+      allResolved: true,
+      hasChangesToLand: false,
+    });
+
+    // Then: parsing succeeds
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a merge state missing hasChangesToLand', () => {
+    // When: parsing a merge state without the land signal
+    const result = MergeStateSchema.safeParse({
+      sourceBranch: 'feat/agent-1',
+      targetBranch: 'main',
+      files: [],
+      allResolved: true,
+    });
+
+    // Then: parsing fails — the field is required
+    expect(result.success).toBe(false);
   });
 });
 

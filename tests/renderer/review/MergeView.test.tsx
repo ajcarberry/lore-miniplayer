@@ -43,6 +43,7 @@ function cleanState(): MergeState {
     sourceBranch: SOURCE_BRANCH,
     targetBranch: TARGET_BRANCH,
     allResolved: true,
+    hasChangesToLand: true,
     files: [
       { path: 'encounters.toml', state: 'merged' },
       { path: 'loot.toml', state: 'merged' },
@@ -56,10 +57,34 @@ function conflictedState(): MergeState {
     sourceBranch: SOURCE_BRANCH,
     targetBranch: TARGET_BRANCH,
     allResolved: false,
+    hasChangesToLand: true,
     files: [
       { path: 'encounters.toml', state: 'merged' },
       { path: 'boss.toml', state: 'conflict' },
     ],
+  };
+}
+
+// A merge where phase-1 is clean (no rows) but the branch is ahead — commits
+// still to land (the "nothing to merge" bug scenario).
+function aheadCleanState(): MergeState {
+  return {
+    sourceBranch: SOURCE_BRANCH,
+    targetBranch: TARGET_BRANCH,
+    allResolved: true,
+    hasChangesToLand: true,
+    files: [],
+  };
+}
+
+// A merge with nothing to land — the branch tip is already on the target.
+function nothingToLandState(): MergeState {
+  return {
+    sourceBranch: SOURCE_BRANCH,
+    targetBranch: TARGET_BRANCH,
+    allResolved: true,
+    hasChangesToLand: false,
+    files: [],
   };
 }
 
@@ -109,6 +134,7 @@ function installApi(
         sourceBranch: SOURCE_BRANCH,
         targetBranch: TARGET_BRANCH,
         allResolved: true,
+        hasChangesToLand: true,
         files: [
           { path: 'encounters.toml', state: 'merged' },
           { path: request.path, state: 'conflict', resolution: request.resolution },
@@ -184,6 +210,39 @@ describe('MergeView — clean merge', () => {
       sourceBranch: SOURCE_BRANCH,
       targetBranch: TARGET_BRANCH,
     });
+  });
+});
+
+describe('MergeView — branch ahead but phase-1 clean', () => {
+  it('shows a ready-to-land message (not "nothing to merge") and enables Merge', async () => {
+    // Given: the target has not moved, so there are no conflicts and no
+    // auto-merges, but the branch is still ahead (has commits to land).
+    installApi({ startState: aheadCleanState() });
+    renderView();
+
+    // Then: it does NOT claim the branches are in sync; it says it is ready to
+    // land, and Merge is enabled.
+    expect(
+      await screen.findByText(new RegExp(`ahead of ${TARGET_BRANCH} and is ready to land`, 'i'))
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Nothing to merge — the branches are already in sync/i)
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Merge' })).toBeEnabled();
+  });
+});
+
+describe('MergeView — nothing to land', () => {
+  it('says nothing to merge and disables Merge when the branch tip is already on the target', async () => {
+    // Given: a clean phase-1 update AND the branch is not ahead.
+    installApi({ startState: nothingToLandState() });
+    renderView();
+
+    // Then: it reports the branches are in sync and Merge is disabled.
+    expect(
+      await screen.findByText(/Nothing to merge — the branches are already in sync/i)
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Merge' })).toBeDisabled();
   });
 });
 

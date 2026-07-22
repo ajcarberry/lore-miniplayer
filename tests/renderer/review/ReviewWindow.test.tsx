@@ -152,6 +152,7 @@ function installApi(request: ReviewOpenRequest = makeRequest()): Api {
           sourceBranch: 'agent/act2-balance',
           targetBranch: 'main',
           allResolved: true,
+          hasChangesToLand: true,
           files: [{ path: 'encounters.toml', state: 'merged' }],
         },
       }),

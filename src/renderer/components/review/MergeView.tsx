@@ -123,8 +123,7 @@ export function MergeView(props: MergeViewProps): ReactElement {
     [mergeState]
   );
   const conflictCount = conflictFiles.length;
-  const resolvedCount = conflictFiles.filter(file => file.resolution !== undefined).length;
-  const allResolved = mergeState?.allResolved ?? false;
+  const hasChangesToLand = mergeState?.hasChangesToLand ?? false;
 
   const handleResolve = useCallback(
     (path: string, resolution: MergeFileResolution): void => {
@@ -207,6 +206,7 @@ export function MergeView(props: MergeViewProps): ReactElement {
             targetBranch={targetBranch}
             sourceBranch={sourceBranch}
             landedRevision={landedRevision}
+            hasChangesToLand={hasChangesToLand}
             mergedFiles={mergedFiles}
             conflictFiles={conflictFiles}
             bothSides={bothSides}
@@ -234,8 +234,9 @@ export function MergeView(props: MergeViewProps): ReactElement {
 
       <MergeBar
         conflictCount={conflictCount}
-        resolvedCount={resolvedCount}
-        allResolved={allResolved}
+        resolvedCount={conflictFiles.filter(file => file.resolution !== undefined).length}
+        allResolved={mergeState?.allResolved ?? false}
+        hasChangesToLand={hasChangesToLand}
         completing={completing}
         landedRevision={landedRevision}
         targetBranch={targetBranch}

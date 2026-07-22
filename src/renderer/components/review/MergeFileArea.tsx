@@ -8,6 +8,9 @@ export interface MergeFileAreaProps {
   readonly targetBranch: string;
   readonly sourceBranch: string;
   readonly landedRevision: string | null;
+  // Whether the branch has commits the target lacks. When there are no rows to
+  // show, this decides between "ready to land" and "nothing to merge".
+  readonly hasChangesToLand: boolean;
   readonly mergedFiles: readonly MergeFileState[];
   readonly conflictFiles: readonly MergeFileState[];
   readonly bothSides: Map<string, FileDiffResult>;
@@ -19,7 +22,14 @@ export interface MergeFileAreaProps {
 // the merge completes, the inert auto-merged files list with its guidance note,
 // then a conflict block per unresolved/resolved conflicted file.
 export function MergeFileArea(props: MergeFileAreaProps): ReactElement {
-  const { targetBranch, sourceBranch, landedRevision, mergedFiles, conflictFiles } = props;
+  const {
+    targetBranch,
+    sourceBranch,
+    landedRevision,
+    hasChangesToLand,
+    mergedFiles,
+    conflictFiles,
+  } = props;
 
   return (
     <ScrollArea h='100%' type='auto'>
@@ -59,9 +69,11 @@ export function MergeFileArea(props: MergeFileAreaProps): ReactElement {
           />
         ))}
 
-        {conflictFiles.length === 0 && mergedFiles.length === 0 && (
+        {conflictFiles.length === 0 && mergedFiles.length === 0 && landedRevision === null && (
           <Text size='sm' c='dimmed'>
-            Nothing to merge — the branches are already in sync.
+            {hasChangesToLand
+              ? `No conflicts to resolve — this branch is ahead of ${targetBranch} and is ready to land.`
+              : 'Nothing to merge — the branches are already in sync.'}
           </Text>
         )}
       </Stack>

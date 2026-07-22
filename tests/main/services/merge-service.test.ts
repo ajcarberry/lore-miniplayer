@@ -23,6 +23,8 @@ jest.mock('@lore-vcs/sdk', () => {
       branchMergeResolveTheirs: jest.fn(),
       branchMergeAbort: jest.fn(),
       branchPush: jest.fn(),
+      branchInfo: jest.fn(),
+      revisionHistory: jest.fn(),
     },
   };
 });
@@ -75,6 +77,30 @@ function conflictFileEvent(path: string): MockEvent {
   return { tag: LoreEventTag.BRANCH_MERGE_CONFLICT_FILE, data: { path } };
 }
 
+// Wires branchInfo (branch tip) + revisionHistory (lineage-by-hash) so the
+// service's ahead-of-target computation resolves deterministically. `tips` maps
+// branch name -> tip hash; `lineages` maps tip hash -> newest-first hash list.
+function installAheadSignal(
+  tips: Record<string, string>,
+  lineages: Record<string, string[]>
+): void {
+  mockLore.branchInfo.mockImplementation(
+    (_globals: unknown, args: { branch?: string }) =>
+      fluentMock({
+        events: [{ tag: LoreEventTag.BRANCH_INFO, data: { latest: tips[args.branch ?? ''] ?? '' } }],
+      }) as never
+  );
+  mockLore.revisionHistory.mockImplementation(
+    (_globals: unknown, args: { revision?: string }) =>
+      fluentMock({
+        events: (lineages[args.revision ?? ''] ?? []).map(revision => ({
+          tag: LoreEventTag.REVISION_HISTORY_ENTRY,
+          data: { revision },
+        })),
+      }) as never
+  );
+}
+
 // A LoreFileStatus with the merge-relevant flags, defaulting the rest.
 function fileStatus(path: string, flags: Partial<LoreFileStatus> = {}): LoreFileStatus {
   return {
@@ -110,6 +136,13 @@ describe('MergeService', () => {
       switchBranch: jest.fn(async () => undefined),
       getCurrentRevision: jest.fn(async () => 'merge-rev'),
     } as unknown as jest.Mocked<LoreRepositoryService>;
+    // Default: the source branch is ahead — its lineage carries a commit the
+    // target lacks (the common case). Individual tests override for the
+    // nothing-to-land case.
+    installAheadSignal(
+      { [SOURCE]: 'source-tip', [TARGET]: 'target-tip' },
+      { 'source-tip': ['source-tip', 'base'], 'target-tip': ['base'] }
+    );
     service = new MergeService(mockLog, lore_);
   });
 
@@ -141,7 +174,48 @@ describe('MergeService', () => {
         targetBranch: TARGET,
         files: [{ path: 'auto.txt', state: 'merged' }],
         allResolved: true,
+        hasChangesToLand: true,
       });
+    });
+
+    it('reports the branch is ahead when phase-1 is clean but the branch has commits the target lacks (nothing-to-merge bug)', async () => {
+      // Given: the target has not moved since the branch diverged, so merging it
+      // into the branch is a no-op — no conflicts, no auto-merges — but the
+      // branch still carries a commit the target lacks.
+      mockLore.branchMergeStart.mockReturnValue(fluentMock() as never);
+      lore_.getFileStatus.mockResolvedValue(statusGroup([]));
+      installAheadSignal(
+        { [SOURCE]: 'branch-tip', [TARGET]: 'base' },
+        { 'branch-tip': ['branch-tip', 'base'], base: ['base'] }
+      );
+
+      // When: starting the merge
+      const state = await service.start(startRequest());
+
+      // Then: no rows and no conflicts, yet the merge would land the branch's
+      // commit — so it is NOT "nothing to merge".
+      expect(state.files).toEqual([]);
+      expect(state.allResolved).toBe(true);
+      expect(state.hasChangesToLand).toBe(true);
+    });
+
+    it('reports nothing to land when the branch tip is already on the target', async () => {
+      // Given: a clean phase-1 update AND the branch tip is the target tip —
+      // the branch has never diverged, there is genuinely nothing to merge.
+      mockLore.branchMergeStart.mockReturnValue(fluentMock() as never);
+      lore_.getFileStatus.mockResolvedValue(statusGroup([]));
+      installAheadSignal(
+        { [SOURCE]: 'shared-tip', [TARGET]: 'shared-tip' },
+        { 'shared-tip': ['shared-tip', 'base'] }
+      );
+
+      // When: starting the merge
+      const state = await service.start(startRequest());
+
+      // Then: there is nothing to land
+      expect(state.files).toEqual([]);
+      expect(state.allResolved).toBe(true);
+      expect(state.hasChangesToLand).toBe(false);
     });
 
     it('exposes conflicted files (unresolved) alongside automerged files', async () => {

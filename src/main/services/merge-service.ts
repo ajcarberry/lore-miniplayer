@@ -34,6 +34,12 @@ export class MergeOperationError extends Error {
   }
 }
 
+// How far back each branch's lineage is walked when deciding whether the source
+// branch has revisions the target lacks. Mirrors lore-repository's divergence
+// walk cap: bounded work, and a branch that diverged more than this many
+// revisions back has plenty to land regardless.
+const MERGE_HISTORY_WALK_LENGTH = 100;
+
 // The state retained per in-flight merge so resolve/complete can rebuild the
 // MergeState across IPC calls without re-driving the merge: which branches are
 // involved and the conflicted paths reported by branchMergeStart (the
@@ -43,6 +49,11 @@ interface ActiveMerge {
   readonly sourceBranch: string;
   readonly targetBranch: string;
   readonly conflictPaths: readonly string[];
+  // Whether the source branch has revisions the target lacks — captured once at
+  // start(). Distinguishes a clean phase-1 update with the branch still ahead
+  // ("ready to land") from a branch whose tip is already on the target
+  // ("nothing to merge"). Resolving conflicts never changes this.
+  readonly hasChangesToLand: boolean;
   // Set once the resolved merge is committed on the workspace branch (phase 1
   // of complete()). If a subsequent landing step fails, this lets a retry skip
   // re-committing — the workspace merge-commit is already durable.
@@ -122,7 +133,13 @@ export class MergeService {
       `Failed to start merge of '${targetBranch}' into '${sourceBranch}'`
     );
 
-    const record: ActiveMerge = { sourceBranch, targetBranch, conflictPaths };
+    const hasChangesToLand = await this.sourceHasRevisionsToLand(
+      repositoryPath,
+      sourceBranch,
+      targetBranch
+    );
+
+    const record: ActiveMerge = { sourceBranch, targetBranch, conflictPaths, hasChangesToLand };
     this.activeMerges.set(repositoryPath, record);
     return this.buildMergeState(repositoryPath, record);
   }
@@ -313,7 +330,67 @@ export class MergeService {
       targetBranch: record.targetBranch,
       files,
       allResolved,
+      hasChangesToLand: record.hasChangesToLand,
     };
+  }
+
+  // Whether the source branch has revisions the target lacks — the "would this
+  // merge land anything?" question the file rows can't answer. A clean phase-1
+  // update (branchMergeStart of the target into the branch) produces no rows
+  // when the target hasn't moved since the branch diverged, yet the branch's
+  // own commits still need to land (P1-repro 07); conversely a branch whose tip
+  // is already the target's has genuinely nothing to merge.
+  //
+  // Computed by lineage diff rather than branchDiff: branchDiff is a CONTENT
+  // diff and reports nothing when the target hasn't moved (P1-repro 07), so it
+  // cannot see the branch's commits. Each branch tip comes from branchInfo
+  // (`latest`) and its lineage is walked by revision hash — the `branch` arg of
+  // revisionHistory is a dead end for the non-current target branch (see
+  // branch-graph.ts). Any revision on the source lineage absent from the
+  // target's means the branch is ahead.
+  private async sourceHasRevisionsToLand(
+    repositoryPath: string,
+    sourceBranch: string,
+    targetBranch: string
+  ): Promise<boolean> {
+    const [sourceTip, targetTip] = await Promise.all([
+      this.branchTip(repositoryPath, sourceBranch),
+      this.branchTip(repositoryPath, targetBranch),
+    ]);
+    if (!sourceTip) {
+      return false;
+    }
+    if (sourceTip === targetTip) {
+      return false;
+    }
+    const [sourceLineage, targetLineage] = await Promise.all([
+      this.walkLineage(repositoryPath, sourceTip),
+      targetTip ? this.walkLineage(repositoryPath, targetTip) : Promise.resolve([]),
+    ]);
+    const targetRevisions = new Set(targetLineage);
+    return sourceLineage.some(revision => !targetRevisions.has(revision));
+  }
+
+  // The latest revision hash of a branch (its tip), or '' when unavailable.
+  private async branchTip(repositoryPath: string, branch: string): Promise<string> {
+    const infos = await this.collect(
+      lore.branchInfo({ repositoryPath }, { branch }),
+      LoreEventTag.BRANCH_INFO,
+      (data: LoreEventDataOf<LoreEventTag.BRANCH_INFO>) => data.latest,
+      `Failed to read the tip of branch '${branch}'`
+    );
+    return infos[infos.length - 1] ?? '';
+  }
+
+  // Walk a branch lineage backward from a revision hash (newest-first), returning
+  // the revision hashes, capped at MERGE_HISTORY_WALK_LENGTH.
+  private async walkLineage(repositoryPath: string, revision: string): Promise<string[]> {
+    return this.collect(
+      lore.revisionHistory({ repositoryPath }, { revision, length: MERGE_HISTORY_WALK_LENGTH }),
+      LoreEventTag.REVISION_HISTORY_ENTRY,
+      (data: LoreEventDataOf<LoreEventTag.REVISION_HISTORY_ENTRY>) => data.revision,
+      `Failed to walk revision lineage from '${revision}'`
+    );
   }
 
   private async run(operation: LoreFluentApi, context: string): Promise<void> {

@@ -16,6 +16,49 @@ import type {
   MergeFromParentSchema,
   MergeToParentSchema,
   BranchGraphSchema,
+  WorkspaceSchema,
+  WorkspaceBandSchema,
+  WorkspaceAttentionReasonSchema,
+  WorkspaceAttentionSchema,
+  AgentSessionStatusSchema,
+  AgentSessionStateSchema,
+  AgentTaskStatusSchema,
+  AgentTaskSchema,
+  AgentCommentaryEntrySchema,
+  AgentIntentionSchema,
+  AgentObservabilityPushSchema,
+  FileDiffActionSchema,
+  LineStatsSchema,
+  FileDiffResultSchema,
+  CompareTargetSchema,
+  MergeFileResolutionSchema,
+  MergeFileStateSchema,
+  MergeStateSchema,
+  ReviewWorkflowModeSchema,
+  WorkspaceProvisionRequestSchema,
+  WorkspaceProvisionResponseSchema,
+  WorkspaceListRequestSchema,
+  WorkspaceListResponseSchema,
+  WorkspaceTeardownRequestSchema,
+  WorkspaceTeardownResultSchema,
+  WorkspaceTeardownResponseSchema,
+  WorkspaceMarkActiveRequestSchema,
+  WorkspaceMarkActiveResponseSchema,
+  DiffRequestSchema,
+  DiffResponseSchema,
+  MergeStartRequestSchema,
+  MergeStartResponseSchema,
+  MergeResolveRequestSchema,
+  MergeResolveResponseSchema,
+  MergeAbortRequestSchema,
+  MergeAbortResponseSchema,
+  MergeCompleteRequestSchema,
+  MergeCompleteResponseSchema,
+  LockEntrySchema,
+  LockQueryRequestSchema,
+  LockQueryResponseSchema,
+  LockReleaseRequestSchema,
+  LockReleaseResponseSchema,
 } from './schemas';
 
 export type ThemeMode = 'auto' | 'light' | 'dark';
@@ -97,11 +140,20 @@ export type RepositoryUpdateInput = z.infer<typeof RepositoryUpdateInputSchema>;
 // Lore Sync Options
 export type LoreSyncOptions = z.infer<typeof LoreSyncOptionsSchema>;
 
-// Lore File Status types
+// Lore File Status types. The conflict-state fields mirror the SDK's
+// flagConflict* flags (REPOSITORY_STATUS_FILE). All optional: this packet
+// only publishes the shape — P6 maps the SDK flags at the one existing
+// producer (src/main/services/lore-repository.ts) and makes `conflict`
+// dependable there; until then, absent means "not yet reported."
 export interface LoreFileStatus {
   readonly path: string;
   readonly isUntracked: boolean;
   readonly isStaged: boolean;
+  readonly conflict?: boolean;
+  readonly conflictUnresolved?: boolean;
+  readonly conflictAutomerged?: boolean;
+  readonly conflictMine?: boolean;
+  readonly conflictTheirs?: boolean;
 }
 
 export interface LoreFileStatusGroup {
@@ -122,3 +174,86 @@ export interface PathValidationResult {
   readonly error?: string;
   readonly normalizedPath?: string;
 }
+
+// ---------------------------------------------------------------------------
+// Agentic development: workspace lifecycle, agent observability, diff/merge
+// review, and collaborator signals (Mission Control + Review window).
+// ---------------------------------------------------------------------------
+
+export type Workspace = z.infer<typeof WorkspaceSchema>;
+
+export type WorkspaceBand = z.infer<typeof WorkspaceBandSchema>;
+
+export type WorkspaceAttentionReason = z.infer<typeof WorkspaceAttentionReasonSchema>;
+
+export type WorkspaceAttention = z.infer<typeof WorkspaceAttentionSchema>;
+
+export type AgentSessionStatus = z.infer<typeof AgentSessionStatusSchema>;
+
+export type AgentSessionState = z.infer<typeof AgentSessionStateSchema>;
+
+export type AgentTaskStatus = z.infer<typeof AgentTaskStatusSchema>;
+
+export type AgentTask = z.infer<typeof AgentTaskSchema>;
+
+export type AgentCommentaryEntry = z.infer<typeof AgentCommentaryEntrySchema>;
+
+export type AgentIntention = z.infer<typeof AgentIntentionSchema>;
+
+// Push channel payload (main -> renderer, IPC_CHANNELS.agent.observability).
+export type AgentObservabilityPush = z.infer<typeof AgentObservabilityPushSchema>;
+
+export type FileDiffAction = z.infer<typeof FileDiffActionSchema>;
+
+export type LineStats = z.infer<typeof LineStatsSchema>;
+
+export type FileDiffResult = z.infer<typeof FileDiffResultSchema>;
+
+export type CompareTarget = z.infer<typeof CompareTargetSchema>;
+
+export type MergeFileResolution = z.infer<typeof MergeFileResolutionSchema>;
+
+export type MergeFileState = z.infer<typeof MergeFileStateSchema>;
+
+export type MergeState = z.infer<typeof MergeStateSchema>;
+
+// Which contextual primary action the review window's bottom bar shows.
+export type ReviewWorkflowMode = z.infer<typeof ReviewWorkflowModeSchema>;
+
+// IPC request/response payload types (the `T` inside each channel's
+// `Result<T>`; see IPC_CHANNELS in schemas.ts for the channel names).
+export type WorkspaceProvisionRequest = z.infer<typeof WorkspaceProvisionRequestSchema>;
+export type WorkspaceProvisionResponse = z.infer<typeof WorkspaceProvisionResponseSchema>;
+
+export type WorkspaceListRequest = z.infer<typeof WorkspaceListRequestSchema>;
+export type WorkspaceListResponse = z.infer<typeof WorkspaceListResponseSchema>;
+
+export type WorkspaceTeardownRequest = z.infer<typeof WorkspaceTeardownRequestSchema>;
+export type WorkspaceTeardownResult = z.infer<typeof WorkspaceTeardownResultSchema>;
+export type WorkspaceTeardownResponse = z.infer<typeof WorkspaceTeardownResponseSchema>;
+
+export type WorkspaceMarkActiveRequest = z.infer<typeof WorkspaceMarkActiveRequestSchema>;
+export type WorkspaceMarkActiveResponse = z.infer<typeof WorkspaceMarkActiveResponseSchema>;
+
+export type DiffRequest = z.infer<typeof DiffRequestSchema>;
+export type DiffResponse = z.infer<typeof DiffResponseSchema>;
+
+export type MergeStartRequest = z.infer<typeof MergeStartRequestSchema>;
+export type MergeStartResponse = z.infer<typeof MergeStartResponseSchema>;
+
+export type MergeResolveRequest = z.infer<typeof MergeResolveRequestSchema>;
+export type MergeResolveResponse = z.infer<typeof MergeResolveResponseSchema>;
+
+export type MergeAbortRequest = z.infer<typeof MergeAbortRequestSchema>;
+export type MergeAbortResponse = z.infer<typeof MergeAbortResponseSchema>;
+
+export type MergeCompleteRequest = z.infer<typeof MergeCompleteRequestSchema>;
+export type MergeCompleteResponse = z.infer<typeof MergeCompleteResponseSchema>;
+
+export type LockEntry = z.infer<typeof LockEntrySchema>;
+
+export type LockQueryRequest = z.infer<typeof LockQueryRequestSchema>;
+export type LockQueryResponse = z.infer<typeof LockQueryResponseSchema>;
+
+export type LockReleaseRequest = z.infer<typeof LockReleaseRequestSchema>;
+export type LockReleaseResponse = z.infer<typeof LockReleaseResponseSchema>;

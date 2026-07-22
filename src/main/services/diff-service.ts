@@ -1,3 +1,4 @@
+import * as path from 'node:path';
 import { lore, LoreError } from '@lore-vcs/sdk';
 import type { LoreFluentApi } from '@lore-vcs/sdk';
 import { LoreEventTag, LoreFileAction } from '@lore-vcs/sdk/types/enums';
@@ -155,20 +156,39 @@ export class DiffService {
     }
   }
 
+  // The SDK resolves a relative path arg against the process CWD, NOT
+  // globalArgs.repositoryPath (known gotcha, first hit on fileStage — see
+  // lore-handlers.ts / merge-service.ts). A repo-relative path such as
+  // 'Content/Caves/pass_1.txt' would otherwise become
+  // '<app-cwd>/Content/Caves/pass_1.txt' and fileDiff rejects it as an
+  // invalid path. Every path handed to an SDK op must be repo-absolute.
+  // Idempotent for a path that is already absolute.
+  private toAbsolutePath(repositoryPath: string, filePath: string): string {
+    return path.isAbsolute(filePath) ? filePath : path.join(repositoryPath, filePath);
+  }
+
+  // fileDiff echoes back the (now absolute) path it was queried with, but the
+  // app/UI works only in repo-relative paths — strip the repository prefix on
+  // the way out. Idempotent for a path that is already relative.
+  private toRepoRelativePath(repositoryPath: string, filePath: string): string {
+    return path.isAbsolute(filePath) ? path.relative(repositoryPath, filePath) : filePath;
+  }
+
   private async diffRevisions(
     repositoryPath: string,
     sourceRevision: string,
     targetRevision: string,
     paths?: string[]
   ): Promise<FileDiffResult[]> {
+    const absolutePaths = paths?.map(p => this.toAbsolutePath(repositoryPath, p));
     const raw = await this.collect(
       lore.fileDiff(
         { repositoryPath },
-        { sourceRevision, targetRevision, ...(paths ? { paths } : {}) }
+        { sourceRevision, targetRevision, ...(absolutePaths ? { paths: absolutePaths } : {}) }
       ),
       LoreEventTag.FILE_DIFF,
       (data: LoreEventDataOf<LoreEventTag.FILE_DIFF>) => ({
-        path: data.path,
+        path: this.toRepoRelativePath(repositoryPath, data.path),
         patch: data.patch,
         action: data.action,
       }),

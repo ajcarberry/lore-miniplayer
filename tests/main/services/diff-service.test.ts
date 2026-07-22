@@ -207,11 +207,39 @@ describe('DiffService', () => {
         paths: ['a.txt', 'b.txt'],
       });
 
-      // Then: paths reach the SDK call
+      // Then: the repo-relative paths are absolutized against repositoryPath
+      // before reaching the SDK (the SDK resolves relative path args against
+      // the process CWD, not repositoryPath — see toAbsolutePath)
       expect(mockLore.fileDiff).toHaveBeenCalledWith(
         { repositoryPath: '/repo' },
-        { sourceRevision: 'r1', targetRevision: '', paths: ['a.txt', 'b.txt'] }
+        { sourceRevision: 'r1', targetRevision: '', paths: ['/repo/a.txt', '/repo/b.txt'] }
       );
+    });
+
+    it('strips the repository prefix from an absolute path echoed by fileDiff', async () => {
+      // Given: fileDiff echoes back the repo-ABSOLUTE path it was queried
+      // with (the app/UI works only in repo-relative paths)
+      mockLore.fileDiff.mockReturnValue(
+        fluentMock({
+          events: [
+            fileDiffEvent({
+              path: '/repo/Content/Caves/pass_1.txt',
+              patch: '--- x@1\n+++ x\n@@ -1 +1 @@\n-a\n+b\n',
+              action: LoreFileAction.KEEP,
+            }),
+          ],
+        }) as never
+      );
+
+      // When: comparing
+      const result = await service.compare({
+        repositoryPath: '/repo',
+        source: { kind: 'revision', revision: 'r1' },
+        target: { kind: 'workingTree' },
+      });
+
+      // Then: the result path is repo-relative, not the absolute echo
+      expect(result[0]?.path).toBe('Content/Caves/pass_1.txt');
     });
 
     it('omits the paths key entirely when no filter is given', async () => {
@@ -503,9 +531,11 @@ describe('DiffService', () => {
         { repositoryPath: '/repo' },
         { source: 'main', target: 'feature/x' }
       );
+      // fileDiff is scoped to the changed path, absolutized against the repo
+      // (branchDiff reports repo-relative paths; the SDK needs them absolute)
       expect(mockLore.fileDiff).toHaveBeenCalledWith(
         { repositoryPath: '/repo' },
-        { sourceRevision: 'main-tip', targetRevision: 'feature-tip', paths: ['a.txt'] }
+        { sourceRevision: 'main-tip', targetRevision: 'feature-tip', paths: ['/repo/a.txt'] }
       );
       expect(result).toEqual([
         {
@@ -517,6 +547,70 @@ describe('DiffService', () => {
           lineStats: { added: 1, removed: 1 },
         },
       ]);
+    });
+
+    it('absolutizes a nested repo-relative changed path before fileDiff (branchDiff regression)', async () => {
+      // Given: branchDiff reports a nested repo-relative path — the exact
+      // live-failure case where the SDK prepended the process CWD to
+      // 'Content/Caves/pass_1.txt' and rejected it as an invalid path
+      mockLore.branchInfo.mockImplementation(((_globals: unknown, args: { branch: string }) => {
+        if (args.branch === 'feature/x') {
+          return fluentMock({
+            events: [
+              { tag: LoreEventTag.BRANCH_INFO, data: { parent: 'main-id', latest: 'feature-tip' } },
+            ],
+          });
+        }
+        return fluentMock({
+          events: [{ tag: LoreEventTag.BRANCH_INFO, data: { parent: '', latest: 'main-tip' } }],
+        });
+      }) as never);
+      mockLore.branchList.mockReturnValue(
+        fluentMock({ events: [branchListEvent('main-id', 'main', 'main-tip')] }) as never
+      );
+      mockLore.branchDiff.mockReturnValue(
+        fluentMock({
+          events: [
+            {
+              tag: LoreEventTag.BRANCH_DIFF_CHANGE,
+              data: {
+                change: {
+                  path: 'Content/Caves/pass_1.txt',
+                  action: LoreFileAction.KEEP,
+                  automerged: false,
+                },
+              },
+            },
+          ],
+        }) as never
+      );
+      mockLore.fileDiff.mockReturnValue(
+        fluentMock({
+          events: [
+            fileDiffEvent({
+              path: '/repo/Content/Caves/pass_1.txt',
+              patch: '--- x@1\n+++ x\n@@ -1 +1 @@\n-a\n+b\n',
+              action: LoreFileAction.KEEP,
+            }),
+          ],
+        }) as never
+      );
+
+      // When: diffing the branch against its parent
+      const result = await service.branchVsParent('/repo', 'feature/x');
+
+      // Then: fileDiff receives the repo-ABSOLUTE path, and the result path
+      // is mapped back to repo-relative for the app/UI
+      expect(mockLore.fileDiff).toHaveBeenCalledWith(
+        { repositoryPath: '/repo' },
+        {
+          sourceRevision: 'main-tip',
+          targetRevision: 'feature-tip',
+          paths: ['/repo/Content/Caves/pass_1.txt'],
+        }
+      );
+      expect(result[0]?.path).toBe('Content/Caves/pass_1.txt');
+      expect(result[0]?.lineStats).toEqual({ added: 1, removed: 1 });
     });
 
     it('returns an empty array without calling branchDiff when the branch has no parent', async () => {

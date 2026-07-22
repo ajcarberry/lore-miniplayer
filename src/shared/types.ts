@@ -35,6 +35,8 @@ import type {
   MergeFileStateSchema,
   MergeStateSchema,
   ReviewWorkflowModeSchema,
+  ReviewCompareSchema,
+  ReviewOpenRequestSchema,
   WorkspaceCardSchema,
   WorkspaceModelSnapshotSchema,
   WorkspaceProvisionRequestSchema,
@@ -221,6 +223,12 @@ export type MergeState = z.infer<typeof MergeStateSchema>;
 
 // Which contextual primary action the review window's bottom bar shows.
 export type ReviewWorkflowMode = z.infer<typeof ReviewWorkflowModeSchema>;
+
+// The review window's compare picker selection and the full open-review
+// request Mission Control emits (P11).
+export type ReviewCompare = z.infer<typeof ReviewCompareSchema>;
+
+export type ReviewOpenRequest = z.infer<typeof ReviewOpenRequestSchema>;
 
 // Mission Control's per-workspace card and the per-repository snapshot the
 // workspace model (P9) composes from Lore signals + agent observability.

@@ -278,6 +278,29 @@ export const MergeStateSchema = z.object({
 // Which contextual primary action the review window's bottom bar shows.
 export const ReviewWorkflowModeSchema = z.enum(['commit', 'merge']);
 
+// The review window's initial compare picker selection (design 2b: a source
+// revision on the left, a target on the right — a later revision or the
+// working tree).
+export const ReviewCompareSchema = z.object({
+  source: CompareTargetSchema,
+  target: CompareTargetSchema,
+});
+
+// The typed "open the review window" request Mission Control's Review / Commit
+// / Merge buttons emit (P11): the workspace checkout to review (its `path` is
+// the repositoryPath every diff/status/stage/commit IPC call targets), the
+// branch under review, the workflow that fixes the bottom bar's one contextual
+// action, and the compare picker's preloaded selection.
+export const ReviewOpenRequestSchema = z.object({
+  workspacePath: z.string().min(1),
+  repositoryId: RepositorySchema.shape.id,
+  branchName: z.string().min(1),
+  revision: z.string(),
+  workflow: ReviewWorkflowModeSchema,
+  compare: ReviewCompareSchema,
+  title: z.string().optional(),
+});
+
 // Mission Control's per-workspace card (design 2a): the workspace, its
 // derived attention (band + reasons), the live agent session (when observed),
 // the transcript-derived intention (when enriched), aggregate +/- line stats
@@ -431,5 +454,15 @@ export const IPC_CHANNELS = {
   workspaceModel: {
     watch: 'workspace:model:watch',
     snapshot: 'workspace:model:snapshot',
+  },
+  // Review window (P11, design 2b/2c). `open` (send) creates or focuses the
+  // per-workspace window with its targets + workflow preloaded;
+  // `requestContext` (invoke) lets the window pull its open request on mount;
+  // `context` is the one-way push re-delivered when an already-open window is
+  // re-targeted (e.g. Merge pressed while its commit review is open).
+  review: {
+    open: 'review:open',
+    requestContext: 'review:requestContext',
+    context: 'review:context',
   },
 } as const;

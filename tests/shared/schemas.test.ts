@@ -21,6 +21,7 @@ import {
   MergeFileStateSchema,
   MergeStateSchema,
   ReviewWorkflowModeSchema,
+  ReviewOpenRequestSchema,
   WorkspaceCardSchema,
   WorkspaceModelSnapshotSchema,
   WorkspaceProvisionRequestSchema,
@@ -938,6 +939,65 @@ describe('ReviewWorkflowModeSchema', () => {
   });
 });
 
+describe('ReviewOpenRequestSchema', () => {
+  const repositoryId = '4f8f2c9e-4b1f-4b7e-9a1a-1c2d3e4f5a6b';
+  const valid = {
+    workspacePath: '/wt/act2-balance',
+    repositoryId,
+    branchName: 'agent/act2-balance',
+    revision: 'r128',
+    workflow: 'commit' as const,
+    compare: {
+      source: { kind: 'revision' as const, revision: 'r128' },
+      target: { kind: 'workingTree' as const },
+    },
+    title: 'Balance pass on Act II encounters',
+  };
+
+  it('accepts a fully-specified commit open request', () => {
+    // When: parsing a request carrying workspace, workflow, and compare picker
+    const result = ReviewOpenRequestSchema.safeParse(valid);
+
+    // Then: parsing succeeds
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a request without the optional title', () => {
+    // Given: a request omitting the human title
+    const { title: _title, ...withoutTitle } = valid;
+
+    // When/Then: parsing still succeeds
+    expect(ReviewOpenRequestSchema.safeParse(withoutTitle).success).toBe(true);
+  });
+
+  it('rejects a request with an empty workspace path', () => {
+    // When: parsing a request whose workspace path is empty
+    const result = ReviewOpenRequestSchema.safeParse({ ...valid, workspacePath: '' });
+
+    // Then: parsing fails
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a request with an unrecognized workflow', () => {
+    // When: parsing a request whose workflow is outside commit/merge
+    const result = ReviewOpenRequestSchema.safeParse({ ...valid, workflow: 'review' });
+
+    // Then: parsing fails
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a request whose compare target is malformed', () => {
+    // When: parsing a request whose compare target lacks its discriminant
+    const result = ReviewOpenRequestSchema.safeParse({
+      ...valid,
+      compare: { source: { kind: 'revision', revision: 'r1' }, target: { kind: 'nope' } },
+    });
+
+    // Then: parsing fails
+    expect(result.success).toBe(false);
+  });
+});
+
 describe('Workspace IPC request/response schemas', () => {
   const repositoryId = '4f8f2c9e-4b1f-4b7e-9a1a-1c2d3e4f5a6b';
 
@@ -1251,6 +1311,7 @@ describe('IPC_CHANNELS', () => {
       ...Object.values(IPC_CHANNELS.merge),
       ...Object.values(IPC_CHANNELS.locks),
       ...Object.values(IPC_CHANNELS.agent),
+      ...Object.values(IPC_CHANNELS.review),
     ];
 
     // Then: every name is a non-empty string and no two collide

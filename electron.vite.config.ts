@@ -47,7 +47,9 @@ export default defineConfig({
           index: resolve(__dirname, 'index.html'),
           // Mission Control (P10) is a second BrowserWindow with its own
           // renderer entry point.
-          missionControl: resolve(__dirname, 'mission-control.html')
+          missionControl: resolve(__dirname, 'mission-control.html'),
+          // Review window (P11) is a third BrowserWindow with its own entry.
+          review: resolve(__dirname, 'review.html')
         }
       }
     },

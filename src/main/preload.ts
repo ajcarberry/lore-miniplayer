@@ -31,6 +31,7 @@ import type {
   MergeAbortResponse,
   MergeCompleteRequest,
   MergeCompleteResponse,
+  ReviewOpenRequest,
   WorkspaceModelSnapshot,
   LockQueryRequest,
   LockQueryResponse,
@@ -289,6 +290,30 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return ipcRenderer.invoke(IPC_CHANNELS.diff.compare, request) as Promise<
         Result<DiffResponse>
       >;
+    },
+  },
+  // Review window (P11, design 2b/2c). `open` creates or re-targets the
+  // per-workspace secondary window with its workflow + compare preloaded;
+  // `requestContext` lets the window pull its open request on mount; `onContext`
+  // subscribes to re-targets of an already-open window (payload crosses the
+  // bridge as unknown, Zod-validated in the renderer before use).
+  review: {
+    open: (request: ReviewOpenRequest): void => {
+      ipcRenderer.send(IPC_CHANNELS.review.open, request);
+    },
+    requestContext: async (): Promise<Result<ReviewOpenRequest>> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.review.requestContext) as Promise<
+        Result<ReviewOpenRequest>
+      >;
+    },
+    onContext: (callback: (request: unknown) => void): (() => void) => {
+      const listener = (_event: unknown, payload: unknown): void => {
+        callback(payload);
+      };
+      ipcRenderer.on(IPC_CHANNELS.review.context, listener);
+      return (): void => {
+        ipcRenderer.removeListener(IPC_CHANNELS.review.context, listener);
+      };
     },
   },
   // The review window's merge workflow (design 2c): start a branch→main merge,

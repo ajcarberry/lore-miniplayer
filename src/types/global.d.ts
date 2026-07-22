@@ -29,6 +29,7 @@ import type {
   MergeAbortResponse,
   MergeCompleteRequest,
   MergeCompleteResponse,
+  ReviewOpenRequest,
   WorkspaceModelSnapshot,
   LockQueryRequest,
   LockQueryResponse,
@@ -120,6 +121,15 @@ declare global {
       };
       diff: {
         compare: (request: DiffRequest) => Promise<Result<DiffResponse>>;
+      };
+      // Review window (P11, design 2b/2c). open sends the open request to
+      // main; requestContext pulls the current window's request on mount;
+      // onContext subscribes to re-targets (payloads validated in the
+      // renderer).
+      review: {
+        open: (request: ReviewOpenRequest) => void;
+        requestContext: () => Promise<Result<ReviewOpenRequest>>;
+        onContext: (callback: (request: unknown) => void) => () => void;
       };
       // The review window's merge workflow (design 2c, P13).
       merge: {

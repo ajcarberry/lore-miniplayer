@@ -6,6 +6,7 @@ import {
   attachFocusDimming,
   registerMissionControlWindow,
   getMissionControlWindow,
+  registerReviewWindow,
 } from './ipc/window-handlers';
 import { RepositoryService } from './services/repository';
 import { initializeLoreSdk, shutdownLoreSdk } from './services/lore-sdk';
@@ -252,6 +253,15 @@ app.whenReady().then(async () => {
     ...(missionControlDevServerUrl ? { devServerUrl: missionControlDevServerUrl } : {}),
     harden: win => hardenWebContents(win.webContents, log, missionControlDevServerUrl),
     model: workspaceModel,
+  });
+  // Review window (P11, design 2b/2c). Opened per workspace from Mission
+  // Control's Review / Commit / Merge actions with its targets + workflow
+  // preloaded; same chrome and security wiring as Mission Control.
+  registerReviewWindow(log, {
+    preloadPath: path.join(moduleDir, '../preload/preload.js'),
+    rendererDir: path.join(moduleDir, '../renderer'),
+    ...(missionControlDevServerUrl ? { devServerUrl: missionControlDevServerUrl } : {}),
+    harden: win => hardenWebContents(win.webContents, log, missionControlDevServerUrl),
   });
   workspaceModel.on('snapshot', snapshot => {
     const win = getMissionControlWindow();

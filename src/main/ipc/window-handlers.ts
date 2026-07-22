@@ -1,4 +1,5 @@
 import { ipcMain, BrowserWindow, screen } from 'electron';
+import type { IpcMainInvokeEvent } from 'electron';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { spawn } from 'node:child_process';
@@ -9,9 +10,9 @@ import {
   computeExpandedBounds,
 } from '../../shared/window-position';
 import type { Bounds, ExpandAnchor } from '../../shared/window-position';
-import { IPC_CHANNELS } from '../../shared/schemas';
-import type { WorkspaceModelSnapshot } from '../../shared/types';
-import { handleResult } from './result-helpers';
+import { IPC_CHANNELS, ReviewOpenRequestSchema } from '../../shared/schemas';
+import type { Result, ReviewOpenRequest, WorkspaceModelSnapshot } from '../../shared/types';
+import { failure, handleResult, success } from './result-helpers';
 import {
   MissionControlOpenArgsSchema,
   WindowNoticeActiveSchema,
@@ -340,6 +341,108 @@ export function registerMissionControlWindow(
     repositoryId => {
       deps.model.watch(repositoryId);
       return deps.model.snapshot(repositoryId);
+    }
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Review window (P11, design 2b/2c): a secondary, per-workspace window opened
+// from Mission Control's Review / Commit / Merge actions with its targets and
+// workflow preloaded. Mirrors the Mission Control window's chrome and security
+// wiring; one instance per workspace checkout (keyed by its path).
+// ---------------------------------------------------------------------------
+
+export interface ReviewWindowDeps {
+  readonly preloadPath: string;
+  readonly rendererDir: string;
+  readonly devServerUrl?: string;
+  // Security wiring stays with the caller (index.ts owns the logger + dev URL),
+  // applied to every window this factory creates, per security.ts.
+  readonly harden: (win: BrowserWindow) => void;
+}
+
+// Design 2b content is 1180px wide; the window adds chrome padding.
+const REVIEW_WINDOW_SIZE = { width: 1220, height: 840 } as const;
+
+// One review window per workspace checkout; module-scoped so re-opening the
+// same workspace focuses/re-targets rather than duplicating, and so the open
+// request can be handed back to the window on mount (requestContext).
+const reviewWindows = new Map<string, BrowserWindow>();
+const reviewRequests = new WeakMap<BrowserWindow, ReviewOpenRequest>();
+
+export function getReviewWindow(workspacePath: string): BrowserWindow | null {
+  const win = reviewWindows.get(workspacePath);
+  return win && !win.isDestroyed() ? win : null;
+}
+
+export function registerReviewWindow(log: MainLogger, deps: ReviewWindowDeps): void {
+  ipcMain.on(IPC_CHANNELS.review.open, (_event, rawRequest: unknown): void => {
+    const parsed = ReviewOpenRequestSchema.safeParse(rawRequest);
+    if (!parsed.success) {
+      log.error('Invalid review:open payload', {
+        error: parsed.error,
+        rawRequest,
+        operation: IPC_CHANNELS.review.open,
+      });
+      return;
+    }
+    const request = parsed.data;
+
+    // Already open for this workspace: re-target the window's workflow/compare
+    // and focus, rather than opening a duplicate (packet: one per workspace).
+    const existing = reviewWindows.get(request.workspacePath);
+    if (existing && !existing.isDestroyed()) {
+      reviewRequests.set(existing, request);
+      existing.webContents.send(IPC_CHANNELS.review.context, request);
+      existing.focus();
+      return;
+    }
+
+    const win = new BrowserWindow({
+      width: REVIEW_WINDOW_SIZE.width,
+      height: REVIEW_WINDOW_SIZE.height,
+      frame: false,
+      title: `Review — ${request.title ?? request.branchName}`,
+      backgroundColor: '#f7f2e7',
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        sandbox: true,
+        webSecurity: true,
+        allowRunningInsecureContent: false,
+        preload: deps.preloadPath,
+      },
+    });
+    deps.harden(win);
+    reviewRequests.set(win, request);
+    reviewWindows.set(request.workspacePath, win);
+
+    if (deps.devServerUrl !== undefined) {
+      void win.loadURL(`${deps.devServerUrl}/review.html`);
+    } else {
+      void win.loadFile(path.join(deps.rendererDir, 'review.html'));
+    }
+
+    win.on('closed', () => {
+      reviewWindows.delete(request.workspacePath);
+    });
+  });
+
+  // The review renderer pulls its open request on mount. The sender's
+  // webContents identifies which window (and thus which stored request) is
+  // asking, so no workspace id crosses the query string.
+  ipcMain.handle(
+    IPC_CHANNELS.review.requestContext,
+    (event: IpcMainInvokeEvent): Result<ReviewOpenRequest> => {
+      for (const win of reviewWindows.values()) {
+        if (!win.isDestroyed() && win.webContents === event.sender) {
+          const request = reviewRequests.get(win);
+          if (request) {
+            return success(request);
+          }
+        }
+      }
+      return failure('No review context for this window');
     }
   );
 }

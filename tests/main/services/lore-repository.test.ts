@@ -32,6 +32,8 @@ jest.mock('@lore-vcs/sdk', () => {
       fileUnstage: jest.fn(),
       notificationSubscribe: jest.fn(),
       notificationUnsubscribe: jest.fn(),
+      authUserInfo: jest.fn(),
+      authLocalUserInfo: jest.fn(),
     },
   };
 });
@@ -1370,7 +1372,7 @@ describe('LoreRepositoryService notification subscriptions', () => {
     });
   }
 
-  it('emits a notification when a branch-pushed event arrives after subscribe resolved', async () => {
+  it('emits a notification carrying userId when a branch-pushed event arrives after subscribe resolved', async () => {
     // Given: a subscription whose SDK call resolves immediately
     const chain = fluentMock({
       events: [{ tag: LoreEventTag.NOTIFICATION_SUBSCRIBED, data: { repository: 'repo-id' } }],
@@ -1390,8 +1392,9 @@ describe('LoreRepositoryService notification subscriptions', () => {
       userId: 'user',
     });
 
-    // Then: the service surfaces it with the repository path and kind
-    expect(received).toEqual([{ repositoryPath: '/repos/a', kind: 'branchPushed' }]);
+    // Then: the pushing user's id is no longer discarded (P1 finding c —
+    // attribution ships on this userId)
+    expect(received).toEqual([{ repositoryPath: '/repos/a', kind: 'branchPushed', userId: 'user' }]);
   });
 
   it('maps branch-created and branch-deleted events to their kinds', async () => {
@@ -1408,6 +1411,66 @@ describe('LoreRepositoryService notification subscriptions', () => {
 
     // Then: both kinds come through in order
     expect(kinds).toEqual(['branchCreated', 'branchDeleted']);
+  });
+
+  it('maps resource-locked and resource-unlocked events with their userId/branch/paths', async () => {
+    // Given: an active subscription
+    const chain = fluentMock();
+    mockLore.notificationSubscribe.mockReturnValue(chain as never);
+    const received: unknown[] = [];
+    service.on('notification', payload => received.push(payload));
+    await service.subscribeNotifications('/repos/a');
+
+    // When: lock and unlock notifications arrive
+    fireOn(chain, LoreEventTag.NOTIFICATION_RESOURCE_LOCKED, {
+      userId: 'user-1',
+      branch: 'main',
+      paths: ['a.txt', 'b.txt'],
+    });
+    fireOn(chain, LoreEventTag.NOTIFICATION_RESOURCE_UNLOCKED, {
+      userId: 'user-1',
+      branch: 'main',
+      paths: ['a.txt'],
+    });
+
+    // Then: both carry their full payload
+    expect(received).toEqual([
+      {
+        repositoryPath: '/repos/a',
+        kind: 'resourceLocked',
+        userId: 'user-1',
+        branch: 'main',
+        paths: ['a.txt', 'b.txt'],
+      },
+      {
+        repositoryPath: '/repos/a',
+        kind: 'resourceUnlocked',
+        userId: 'user-1',
+        branch: 'main',
+        paths: ['a.txt'],
+      },
+    ]);
+  });
+
+  it('maps a resource-locked event with an empty paths array', async () => {
+    // Given: an active subscription
+    const chain = fluentMock();
+    mockLore.notificationSubscribe.mockReturnValue(chain as never);
+    const received: unknown[] = [];
+    service.on('notification', payload => received.push(payload));
+    await service.subscribeNotifications('/repos/a');
+
+    // When: a lock notification arrives with no paths
+    fireOn(chain, LoreEventTag.NOTIFICATION_RESOURCE_LOCKED, {
+      userId: 'user-1',
+      branch: 'main',
+      paths: [],
+    });
+
+    // Then: the empty array is preserved, not dropped or defaulted away
+    expect(received).toEqual([
+      { repositoryPath: '/repos/a', kind: 'resourceLocked', userId: 'user-1', branch: 'main', paths: [] },
+    ]);
   });
 
   it('subscribes a repository path only once', async () => {
@@ -1461,6 +1524,126 @@ describe('LoreRepositoryService notification subscriptions', () => {
     mockLore.notificationSubscribe.mockReturnValue(fluentMock() as never);
     await service.subscribeNotifications('/repos/a');
     expect(mockLore.notificationSubscribe).toHaveBeenCalledTimes(2);
+  });
+});
+
+// P1 finding c: authUserInfo/authLocalUserInfo are the only identity
+// sources, and both fail offline ("No auth endpoint available"). Name
+// resolution must be strictly best-effort: never throw, cache a success,
+// and fall back to the raw userId when both attempts fail.
+describe('LoreRepositoryService resolveUserName', () => {
+  let service: LoreRepositoryService;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new LoreRepositoryService();
+  });
+
+  function authInfoEvent(id: string, name: string): MockEvent {
+    return { tag: LoreEventTag.AUTH_USER_INFO, data: { id, name } };
+  }
+
+  it('resolves via authUserInfo (remote hit) without falling back to authLocalUserInfo', async () => {
+    // Given: authUserInfo resolves the user
+    mockLore.authUserInfo.mockReturnValue(
+      fluentMock({ events: [authInfoEvent('user-1', 'Mara Voss')] }) as never
+    );
+
+    // When: resolving the name
+    const name = await service.resolveUserName('/repos/a', 'user-1');
+
+    // Then: the remote name is used and the local fallback is never tried
+    expect(name).toBe('Mara Voss');
+    expect(mockLore.authUserInfo).toHaveBeenCalledWith(
+      { repositoryPath: '/repos/a' },
+      { userIds: ['user-1'] }
+    );
+    expect(mockLore.authLocalUserInfo).not.toHaveBeenCalled();
+  });
+
+  it('falls back to authLocalUserInfo when authUserInfo throws (offline)', async () => {
+    // Given: authUserInfo fails offline, authLocalUserInfo resolves locally
+    mockLore.authUserInfo.mockReturnValue(
+      fluentMock({ error: loreError(6, 'No auth endpoint available') }) as never
+    );
+    mockLore.authLocalUserInfo.mockReturnValue(
+      fluentMock({ events: [authInfoEvent('user-1', 'Mara Voss')] }) as never
+    );
+
+    // When: resolving the name
+    const name = await service.resolveUserName('/repos/a', 'user-1');
+
+    // Then: the local fallback provides the name
+    expect(name).toBe('Mara Voss');
+    expect(mockLore.authLocalUserInfo).toHaveBeenCalledWith(
+      { repositoryPath: '/repos/a' },
+      { userIds: ['user-1'] }
+    );
+  });
+
+  it('falls back to authLocalUserInfo when authUserInfo resolves with no matching entry', async () => {
+    // Given: authUserInfo succeeds but streams nothing for this user
+    mockLore.authUserInfo.mockReturnValue(fluentMock() as never);
+    mockLore.authLocalUserInfo.mockReturnValue(
+      fluentMock({ events: [authInfoEvent('user-1', 'Mara Voss')] }) as never
+    );
+
+    // When: resolving the name
+    const name = await service.resolveUserName('/repos/a', 'user-1');
+
+    // Then: the local fallback provides the name
+    expect(name).toBe('Mara Voss');
+  });
+
+  it('returns the raw userId when both authUserInfo and authLocalUserInfo fail (miss)', async () => {
+    // Given: both identity sources fail, matching P1 finding c offline
+    mockLore.authUserInfo.mockReturnValue(
+      fluentMock({ error: loreError(6, 'No auth endpoint available') }) as never
+    );
+    mockLore.authLocalUserInfo.mockReturnValue(
+      fluentMock({ error: loreError(6, 'No auth endpoint available') }) as never
+    );
+
+    // When: resolving the name
+    const name = await service.resolveUserName('/repos/a', 'user-1');
+
+    // Then: the notification is never dropped — the raw id passes through
+    expect(name).toBe('user-1');
+  });
+
+  it('caches a resolved name and skips the SDK on a repeated lookup', async () => {
+    // Given: authUserInfo resolves once
+    mockLore.authUserInfo.mockReturnValue(
+      fluentMock({ events: [authInfoEvent('user-1', 'Mara Voss')] }) as never
+    );
+
+    // When: resolving the same user twice
+    const first = await service.resolveUserName('/repos/a', 'user-1');
+    const second = await service.resolveUserName('/repos/a', 'user-1');
+
+    // Then: both calls return the cached name, and the SDK is hit once
+    expect(first).toBe('Mara Voss');
+    expect(second).toBe('Mara Voss');
+    expect(mockLore.authUserInfo).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not cache a failed resolution, retrying the SDK on the next lookup', async () => {
+    // Given: both sources fail on the first attempt, then succeed on retry
+    mockLore.authUserInfo
+      .mockReturnValueOnce(fluentMock({ error: loreError(6, 'No auth endpoint available') }) as never)
+      .mockReturnValueOnce(fluentMock({ events: [authInfoEvent('user-1', 'Mara Voss')] }) as never);
+    mockLore.authLocalUserInfo.mockReturnValue(
+      fluentMock({ error: loreError(6, 'No auth endpoint available') }) as never
+    );
+
+    // When: resolving the same user twice
+    const first = await service.resolveUserName('/repos/a', 'user-1');
+    const second = await service.resolveUserName('/repos/a', 'user-1');
+
+    // Then: the first lookup degrades to the raw id, the second recovers
+    expect(first).toBe('user-1');
+    expect(second).toBe('Mara Voss');
+    expect(mockLore.authUserInfo).toHaveBeenCalledTimes(2);
   });
 });
 

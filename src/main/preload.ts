@@ -21,6 +21,10 @@ import type {
   WorkspaceTeardownResponse,
   DiffRequest,
   DiffResponse,
+  LockQueryRequest,
+  LockQueryResponse,
+  LockReleaseRequest,
+  LockReleaseResponse,
 } from '../shared/types';
 
 // Expose window control APIs
@@ -237,6 +241,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     compare: async (request: DiffRequest): Promise<Result<DiffResponse>> => {
       return ipcRenderer.invoke(IPC_CHANNELS.diff.compare, request) as Promise<
         Result<DiffResponse>
+      >;
+    },
+  },
+  // Lock visibility (spec "Supporting signals"): show + release, never
+  // enforce acquisition.
+  locks: {
+    query: async (request: LockQueryRequest): Promise<Result<LockQueryResponse>> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.locks.query, request) as Promise<
+        Result<LockQueryResponse>
+      >;
+    },
+    release: async (request: LockReleaseRequest): Promise<Result<LockReleaseResponse>> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.locks.release, request) as Promise<
+        Result<LockReleaseResponse>
       >;
     },
   },

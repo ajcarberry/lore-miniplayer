@@ -8,6 +8,7 @@ import { initializeLoreSdk, shutdownLoreSdk } from './services/lore-sdk';
 import { LoreRepositoryService } from './services/lore-repository';
 import { WorkspaceService } from './services/workspace-service';
 import { DiffService } from './services/diff-service';
+import { LockService } from './services/lock-service';
 import { loadWindowPosition, saveWindowPosition } from './ipc/config-handlers';
 import { hardenSession, hardenWebContents } from './security';
 import { COLLAPSED_WINDOW_SIZE, resolveRestorePosition } from '../shared/window-position';
@@ -176,7 +177,15 @@ app.whenReady().then(async () => {
   // listener's port + token via workspaceService.setObserverConfig(...).
   const workspaceService = new WorkspaceService(log, repositoryService, loreRepositoryService);
   const diffService = new DiffService();
-  registerIpcHandlers(log, repositoryService, loreRepositoryService, workspaceService, diffService);
+  const lockService = new LockService();
+  registerIpcHandlers(
+    log,
+    repositoryService,
+    loreRepositoryService,
+    workspaceService,
+    diffService,
+    lockService
+  );
 
   // Then initialize the services
   await repositoryService.initialize();

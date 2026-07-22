@@ -74,12 +74,13 @@ export function cloneProgressPercent(count: {
   return Math.max(0, Math.min(100, Math.round(ratio * 100)));
 }
 
-// Push-notification event tags mapped to the kinds the app reacts to;
-// lock/unlock notifications are deliberately absent.
+// Push-notification event tags mapped to the kinds the app reacts to.
 const NOTIFICATION_KIND_BY_TAG: Partial<Record<LoreEventTag, RepositoryNotificationKind>> = {
   [LoreEventTag.NOTIFICATION_BRANCH_PUSHED]: 'branchPushed',
   [LoreEventTag.NOTIFICATION_BRANCH_CREATED]: 'branchCreated',
   [LoreEventTag.NOTIFICATION_BRANCH_DELETED]: 'branchDeleted',
+  [LoreEventTag.NOTIFICATION_RESOURCE_LOCKED]: 'resourceLocked',
+  [LoreEventTag.NOTIFICATION_RESOURCE_UNLOCKED]: 'resourceUnlocked',
 };
 
 export class LoreOperationError extends Error {
@@ -98,6 +99,12 @@ export class LoreRepositoryService extends EventEmitter {
   // against double-subscribing the same repository.
   private readonly notificationSubscriptions = new Set<string>();
 
+  // Resolved display names, keyed by `${repositoryPath}::${userId}`, cached
+  // for the service's lifetime (P1 finding c). Only successful resolutions
+  // are cached; a failure is retried on the next call rather than pinned,
+  // since auth may become available later (e.g. the user signs in).
+  private readonly userNameCache = new Map<string, string>();
+
   // Subscribe to the server's push notifications for a repository. The
   // SDK resolves the subscribe call as soon as the server acknowledges
   // it, then keeps delivering notification events through the same
@@ -115,8 +122,7 @@ export class LoreRepositoryService extends EventEmitter {
         .callback(event => {
           const kind = NOTIFICATION_KIND_BY_TAG[event.tag];
           if (kind) {
-            const notification: RepositoryNotification = { repositoryPath, kind };
-            this.emit('notification', notification);
+            this.emit('notification', this.toNotification(repositoryPath, kind, event));
           }
         })
         .waitAsync();
@@ -124,6 +130,36 @@ export class LoreRepositoryService extends EventEmitter {
       this.notificationSubscriptions.delete(repositoryPath);
       throw this.toOperationError('Failed to subscribe to repository notifications', error);
     }
+  }
+
+  // Builds the RepositoryNotification payload for a recognized event tag.
+  // branchPushed carries the pushing user's id (attribution toast, spec
+  // "Supporting signals"); the lock kinds carry who locked/unlocked which
+  // paths on which branch. branchCreated/branchDeleted carry neither.
+  private toNotification(
+    repositoryPath: string,
+    kind: RepositoryNotificationKind,
+    event: LoreEventFFITyped<LoreEventTag>
+  ): RepositoryNotification {
+    if (event.tag === LoreEventTag.NOTIFICATION_BRANCH_PUSHED) {
+      const { userId } = (
+        event as LoreEventFFITyped<LoreEventTag.NOTIFICATION_BRANCH_PUSHED>
+      ).clone().data;
+      return { repositoryPath, kind, ...(userId ? { userId } : {}) };
+    }
+    if (event.tag === LoreEventTag.NOTIFICATION_RESOURCE_LOCKED) {
+      const { userId, branch, paths } = (
+        event as LoreEventFFITyped<LoreEventTag.NOTIFICATION_RESOURCE_LOCKED>
+      ).clone().data;
+      return { repositoryPath, kind, userId, branch, paths };
+    }
+    if (event.tag === LoreEventTag.NOTIFICATION_RESOURCE_UNLOCKED) {
+      const { userId, branch, paths } = (
+        event as LoreEventFFITyped<LoreEventTag.NOTIFICATION_RESOURCE_UNLOCKED>
+      ).clone().data;
+      return { repositoryPath, kind, userId, branch, paths };
+    }
+    return { repositoryPath, kind };
   }
 
   // Release the notification stream for a repository; a no-op when the
@@ -137,6 +173,58 @@ export class LoreRepositoryService extends EventEmitter {
       'Failed to unsubscribe from repository notifications'
     );
     this.notificationSubscriptions.delete(repositoryPath);
+  }
+
+  // Resolves a userId (as carried on branchPushed/lock notifications) to a
+  // display name for the attribution toast (spec "Supporting signals":
+  // "Mara Voss pushed r128"). Tries authUserInfo (remote) first, then
+  // authLocalUserInfo (decodes a cached local JWT, no server contact) as
+  // fallback; both emit the same AUTH_USER_INFO event shape (P1 finding c).
+  // Never throws: a totally failed resolution (P1 finding c — both calls
+  // throw "No auth endpoint available" offline) returns the raw userId
+  // unchanged so a caller always has something to show.
+  async resolveUserName(repositoryPath: string, userId: string): Promise<string> {
+    const cacheKey = `${repositoryPath}::${userId}`;
+    const cached = this.userNameCache.get(cacheKey);
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    const name =
+      (await this.collectUserName(
+        lore.authUserInfo({ repositoryPath }, { userIds: [userId] }),
+        userId
+      )) ??
+      (await this.collectUserName(
+        lore.authLocalUserInfo({ repositoryPath }, { userIds: [userId] }),
+        userId
+      ));
+
+    if (name) {
+      this.userNameCache.set(cacheKey, name);
+      return name;
+    }
+    return userId;
+  }
+
+  // Collects the AUTH_USER_INFO event matching `userId` from an authUserInfo/
+  // authLocalUserInfo call, swallowing any failure so a lookup that can't
+  // reach an auth endpoint degrades to undefined instead of throwing.
+  private async collectUserName(
+    operation: LoreFluentApi,
+    userId: string
+  ): Promise<string | undefined> {
+    try {
+      const results = await collectEvents(
+        operation,
+        LoreEventTag.AUTH_USER_INFO,
+        (data: LoreEventDataOf<LoreEventTag.AUTH_USER_INFO>) =>
+          data.id === userId && data.name ? data.name : undefined
+      );
+      return results[0];
+    } catch {
+      return undefined;
+    }
   }
 
   // Runs a fluent SDK operation, translating failures into

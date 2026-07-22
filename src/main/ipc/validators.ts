@@ -8,6 +8,8 @@ import {
   WorkspaceListRequestSchema,
   WorkspaceTeardownRequestSchema,
   DiffRequestSchema,
+  LockQueryRequestSchema,
+  LockReleaseRequestSchema,
 } from '../../shared/schemas';
 
 export const ThemeModeSchema = z.enum(['auto', 'light', 'dark']);
@@ -146,3 +148,8 @@ export const WorkspaceTeardownArgsSchema = z.tuple([WorkspaceTeardownRequestSche
 
 // diff:* — the review window's compare picker
 export const DiffCompareArgsSchema = z.tuple([DiffRequestSchema]);
+
+// locks:* — lock visibility (query) and release (spec: show + release,
+// never enforce acquisition)
+export const LockQueryArgsSchema = z.tuple([LockQueryRequestSchema]);
+export const LockReleaseArgsSchema = z.tuple([LockReleaseRequestSchema]);

@@ -19,6 +19,10 @@ import type {
   WorkspaceTeardownResponse,
   DiffRequest,
   DiffResponse,
+  LockQueryRequest,
+  LockQueryResponse,
+  LockReleaseRequest,
+  LockReleaseResponse,
 } from '../shared/types';
 
 declare global {
@@ -96,6 +100,10 @@ declare global {
       };
       diff: {
         compare: (request: DiffRequest) => Promise<Result<DiffResponse>>;
+      };
+      locks: {
+        query: (request: LockQueryRequest) => Promise<Result<LockQueryResponse>>;
+        release: (request: LockReleaseRequest) => Promise<Result<LockReleaseResponse>>;
       };
     };
   }

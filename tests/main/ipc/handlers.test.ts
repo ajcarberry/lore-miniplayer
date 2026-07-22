@@ -40,6 +40,7 @@ import type { RepositoryService } from '../../../src/main/services/repository';
 import type { LoreRepositoryService } from '../../../src/main/services/lore-repository';
 import type { WorkspaceService } from '../../../src/main/services/workspace-service';
 import type { DiffService } from '../../../src/main/services/diff-service';
+import type { LockService } from '../../../src/main/services/lock-service';
 
 const mockRepositoryService = {
   getAll: jest.fn(),
@@ -77,6 +78,11 @@ const mockDiffService = {
   branchVsParent: jest.fn(),
 } as unknown as jest.Mocked<DiffService>;
 
+const mockLockService = {
+  query: jest.fn(),
+  release: jest.fn(),
+} as unknown as jest.Mocked<LockService>;
+
 function invoke(channel: string, ...args: unknown[]): unknown {
   const handler = registeredHandlers.get(channel);
   if (!handler) {
@@ -92,7 +98,8 @@ beforeAll(() => {
     mockRepositoryService,
     mockLoreRepositoryService,
     mockWorkspaceService,
-    mockDiffService
+    mockDiffService,
+    mockLockService
   );
 });
 

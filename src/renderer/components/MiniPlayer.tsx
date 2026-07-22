@@ -1,14 +1,16 @@
 import type { CSSProperties, ReactElement } from 'react';
 import { useCallback, useEffect, useState } from 'react';
-import { Box, Image, Paper, Stack } from '@mantine/core';
-import LogomarkPath from '/Lore_Icon_White_V1.svg';
-import type { LoreSyncOptions, Repository } from '../../shared/types';
+import { Box, Paper, Stack } from '@mantine/core';
+import type { LoreSyncOptions, Repository, RepositoryNotification } from '../../shared/types';
 import { accentStyleVars } from '../../shared/accent';
 import { useServerConnection } from '../hooks/useServerConnection';
 import { useRepositories } from '../hooks/useRepositories';
 import { useBranches } from '../hooks/useBranches';
+import type { BranchesState } from '../hooks/useBranches';
 import { useBranchDivergence } from '../hooks/useBranchDivergence';
+import type { BranchDivergenceState } from '../hooks/useBranchDivergence';
 import { useBranchGraph } from '../hooks/useBranchGraph';
+import type { BranchGraphState } from '../hooks/useBranchGraph';
 import { useRepositoryStatus } from '../hooks/useRepositoryStatus';
 import { useSyncActions } from '../hooks/useSyncActions';
 import { useFileStaging } from '../hooks/useFileStaging';
@@ -16,6 +18,8 @@ import { useWorkingSet } from '../hooks/useWorkingSet';
 import { useExpansion } from '../hooks/useExpansion';
 import { useRepositoryNotifications } from '../hooks/useRepositoryNotifications';
 import { useLocalStateWatch } from '../hooks/useLocalStateWatch';
+import { useAgentAttention } from '../hooks/useAgentAttention';
+import type { AgentAttentionState } from '../hooks/useAgentAttention';
 import { logError } from '../utils/logging';
 import { notifyError } from '../utils/notify';
 import { computeActionSignals } from '../utils/actionSignals';
@@ -25,11 +29,38 @@ import { ConnectPage } from './ConnectPage';
 import { UtilityFooter } from './UtilityFooter';
 import { SyncView } from './SyncView';
 import { PlayerDialogs } from './PlayerDialogs';
+import { AttributionToast } from './AttributionToast';
 
 // Accent vars for the collapsed pill, matching the card's scope. React's
 // CSSProperties has no entry for CSS custom properties, hence the assertion.
 function pillAccent(repo: Repository | null): CSSProperties | undefined {
   return repo ? (accentStyleVars(repo.accentHue) as unknown as CSSProperties) : undefined;
+}
+
+// Reacts to a server push notification: refreshes divergence/graph always,
+// the branch list unless it was just a push, and queues an attribution
+// toast (design 1c) for the kinds that carry one — branchCreated/
+// branchDeleted are excluded so they never occupy the one-at-a-time queue
+// with a toast that can't render (see formatAttributionMessage).
+function handleRepositoryNotification(
+  notification: RepositoryNotification,
+  divergence: BranchDivergenceState,
+  graph: BranchGraphState,
+  branches: BranchesState,
+  agentAttention: AgentAttentionState
+): void {
+  void divergence.refresh();
+  void graph.refresh();
+  if (notification.kind !== 'branchPushed') {
+    void branches.refresh();
+  }
+  if (
+    notification.kind === 'branchPushed' ||
+    notification.kind === 'resourceLocked' ||
+    notification.kind === 'resourceUnlocked'
+  ) {
+    agentAttention.pushToast(notification);
+  }
 }
 
 interface PlayerCardProps {
@@ -49,6 +80,18 @@ interface PlayerCardProps {
   readonly onAddRepo: () => void;
   readonly onEditRepo: (repo: Repository) => void;
   readonly onCollapse: () => void;
+  // Agent-attention chip counts (design 1c) and the Mission Control
+  // launcher, shared by the header chip and the footer's sixth icon.
+  readonly needsYouCount: number;
+  readonly activeCount: number;
+  readonly onOpenMissionControl: () => void;
+  // The conflict row's "conflicts with rN" revision — the branch's current
+  // tip, when known (see WorkingSet's conflictRevisionNumber doc).
+  readonly conflictRevisionNumber: number | undefined;
+  // The queued attribution toast to show at the card's top, already
+  // formatted for the live branch/graph state, or null when none is queued.
+  readonly toast: { readonly id: string; readonly message: string } | null;
+  readonly onDismissToast: () => void;
 }
 
 // The full card surface: title bar, the connect page or sync view, and the
@@ -71,6 +114,12 @@ function PlayerCard({
   onAddRepo,
   onEditRepo,
   onCollapse,
+  needsYouCount,
+  activeCount,
+  onOpenMissionControl,
+  conflictRevisionNumber,
+  toast,
+  onDismissToast,
 }: PlayerCardProps): ReactElement {
   const currentBranchObj = branches.branches.find(branch => branch.isCurrent);
   const needsBranchSwitch =
@@ -95,19 +144,11 @@ function PlayerCard({
       <TitleBar {...(server.isConnected ? { onCollapse } : {})} />
 
       <Stack gap='md' p='xl' style={{ flex: 1, position: 'relative' }}>
-        {/* Background logomark for connected view */}
-        {server.isConnected && (
-          <Box
-            style={{
-              position: 'absolute',
-              top: 16,
-              right: 16,
-              opacity: 0.15,
-              pointerEvents: 'none',
-              zIndex: 0,
-            }}
-          >
-            <Image src={LogomarkPath} alt='Lore' style={{ height: '64px', width: 'auto' }} />
+        {/* Attribution toast (design 1c): overlays the card's top, above
+            everything else, one at a time — see useAttributionToasts. */}
+        {server.isConnected && toast !== null && (
+          <Box style={{ position: 'absolute', top: 8, left: 16, right: 16, zIndex: 2 }}>
+            <AttributionToast key={toast.id} message={toast.message} onDismiss={onDismissToast} />
           </Box>
         )}
 
@@ -134,6 +175,10 @@ function PlayerCard({
                 workingSetOpen={workingSet.workingSetOpen}
                 onToggleWorkingSetOpen={workingSet.toggleWorkingSetOpen}
                 onToggleFile={workingSet.toggleFile}
+                conflictRevisionNumber={conflictRevisionNumber}
+                needsYouCount={needsYouCount}
+                activeCount={activeCount}
+                onOpenMissionControl={onOpenMissionControl}
               />
             </Stack>
           </Box>
@@ -151,6 +196,7 @@ function PlayerCard({
           onRefreshRepos={() => void repos.refresh()}
           serverUrl={server.serverUrl}
           onChangeServer={server.disconnect}
+          onOpenMissionControl={onOpenMissionControl}
         />
       )}
     </Paper>
@@ -168,15 +214,15 @@ export function MiniPlayer(): ReactElement {
     server.isConnected
   );
   const graph = useBranchGraph(repos.selectedRepo, branches.currentBranch, server.isConnected);
-  // Server push notifications replace polling: any push refreshes divergence
-  // and the graph; branch create/delete additionally reloads the branch list.
-  useRepositoryNotifications(repos.selectedRepo, server.isConnected, kind => {
-    void divergence.refresh();
-    void graph.refresh();
-    if (kind !== 'branchPushed') {
-      void branches.refresh();
-    }
-  });
+  const agentAttention = useAgentAttention(
+    repos.selectedRepo?.id ?? null,
+    branches.currentBranch,
+    graph.graph
+  );
+  // Server push notifications replace polling — see handleRepositoryNotification.
+  useRepositoryNotifications(repos.selectedRepo, server.isConnected, notification =>
+    handleRepositoryNotification(notification, divergence, graph, branches, agentAttention)
+  );
   // Catch-all for mutations made outside the app (CLI commit/sync/switch),
   // which the server never announces; a branch switch also means the branch
   // list must reload.
@@ -296,8 +342,9 @@ export function MiniPlayer(): ReactElement {
 
   // Report the sync notice to main: while active, the window skips its
   // unfocused 70% dim so the pill's notice pulse stays visible (see
-  // attachFocusDimming in window-handlers.ts).
-  const noticeActive = server.isConnected && signals.syncNeeded;
+  // attachFocusDimming in window-handlers.ts). An agent workspace needing
+  // you carries the same notice — the whole pill breathes for either.
+  const noticeActive = server.isConnected && (signals.syncNeeded || agentAttention.hasAttention);
   useEffect(() => {
     window.electronAPI.window.setNoticeActive(noticeActive);
     return (): void => {
@@ -331,6 +378,7 @@ export function MiniPlayer(): ReactElement {
               onAddRepo={() => setAddRepoModalOpened(true)}
               onEditRepo={setEditingRepo}
               onCollapse={morph.forceCollapse}
+              {...agentAttention}
             />
           </div>
         </div>
@@ -348,6 +396,7 @@ export function MiniPlayer(): ReactElement {
               branchName={branches.currentBranch}
               signals={signals}
               onClose={() => window.electronAPI.window.close()}
+              {...agentAttention}
             />
           </div>
         )}

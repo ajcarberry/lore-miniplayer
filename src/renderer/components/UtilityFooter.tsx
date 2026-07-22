@@ -22,6 +22,7 @@ import {
   IconRefresh,
   IconServer,
   IconSun,
+  IconTarget,
   IconTerminal2,
 } from '@tabler/icons-react';
 import type { Repository, ThemeMode } from '../../shared/types';
@@ -40,6 +41,9 @@ interface UtilityFooterProps {
   readonly onRefreshRepos: () => void;
   readonly serverUrl: string | null;
   readonly onChangeServer: () => void;
+  // Sixth footer icon (design 1c): opens Mission Control for the selected
+  // repository.
+  readonly onOpenMissionControl: () => void;
 }
 
 const THEME_OPTIONS: ReadonlyArray<{
@@ -116,6 +120,7 @@ export function UtilityFooter({
   onRefreshRepos,
   serverUrl,
   onChangeServer,
+  onOpenMissionControl,
 }: UtilityFooterProps): ReactElement {
   const { themeMode, setThemeMode } = useThemeMode();
 
@@ -176,6 +181,19 @@ export function UtilityFooter({
           }
         >
           <IconTerminal2 size={18} stroke={1.5} />
+        </ActionIcon>
+      </Tooltip>
+
+      <Tooltip label='Mission Control'>
+        <ActionIcon
+          variant='subtle'
+          size='lg'
+          className={classes.icon}
+          aria-label='Mission Control'
+          data-disabled={!selectedRepo}
+          onClick={!selectedRepo ? (e): void => e.preventDefault() : onOpenMissionControl}
+        >
+          <IconTarget size={18} stroke={1.5} />
         </ActionIcon>
       </Tooltip>
 

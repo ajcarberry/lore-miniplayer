@@ -23,6 +23,7 @@ interface RenderOptions {
   readonly onEditRepo?: jest.Mock;
   readonly onRefreshRepos?: jest.Mock;
   readonly onChangeServer?: jest.Mock;
+  readonly onOpenMissionControl?: jest.Mock;
 }
 
 function renderFooter(options: RenderOptions = {}): {
@@ -31,12 +32,14 @@ function renderFooter(options: RenderOptions = {}): {
   onEditRepo: jest.Mock;
   onRefreshRepos: jest.Mock;
   onChangeServer: jest.Mock;
+  onOpenMissionControl: jest.Mock;
 } {
   const onSelectRepo = options.onSelectRepo ?? jest.fn();
   const onAddRepo = options.onAddRepo ?? jest.fn();
   const onEditRepo = options.onEditRepo ?? jest.fn();
   const onRefreshRepos = options.onRefreshRepos ?? jest.fn();
   const onChangeServer = options.onChangeServer ?? jest.fn();
+  const onOpenMissionControl = options.onOpenMissionControl ?? jest.fn();
 
   render(
     (
@@ -51,12 +54,20 @@ function renderFooter(options: RenderOptions = {}): {
           onRefreshRepos={onRefreshRepos}
           serverUrl={options.serverUrl ?? 'lores://lore.example.com'}
           onChangeServer={onChangeServer}
+          onOpenMissionControl={onOpenMissionControl}
         />
       </MantineProvider>
     ) as ReactElement
   );
 
-  return { onSelectRepo, onAddRepo, onEditRepo, onRefreshRepos, onChangeServer };
+  return {
+    onSelectRepo,
+    onAddRepo,
+    onEditRepo,
+    onRefreshRepos,
+    onChangeServer,
+    onOpenMissionControl,
+  };
 }
 
 describe('UtilityFooter', () => {
@@ -90,6 +101,18 @@ describe('UtilityFooter', () => {
       // Then: the electron API is never invoked
       expect(api.window.openTerminal).not.toHaveBeenCalled();
     });
+
+    it('should not open Mission Control', async () => {
+      // Given: no selected repository
+      const user = userEvent.setup();
+      const { onOpenMissionControl } = renderFooter({ selectedRepo: null });
+
+      // When: clicking Mission Control
+      await user.click(screen.getByRole('button', { name: 'Mission Control' }));
+
+      // Then: the callback is never invoked
+      expect(onOpenMissionControl).not.toHaveBeenCalled();
+    });
   });
 
   describe('action buttons with a repository selected', () => {
@@ -117,6 +140,18 @@ describe('UtilityFooter', () => {
 
       // Then: the terminal is opened at the repository's local path
       await waitFor(() => expect(api.window.openTerminal).toHaveBeenCalledWith('/tmp/my-repo'));
+    });
+
+    it('should open Mission Control', async () => {
+      // Given: a selected repository
+      const user = userEvent.setup();
+      const { onOpenMissionControl } = renderFooter({ selectedRepo: makeRepository() });
+
+      // When: clicking Mission Control
+      await user.click(screen.getByRole('button', { name: 'Mission Control' }));
+
+      // Then: the callback fires
+      expect(onOpenMissionControl).toHaveBeenCalledTimes(1);
     });
   });
 

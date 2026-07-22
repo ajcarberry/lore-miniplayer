@@ -5,12 +5,33 @@ jest.mock('../../src/renderer/utils/notify', () => ({
 
 import type { ReactElement } from 'react';
 import { MantineProvider } from '@mantine/core';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MiniPlayer } from '../../src/renderer/components/MiniPlayer';
 import { notifyError } from '../../src/renderer/utils/notify';
 import { installMockElectronAPI } from '../mocks/electron-api';
 import { makeRepository } from '../mocks/repository-fixture';
+import type { WorkspaceBand, WorkspaceCard } from '../../src/shared/types';
+
+// A minimal Mission Control workspace card for chip/notice wiring tests —
+// only the fields useMissionControlSnapshot/computeAgentAttention read.
+function missionCard(band: WorkspaceBand, needsYou: boolean): WorkspaceCard {
+  return {
+    workspace: {
+      instanceId: 'inst-1',
+      path: '/tmp/my-repo-wt/agent-1',
+      branchName: 'agent/task',
+      revision: 'r1',
+      stale: false,
+      repositoryId: makeRepository().id,
+    },
+    attention: { band, needsYou, reasons: needsYou ? ['reviewReady'] : [] },
+    fileStats: { added: 0, removed: 0 },
+    changedFileCount: 0,
+    sessionCommits: [],
+    lastEventAt: 0,
+  };
+}
 
 // Popover/Menu open involves a floating-ui position calculation; under heavy
 // parallel test load this occasionally exceeds Jest's default 5s test
@@ -573,13 +594,18 @@ describe('MiniPlayer', () => {
       await screen.findByText('On branch');
       await user.click(screen.getByRole('button', { name: 'Repositories' }));
       const picker = await screen.findByRole('dialog', { hidden: true }, { timeout: 8000 });
-      await user.click(await within(picker).findByRole('button', { name: 'Edit MyRepo', hidden: true }));
+      await user.click(
+        await within(picker).findByRole('button', { name: 'Edit MyRepo', hidden: true })
+      );
       await user.type(await screen.findByLabelText(/Repository Name/), '2');
       await user.click(screen.getByRole('button', { name: 'Save Changes' }));
 
       // Then: the failure is surfaced to the user, not just logged
       await waitFor(() =>
-        expect(notifyError).toHaveBeenCalledWith('Update Repository Failed', 'config store is locked')
+        expect(notifyError).toHaveBeenCalledWith(
+          'Update Repository Failed',
+          'config store is locked'
+        )
       );
     });
 
@@ -598,13 +624,18 @@ describe('MiniPlayer', () => {
       await screen.findByText('On branch');
       await user.click(screen.getByRole('button', { name: 'Repositories' }));
       const picker = await screen.findByRole('dialog', { hidden: true }, { timeout: 8000 });
-      await user.click(await within(picker).findByRole('button', { name: 'Edit MyRepo', hidden: true }));
+      await user.click(
+        await within(picker).findByRole('button', { name: 'Edit MyRepo', hidden: true })
+      );
       await user.click(await screen.findByRole('button', { name: 'Delete Repository' }));
       await user.click(await screen.findByRole('button', { name: 'Remove from Lore' }));
 
       // Then: the failure is surfaced to the user, not just logged
       await waitFor(() =>
-        expect(notifyError).toHaveBeenCalledWith('Delete Repository Failed', 'config store is locked')
+        expect(notifyError).toHaveBeenCalledWith(
+          'Delete Repository Failed',
+          'config store is locked'
+        )
       );
     });
 
@@ -686,6 +717,190 @@ describe('MiniPlayer', () => {
         // Then: the notice is reported inactive and never activated
         await waitFor(() => expect(api.window.setNoticeActive).toHaveBeenCalledWith(false));
         expect(api.window.setNoticeActive).not.toHaveBeenCalledWith(true);
+      });
+
+      it('reports an active notice when an agent workspace needs you, with no other signal', async () => {
+        // Given: an in-sync repository, but a Mission Control snapshot with
+        // one workspace needing attention
+        const repo = makeRepository();
+        (api.repository.list as jest.Mock).mockResolvedValue({ success: true, data: [repo] });
+        (api.lore.repository.listBranches as jest.Mock).mockResolvedValue({
+          success: true,
+          data: [{ name: 'main', isDefault: true, isCurrent: true }],
+        });
+        (api.missionControl.watch as jest.Mock).mockResolvedValue({
+          success: true,
+          data: { repositoryId: repo.id, cards: [missionCard('awaitingReview', true)] },
+        });
+
+        // When: rendering the connected player
+        renderMiniPlayer();
+        await screen.findByText('On branch');
+
+        // Then: the notice reaches main even though sync is not needed
+        await waitFor(() => expect(api.window.setNoticeActive).toHaveBeenLastCalledWith(true));
+      });
+    });
+
+    describe('agent attention chip and Mission Control (design 1b/1c)', () => {
+      it('removes the background watermark logomark', async () => {
+        // Given: the connected view
+        renderMiniPlayer();
+        await screen.findByText('On branch');
+
+        // Then: no bare logomark renders — every remaining "Lore" image is a
+        // themed LoreLogo instance (tagged data-variant); the old watermark
+        // rendered a raw Image with no such tag
+        const bareLogos = screen
+          .getAllByAltText('Lore')
+          .filter(img => !img.hasAttribute('data-variant'));
+        expect(bareLogos).toHaveLength(0);
+      });
+
+      it("shows the pill's and card header's chip from the Mission Control snapshot", async () => {
+        // Given: a repository with one workspace needing attention
+        const repo = makeRepository();
+        (api.repository.list as jest.Mock).mockResolvedValue({ success: true, data: [repo] });
+        (api.missionControl.watch as jest.Mock).mockResolvedValue({
+          success: true,
+          data: { repositoryId: repo.id, cards: [missionCard('awaitingReview', true)] },
+        });
+
+        // When: rendering the connected player
+        renderMiniPlayer();
+        await screen.findByText('On branch');
+
+        // Then: both the pill's and the card header's chip show the count
+        // (each carries its own accessible label, so both are found)
+        await waitFor(() =>
+          expect(
+            screen.getAllByLabelText('1 workspace needs you — open Mission Control')
+          ).toHaveLength(2)
+        );
+      });
+
+      it('opens Mission Control with the selected repository id when a chip is clicked', async () => {
+        // Given: a repository with one workspace needing attention
+        const repo = makeRepository();
+        (api.repository.list as jest.Mock).mockResolvedValue({ success: true, data: [repo] });
+        (api.missionControl.watch as jest.Mock).mockResolvedValue({
+          success: true,
+          data: { repositoryId: repo.id, cards: [missionCard('awaitingReview', true)] },
+        });
+        const user = userEvent.setup();
+
+        // When: rendering and clicking the card header's chip
+        renderMiniPlayer();
+        await screen.findByText('On branch');
+        const chips = await screen.findAllByLabelText(
+          '1 workspace needs you — open Mission Control'
+        );
+        await user.click(chips[0]!);
+
+        // Then: Mission Control opens scoped to the selected repository
+        expect(api.missionControl.open).toHaveBeenCalledWith(repo.id);
+      });
+
+      it("opens Mission Control from the footer's sixth icon", async () => {
+        // Given: a selected repository
+        const repo = makeRepository();
+        (api.repository.list as jest.Mock).mockResolvedValue({ success: true, data: [repo] });
+        const user = userEvent.setup();
+
+        // When: rendering and clicking the footer's Mission Control icon
+        renderMiniPlayer();
+        await screen.findByText('On branch');
+        await user.click(screen.getByRole('button', { name: 'Mission Control' }));
+
+        // Then: Mission Control opens scoped to the selected repository
+        expect(api.missionControl.open).toHaveBeenCalledWith(repo.id);
+      });
+    });
+
+    describe('attribution toast (design 1c)', () => {
+      function fireNotification(payload: unknown): void {
+        const onNotification = api.lore.notifications.onNotification as jest.Mock;
+        const listener = onNotification.mock.calls[0]?.[0] as
+          ((payload: unknown) => void) | undefined;
+        if (!listener) {
+          throw new Error('no notification listener registered');
+        }
+        act(() => listener(payload));
+      }
+
+      it('shows a toast attributing a push by the raw userId', async () => {
+        // Given: a checked-out repository
+        const repo = makeRepository();
+        (api.repository.list as jest.Mock).mockResolvedValue({ success: true, data: [repo] });
+        renderMiniPlayer();
+        await screen.findByText('On branch');
+        await waitFor(() => expect(api.lore.notifications.subscribe).toHaveBeenCalled());
+
+        // When: a branchPushed notification arrives for this repository
+        fireNotification({
+          repositoryPath: '/tmp/my-repo',
+          kind: 'branchPushed',
+          userId: 'mara-voss',
+        });
+
+        // Then: the toast attributes the push to the raw userId (no name
+        // resolution is exposed to the renderer) on the current branch
+        expect(await screen.findByText('mara-voss pushed to main')).toBeInTheDocument();
+      });
+
+      it('dismisses the toast via its ✕ control', async () => {
+        // Given: a toast showing after a push notification
+        const repo = makeRepository();
+        (api.repository.list as jest.Mock).mockResolvedValue({ success: true, data: [repo] });
+        const user = userEvent.setup();
+        renderMiniPlayer();
+        await screen.findByText('On branch');
+        await waitFor(() => expect(api.lore.notifications.subscribe).toHaveBeenCalled());
+        fireNotification({
+          repositoryPath: '/tmp/my-repo',
+          kind: 'branchPushed',
+          userId: 'mara-voss',
+        });
+        await screen.findByText('mara-voss pushed to main');
+
+        // When: clicking the toast's dismiss control
+        await user.click(screen.getByRole('button', { name: 'Dismiss' }));
+
+        // Then: the toast disappears
+        await waitFor(() =>
+          expect(screen.queryByText('mara-voss pushed to main')).not.toBeInTheDocument()
+        );
+      });
+
+      it('queues a second toast behind the first, showing it after dismiss', async () => {
+        // Given: two notifications arrive back to back
+        const repo = makeRepository();
+        (api.repository.list as jest.Mock).mockResolvedValue({ success: true, data: [repo] });
+        const user = userEvent.setup();
+        renderMiniPlayer();
+        await screen.findByText('On branch');
+        await waitFor(() => expect(api.lore.notifications.subscribe).toHaveBeenCalled());
+        fireNotification({
+          repositoryPath: '/tmp/my-repo',
+          kind: 'branchPushed',
+          userId: 'first-user',
+        });
+        fireNotification({
+          repositoryPath: '/tmp/my-repo',
+          kind: 'resourceLocked',
+          userId: 'second-user',
+          paths: ['file.txt'],
+        });
+        await screen.findByText('first-user pushed to main');
+
+        // Then: only the first toast shows — the second stays queued
+        expect(screen.queryByText('second-user locked file.txt')).not.toBeInTheDocument();
+
+        // When: dismissing the first
+        await user.click(screen.getByRole('button', { name: 'Dismiss' }));
+
+        // Then: the second toast now shows
+        expect(await screen.findByText('second-user locked file.txt')).toBeInTheDocument();
       });
     });
   });

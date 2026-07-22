@@ -219,7 +219,11 @@ function noticeListener(): (event: unknown, rawActive: unknown) => void {
   return call![1] as (event: unknown, rawActive: unknown) => void;
 }
 
-function sendNotice(listener: (event: unknown, rawActive: unknown) => void, win: FakeWindow, rawActive: unknown): void {
+function sendNotice(
+  listener: (event: unknown, rawActive: unknown) => void,
+  win: FakeWindow,
+  rawActive: unknown
+): void {
   (BrowserWindow.fromWebContents as jest.Mock).mockReturnValue(win);
   listener({ sender: {} }, rawActive);
 }

@@ -1,4 +1,9 @@
-import { LORE_ACCENT_HUES, ACCENT_HUE_VALUES, loreAccent, accentStyleVars } from '../../src/shared/accent';
+import {
+  LORE_ACCENT_HUES,
+  ACCENT_HUE_VALUES,
+  loreAccent,
+  accentStyleVars,
+} from '../../src/shared/accent';
 
 describe('LORE_ACCENT_HUES', () => {
   it('should define the four named accent hues', () => {

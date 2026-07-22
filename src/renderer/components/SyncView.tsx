@@ -156,6 +156,12 @@ export interface SyncViewProps {
   readonly workingSetOpen: boolean;
   readonly onToggleWorkingSetOpen: () => void;
   readonly onToggleFile: (path: string) => void;
+  // Working-set conflict rows (design 1c) — see WorkingSet's doc.
+  readonly conflictRevisionNumber: number | undefined;
+  // Header agent-attention chip (design 1c) — mirrors the pill's chip.
+  readonly needsYouCount: number;
+  readonly activeCount: number;
+  readonly onOpenMissionControl: () => void;
 }
 
 // The sync view: repository picker, the branch-switcher-anchored header, and
@@ -179,6 +185,10 @@ export function SyncView({
   workingSetOpen,
   onToggleWorkingSetOpen,
   onToggleFile,
+  conflictRevisionNumber,
+  needsYouCount,
+  activeCount,
+  onOpenMissionControl,
 }: SyncViewProps): ReactElement {
   const branchGraph = graph.graph;
   const revisions = branchGraph.branch.revisions;
@@ -226,6 +236,9 @@ export function SyncView({
             repository={repos.selectedRepo}
             branchName={branches.currentBranch}
             onOpenSwitcher={onOpenSwitcher}
+            needsYouCount={needsYouCount}
+            activeCount={activeCount}
+            onOpenMissionControl={onOpenMissionControl}
           />
         )}
       </BranchSwitcher>
@@ -236,6 +249,7 @@ export function SyncView({
         onToggleOpen={onToggleWorkingSetOpen}
         onToggleFile={onToggleFile}
         isLoading={fileStaging.isLoadingFiles}
+        {...(conflictRevisionNumber !== undefined ? { conflictRevisionNumber } : {})}
       />
       {!showClone && (
         <HistorySection

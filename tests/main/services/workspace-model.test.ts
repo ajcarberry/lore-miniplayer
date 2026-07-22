@@ -120,7 +120,9 @@ class FakeObserver extends EventEmitter {
 }
 
 class FakeLore extends EventEmitter {
-  getFileStatus = jest.fn(async (_repositoryPath: string): Promise<LoreFileStatusGroup> => CLEAN_STATUS);
+  getFileStatus = jest.fn(
+    async (_repositoryPath: string): Promise<LoreFileStatusGroup> => CLEAN_STATUS
+  );
   getBranchDivergence = jest.fn(async (): Promise<BranchDivergence> => IN_SYNC);
   getBranchGraph = jest.fn(async (): Promise<BranchGraph> => emptyGraph());
 }
@@ -134,10 +136,7 @@ interface Harness {
   branchVsParent: jest.Mock<Promise<FileDiffResult[]>, [string, string]>;
 }
 
-function makeHarness(
-  workspaces: Workspace[],
-  options: { refreshMs?: number } = {}
-): Harness {
+function makeHarness(workspaces: Workspace[], options: { refreshMs?: number } = {}): Harness {
   const observer = new FakeObserver();
   const lore = new FakeLore();
   const listWorkspaces = jest.fn<Promise<Workspace[]>, [string]>(async () => workspaces);
@@ -199,9 +198,7 @@ describe('deriveAttention — banding matrix', () => {
   });
 
   it('stopped agent with uncommitted work → awaitingReview', () => {
-    const attention = deriveAttention(
-      baseSignals({ sessionStatus: 'stopped', uncommitted: true })
-    );
+    const attention = deriveAttention(baseSignals({ sessionStatus: 'stopped', uncommitted: true }));
     expect(attention.band).toBe('awaitingReview');
     expect(attention.reasons).toEqual(['reviewReady', 'uncommitted']);
   });
@@ -251,9 +248,7 @@ describe('deriveAttention — banding matrix', () => {
   });
 
   it('active session overrides a stale mark → inProgress', () => {
-    const attention = deriveAttention(
-      baseSignals({ sessionStatus: 'active', markedActive: true })
-    );
+    const attention = deriveAttention(baseSignals({ sessionStatus: 'active', markedActive: true }));
     expect(attention.band).toBe('inProgress');
   });
 });
@@ -311,9 +306,21 @@ describe('WorkspaceModelService.snapshot — card data', () => {
   it('aggregates +/- line stats and counts changed files from the branch diff', async () => {
     const { model, branchVsParent } = makeHarness([workspace()]);
     branchVsParent.mockResolvedValueOnce([
-      { path: 'a.ts', action: 'modified', binary: false, truncated: false, lineStats: { added: 5, removed: 2 } },
+      {
+        path: 'a.ts',
+        action: 'modified',
+        binary: false,
+        truncated: false,
+        lineStats: { added: 5, removed: 2 },
+      },
       { path: 'b.png', action: 'added', binary: true, truncated: false },
-      { path: 'c.ts', action: 'added', binary: false, truncated: false, lineStats: { added: 10, removed: 0 } },
+      {
+        path: 'c.ts',
+        action: 'added',
+        binary: false,
+        truncated: false,
+        lineStats: { added: 10, removed: 0 },
+      },
     ]);
 
     const card = onlyCard(await model.snapshot(REPO_ID));
@@ -384,13 +391,25 @@ describe('WorkspaceModelService.snapshot — card data', () => {
   });
 
   it('orders cards: awaiting review, then in progress, then idle', async () => {
-    const awaiting = workspace({ instanceId: 'w-review', path: '/tmp/repo-wt/review', branchName: 'review' });
-    const working = workspace({ instanceId: 'w-work', path: '/tmp/repo-wt/work', branchName: 'work' });
+    const awaiting = workspace({
+      instanceId: 'w-review',
+      path: '/tmp/repo-wt/review',
+      branchName: 'review',
+    });
+    const working = workspace({
+      instanceId: 'w-work',
+      path: '/tmp/repo-wt/work',
+      branchName: 'work',
+    });
     const idle = workspace({ instanceId: 'w-idle', path: '/tmp/repo-wt/idle', branchName: 'idle' });
     const { model, observer, lore } = makeHarness([idle, working, awaiting]);
     observer.sessions = [
       sessionRecord({ sessionId: 's-work', workspacePath: '/tmp/repo-wt/work', status: 'active' }),
-      sessionRecord({ sessionId: 's-rev', workspacePath: '/tmp/repo-wt/review', status: 'stopped' }),
+      sessionRecord({
+        sessionId: 's-rev',
+        workspacePath: '/tmp/repo-wt/review',
+        status: 'stopped',
+      }),
     ];
     lore.getFileStatus.mockImplementation(async (repositoryPath: string) =>
       repositoryPath === '/tmp/repo-wt/review' ? dirtyStatus() : CLEAN_STATUS
@@ -429,12 +448,30 @@ describe('WorkspaceModelService.snapshot — card data', () => {
   });
 
   it('orders within a band: needs-you first, then most-recent activity', async () => {
-    const blocked = workspace({ instanceId: 'w-blocked', path: '/tmp/repo-wt/blocked', branchName: 'blocked' });
-    const working = workspace({ instanceId: 'w-working', path: '/tmp/repo-wt/working', branchName: 'working' });
+    const blocked = workspace({
+      instanceId: 'w-blocked',
+      path: '/tmp/repo-wt/blocked',
+      branchName: 'blocked',
+    });
+    const working = workspace({
+      instanceId: 'w-working',
+      path: '/tmp/repo-wt/working',
+      branchName: 'working',
+    });
     const { model, observer } = makeHarness([working, blocked]);
     observer.sessions = [
-      sessionRecord({ sessionId: 's-block', workspacePath: '/tmp/repo-wt/blocked', status: 'waitingOnUser', lastEventAt: 10 }),
-      sessionRecord({ sessionId: 's-work', workspacePath: '/tmp/repo-wt/working', status: 'active', lastEventAt: 99 }),
+      sessionRecord({
+        sessionId: 's-block',
+        workspacePath: '/tmp/repo-wt/blocked',
+        status: 'waitingOnUser',
+        lastEventAt: 10,
+      }),
+      sessionRecord({
+        sessionId: 's-work',
+        workspacePath: '/tmp/repo-wt/working',
+        status: 'active',
+        lastEventAt: 99,
+      }),
     ];
 
     const cards = (await model.snapshot(REPO_ID)).cards;
@@ -443,8 +480,18 @@ describe('WorkspaceModelService.snapshot — card data', () => {
   });
 
   it('orders two quiet idle workspaces by most-recent activity', async () => {
-    const older = workspace({ instanceId: 'w-old', path: '/tmp/repo-wt/old', branchName: 'old', provisionedAt: '2026-07-22T09:00:00.000Z' });
-    const newer = workspace({ instanceId: 'w-new', path: '/tmp/repo-wt/new', branchName: 'new', provisionedAt: '2026-07-22T11:00:00.000Z' });
+    const older = workspace({
+      instanceId: 'w-old',
+      path: '/tmp/repo-wt/old',
+      branchName: 'old',
+      provisionedAt: '2026-07-22T09:00:00.000Z',
+    });
+    const newer = workspace({
+      instanceId: 'w-new',
+      path: '/tmp/repo-wt/new',
+      branchName: 'new',
+      provisionedAt: '2026-07-22T11:00:00.000Z',
+    });
     const { model } = makeHarness([older, newer]);
 
     const cards = (await model.snapshot(REPO_ID)).cards;
@@ -488,7 +535,9 @@ describe('WorkspaceModelService.markActive', () => {
 
     // A brand-new session starts → the mark is cleared, band follows the live
     // session again.
-    observer.sessions = [sessionRecord({ sessionId: 'sess-new', status: 'active', lastEventAt: 5000 })];
+    observer.sessions = [
+      sessionRecord({ sessionId: 'sess-new', status: 'active', lastEventAt: 5000 }),
+    ];
     card = onlyCard(await model.snapshot(REPO_ID));
     expect(card.attention.band).toBe('inProgress');
   });

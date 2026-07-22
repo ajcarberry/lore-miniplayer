@@ -242,7 +242,11 @@ describe('DiffService', () => {
       mockLore.fileDiff.mockReturnValue(
         fluentMock({
           events: [
-            fileDiffEvent({ path: 'f.txt', patch: '--- f.txt@1\n+++ f.txt\n@@ -1 +1 @@\n-a\n+b\n', action: sdkAction }),
+            fileDiffEvent({
+              path: 'f.txt',
+              patch: '--- f.txt@1\n+++ f.txt\n@@ -1 +1 @@\n-a\n+b\n',
+              action: sdkAction,
+            }),
           ],
         }) as never
       );

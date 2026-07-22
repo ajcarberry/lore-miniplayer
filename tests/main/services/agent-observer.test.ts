@@ -5,10 +5,7 @@
 // hook_event_name, notification_type, transcript_path, cwd, tool_name).
 import * as http from 'node:http';
 import { AgentObserverService } from '../../../src/main/services/agent-observer';
-import {
-  AgentObservabilityPushSchema,
-  AgentSessionStateSchema,
-} from '../../../src/shared/schemas';
+import { AgentObservabilityPushSchema, AgentSessionStateSchema } from '../../../src/shared/schemas';
 import type { AgentObservabilityPush } from '../../../src/shared/types';
 
 const mockLog = { error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn() };
@@ -26,11 +23,7 @@ function nextPush(service: AgentObserverService): Promise<AgentObservabilityPush
 
 // Minimal loopback HTTP client via node:http — jsdom's fetch does not reach a
 // real localhost socket, so the transport is exercised with the core client.
-function post(
-  port: number,
-  requestPath: string,
-  body: string
-): Promise<{ status: number }> {
+function post(port: number, requestPath: string, body: string): Promise<{ status: number }> {
   return new Promise((resolve, reject) => {
     const req = http.request(
       {
@@ -101,14 +94,18 @@ describe('AgentObserverService', () => {
 
   describe('token authentication', () => {
     it('accepts a request with a valid workspace token (200)', async () => {
-      const { status } = await postHook(service, token,
+      const { status } = await postHook(
+        service,
+        token,
         payload({ hook_event_name: 'SessionStart' })
       );
       expect(status).toBe(200);
     });
 
     it('rejects an unknown token with 403 and logs it', async () => {
-      const { status } = await postHook(service, 'deadbeef',
+      const { status } = await postHook(
+        service,
+        'deadbeef',
         payload({ hook_event_name: 'SessionStart' })
       );
       expect(status).toBe(403);
@@ -162,7 +159,9 @@ describe('AgentObserverService', () => {
     it('derives workspacePath from the token, not the payload cwd', async () => {
       const pushed = nextPush(service);
       // cwd deliberately points elsewhere; the token is authoritative.
-      await postHook(service, token,
+      await postHook(
+        service,
+        token,
         payload({ hook_event_name: 'SessionStart', cwd: '/somewhere/else' })
       );
       const push = await pushed;
@@ -211,14 +210,14 @@ describe('AgentObserverService', () => {
     it('retains transcript_path and latest cwd per session', async () => {
       await new Promise<void>(resolve => {
         service.once('push', () => resolve());
-        void postHook(service, token,
+        void postHook(
+          service,
+          token,
           payload({ hook_event_name: 'SessionStart', cwd: WORKSPACE_A })
         );
       });
       const [session] = service.listSessions();
-      expect(session?.transcriptPath).toBe(
-        '/Users/alex/.claude/projects/enc/sess-1.jsonl'
-      );
+      expect(session?.transcriptPath).toBe('/Users/alex/.claude/projects/enc/sess-1.jsonl');
       expect(session?.cwd).toBe(WORKSPACE_A);
       expect(session?.sessionId).toBe('sess-1');
     });
@@ -251,13 +250,21 @@ describe('AgentObserverService', () => {
 
       await new Promise<void>(resolve => {
         service.once('push', () => resolve());
-        void postHook(service, token,
-          JSON.stringify({ session_id: 'sess-a', hook_event_name: 'SessionStart', cwd: WORKSPACE_A })
+        void postHook(
+          service,
+          token,
+          JSON.stringify({
+            session_id: 'sess-a',
+            hook_event_name: 'SessionStart',
+            cwd: WORKSPACE_A,
+          })
         );
       });
       await new Promise<void>(resolve => {
         service.once('push', () => resolve());
-        void postHook(service, tokenB,
+        void postHook(
+          service,
+          tokenB,
           JSON.stringify({
             session_id: 'sess-b',
             hook_event_name: 'Notification',

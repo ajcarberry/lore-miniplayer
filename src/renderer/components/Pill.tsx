@@ -3,14 +3,20 @@ import { ActionIcon, Group, Paper, Stack, Text, Tooltip } from '@mantine/core';
 import { IconGitCommit, IconRefresh, IconUpload, IconX } from '@tabler/icons-react';
 import type { Repository } from '../../shared/types';
 import type { ActionSignals } from '../utils/actionSignals';
+import { AttentionChip } from './AttentionChip';
 import { LoreLogo } from './LoreLogo';
 import { RepoEyebrow } from './RepoEyebrow';
 
-interface PillProps {
+export interface PillProps {
   readonly repository: Repository | null;
   readonly branchName: string;
   readonly signals: ActionSignals;
   readonly onClose: () => void;
+  // Aggregate agent-attention counts (design 1b) and the Mission Control
+  // launcher for the chip — 0/0 renders no chip at all.
+  readonly needsYouCount: number;
+  readonly activeCount: number;
+  readonly onOpenMissionControl: () => void;
 }
 
 // One accent-lit glyph for an active signal, using the same icon the
@@ -69,7 +75,15 @@ function PillSignals({ signals }: { readonly signals: ActionSignals }): ReactEle
 // OS and defeat click-to-expand; dragging is handled manually in useExpansion.
 // The close control stops pointer/click propagation so it never starts a drag
 // or toggles the card.
-export function Pill({ repository, branchName, signals, onClose }: PillProps): ReactElement {
+export function Pill({
+  repository,
+  branchName,
+  signals,
+  onClose,
+  needsYouCount,
+  activeCount,
+  onOpenMissionControl,
+}: PillProps): ReactElement {
   const stopPointer = (event: PointerEvent): void => event.stopPropagation();
   const handleClose = (event: MouseEvent): void => {
     event.stopPropagation();
@@ -79,9 +93,10 @@ export function Pill({ repository, branchName, signals, onClose }: PillProps): R
   return (
     <Paper
       className='morph-pill-bar'
-      // The notice attribute keys the slow attention pulse in morph.css; only
-      // the sync signal pulses — commit/push stay glyph-only.
-      data-notice={signals.syncNeeded ? 'sync' : undefined}
+      // The notice attribute keys the slow attention pulse in morph.css:
+      // an agent workspace needing you wins over a plain sync notice —
+      // either way the whole pill breathes, not just the chip.
+      data-notice={needsYouCount > 0 ? 'attention' : signals.syncNeeded ? 'sync' : undefined}
       radius='xl'
       shadow='md'
       px='lg'
@@ -104,6 +119,11 @@ export function Pill({ repository, branchName, signals, onClose }: PillProps): R
           </Text>
         </Stack>
         <PillSignals signals={signals} />
+        <AttentionChip
+          needsYouCount={needsYouCount}
+          activeCount={activeCount}
+          onOpen={onOpenMissionControl}
+        />
         <ActionIcon
           size='sm'
           variant='subtle'

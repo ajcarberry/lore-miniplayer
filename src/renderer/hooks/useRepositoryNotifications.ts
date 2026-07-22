@@ -1,18 +1,21 @@
 import { useEffect, useRef } from 'react';
-import type { Repository, RepositoryNotificationKind } from '../../shared/types';
+import type { Repository, RepositoryNotification } from '../../shared/types';
 import { RepositoryNotificationSchema } from '../../shared/schemas';
 import { logError } from '../utils/logging';
 
 // Subscribes to the server's push notifications for the selected repository
-// and invokes `onNotification` for each recognized event. Replaces polling:
-// the server tells us when a branch is pushed, created, or deleted, and the
-// consumer refreshes whatever derived state it owns. The subscription follows
-// the selection — switching repositories unsubscribes the old path and
-// subscribes the new one.
+// and invokes `onNotification` with the full validated payload for each
+// recognized event — not just its kind, so consumers can read branchPushed's
+// userId and the lock kinds' userId/branch/paths (design 1c's attribution
+// toast + conflict visibility). Replaces polling: the server tells us when a
+// branch is pushed, created, deleted, or a resource locked/unlocked, and the
+// consumer refreshes whatever derived state it owns. The subscription
+// follows the selection — switching repositories unsubscribes the old path
+// and subscribes the new one.
 export function useRepositoryNotifications(
   selectedRepo: Repository | null,
   isConnected: boolean,
-  onNotification: (kind: RepositoryNotificationKind) => void
+  onNotification: (notification: RepositoryNotification) => void
 ): void {
   // Ref so a new callback identity never tears down the subscription.
   const callbackRef = useRef(onNotification);
@@ -41,7 +44,7 @@ export function useRepositoryNotifications(
       if (!parsed.success || parsed.data.repositoryPath !== localPath) {
         return;
       }
-      callbackRef.current(parsed.data.kind);
+      callbackRef.current(parsed.data);
     });
 
     return (): void => {

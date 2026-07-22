@@ -180,7 +180,14 @@ describe('workspace:list', () => {
   it('forwards the repository id and wraps the workspace array', async () => {
     // Given: the service returns two workspaces
     const workspaces = [
-      { instanceId: 'a', path: '/w/a', branchName: 'x', revision: 'r', stale: false, repositoryId: REPO_ID },
+      {
+        instanceId: 'a',
+        path: '/w/a',
+        branchName: 'x',
+        revision: 'r',
+        stale: false,
+        repositoryId: REPO_ID,
+      },
     ];
     mockWorkspaceService.list.mockResolvedValue(workspaces);
 

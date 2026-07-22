@@ -3,24 +3,37 @@ import { MantineProvider } from '@mantine/core';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { PlayerHeader } from '../../src/renderer/components/PlayerHeader';
-import type { Repository } from '../../src/shared/types';
+import type { PlayerHeaderProps } from '../../src/renderer/components/PlayerHeader';
 import { makeRepository } from '../mocks/repository-fixture';
 
 const repository = makeRepository();
 
 function renderHeader(
-  colorScheme: 'light' | 'dark' = 'light',
-  repo: Repository | null = repository
-): { onOpenSwitcher: jest.Mock; unmount: () => void } {
+  overrides: Partial<PlayerHeaderProps> = {},
+  colorScheme: 'light' | 'dark' = 'light'
+): {
+  onOpenSwitcher: jest.Mock;
+  onOpenMissionControl: jest.Mock;
+} & ReturnType<typeof render> {
   const onOpenSwitcher = jest.fn();
-  const { unmount } = render(
+  const onOpenMissionControl = jest.fn();
+  const props: PlayerHeaderProps = {
+    repository,
+    branchName: 'main',
+    onOpenSwitcher,
+    needsYouCount: 0,
+    activeCount: 0,
+    onOpenMissionControl,
+    ...overrides,
+  };
+  const result = render(
     (
       <MantineProvider defaultColorScheme={colorScheme}>
-        <PlayerHeader repository={repo} branchName='main' onOpenSwitcher={onOpenSwitcher} />
+        <PlayerHeader {...props} />
       </MantineProvider>
     ) as ReactElement
   );
-  return { onOpenSwitcher, unmount };
+  return { ...result, onOpenSwitcher, onOpenMissionControl };
 }
 
 describe('PlayerHeader', () => {
@@ -36,7 +49,7 @@ describe('PlayerHeader', () => {
 
   it('falls back to the on-branch label when no repository is selected', () => {
     // When: rendering without a repository
-    renderHeader('light', null);
+    renderHeader({ repository: null });
 
     // Then: the static label stands in for the missing repo name
     expect(screen.getByText('On branch')).toBeInTheDocument();
@@ -79,16 +92,67 @@ describe('PlayerHeader', () => {
 
   it('renders the white logomark in dark mode and the black logomark in light mode', () => {
     // When: rendering in dark mode
-    const { unmount } = renderHeader('dark');
+    const { unmount } = renderHeader({}, 'dark');
 
     // Then: the white variant is selected
     expect(screen.getByAltText('Lore')).toHaveAttribute('data-variant', 'white');
     unmount();
 
     // When: rendering in light mode
-    renderHeader('light');
+    renderHeader({}, 'light');
 
     // Then: the black variant is selected
     expect(screen.getByAltText('Lore')).toHaveAttribute('data-variant', 'black');
+  });
+
+  it('no longer renders the chevron — the attention chip replaces it (design 1c)', () => {
+    // When: rendering the header with no agent activity
+    const { container } = renderHeader();
+
+    // Then: no chevron icon renders (regression guard for the design's
+    // header cleanup — chevron and watermark removed)
+    expect(container.querySelector('svg.tabler-icon-chevron-down')).not.toBeInTheDocument();
+  });
+
+  describe('agent attention chip (design 1c)', () => {
+    it('renders no chip when no workspace needs you and none are active', () => {
+      // When: both counts are zero
+      renderHeader({ needsYouCount: 0, activeCount: 0 });
+
+      // Then: no attention chip renders
+      expect(screen.queryByText(/need|working/)).not.toBeInTheDocument();
+    });
+
+    it('shows the needs-you count in the header row', () => {
+      // When: one workspace needs the human
+      renderHeader({ needsYouCount: 1, activeCount: 0 });
+
+      // Then: the chip renders with its accessible label
+      expect(
+        screen.getByLabelText('1 workspace needs you — open Mission Control')
+      ).toBeInTheDocument();
+    });
+
+    it('shows the active count when nothing needs you', () => {
+      // When: agents working, nothing needs the human
+      renderHeader({ needsYouCount: 0, activeCount: 4 });
+
+      // Then: the play chip renders with its accessible label
+      expect(screen.getByLabelText('4 agents working, none need you')).toBeInTheDocument();
+    });
+
+    it('opens Mission Control when the chip is clicked, without opening the branch switcher', async () => {
+      // Given: a header with a needs-you chip
+      const user = userEvent.setup();
+      const { onOpenMissionControl, onOpenSwitcher } = renderHeader({ needsYouCount: 1 });
+
+      // When: clicking the chip
+      await user.click(screen.getByLabelText('1 workspace needs you — open Mission Control'));
+
+      // Then: Mission Control opens and the branch switcher never does
+      // (the chip stops propagation, mirroring the pill's close control)
+      expect(onOpenMissionControl).toHaveBeenCalledTimes(1);
+      expect(onOpenSwitcher).not.toHaveBeenCalled();
+    });
   });
 });

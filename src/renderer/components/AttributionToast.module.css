@@ -1,0 +1,32 @@
+/* Draining underline for the card-top attribution toast (design 1c): a
+   filled bar that shrinks from full width to nothing over the toast's
+   lifetime, giving a visual countdown to the auto-dismiss. */
+@keyframes attributionToastDrain {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+.underline {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--acc-line);
+  transform-origin: left;
+  animation-name: attributionToastDrain;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .underline {
+    animation: none;
+    transform: scaleX(0.5);
+  }
+}

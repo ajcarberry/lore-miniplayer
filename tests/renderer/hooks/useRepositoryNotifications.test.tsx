@@ -38,8 +38,48 @@ describe('useRepositoryNotifications', () => {
       registeredListener()({ repositoryPath: '/repos/a', kind: 'branchPushed' });
     });
 
-    // Then: the callback receives the kind
-    expect(onNotification).toHaveBeenCalledWith('branchPushed');
+    // Then: the callback receives the full validated payload, not just the kind
+    expect(onNotification).toHaveBeenCalledWith({
+      repositoryPath: '/repos/a',
+      kind: 'branchPushed',
+    });
+  });
+
+  it('forwards branchPushed userId and lock-kind userId/branch/paths (design 1c attribution)', async () => {
+    // Given: a mounted hook for a connected repo
+    const onNotification = jest.fn();
+    renderHook(() => useRepositoryNotifications(repoA, true, onNotification));
+    await waitFor(() => expect(window.electronAPI.lore.notifications.subscribe).toHaveBeenCalled());
+
+    // When: a push with a userId and a lock with userId/branch/paths arrive
+    act(() => {
+      registeredListener()({
+        repositoryPath: '/repos/a',
+        kind: 'branchPushed',
+        userId: 'mara-voss',
+      });
+      registeredListener()({
+        repositoryPath: '/repos/a',
+        kind: 'resourceLocked',
+        userId: 'rowan',
+        branch: 'feature/act-two',
+        paths: ['levels/act2/pacing.toml'],
+      });
+    });
+
+    // Then: every field reaches the callback, not just the kind
+    expect(onNotification).toHaveBeenNthCalledWith(1, {
+      repositoryPath: '/repos/a',
+      kind: 'branchPushed',
+      userId: 'mara-voss',
+    });
+    expect(onNotification).toHaveBeenNthCalledWith(2, {
+      repositoryPath: '/repos/a',
+      kind: 'resourceLocked',
+      userId: 'rowan',
+      branch: 'feature/act-two',
+      paths: ['levels/act2/pacing.toml'],
+    });
   });
 
   it('ignores notifications for other repositories and malformed payloads', async () => {

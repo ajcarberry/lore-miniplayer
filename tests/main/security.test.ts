@@ -123,8 +123,7 @@ describe('hardenSession', () => {
   it('should deny every permission request', () => {
     // Given: a session with a captured permission handler
     let handler:
-      | ((wc: unknown, permission: string, callback: (granted: boolean) => void) => void)
-      | undefined;
+      ((wc: unknown, permission: string, callback: (granted: boolean) => void) => void) | undefined;
     const fakeSession = {
       setPermissionRequestHandler: jest.fn((h: typeof handler) => {
         handler = h;

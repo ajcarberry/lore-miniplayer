@@ -45,10 +45,18 @@ function installApi(repositories = [makeRepository()]): Api {
   api.repository.list = jest.fn().mockResolvedValue({ success: true, data: repositories });
   api.lore.repository.listBranches = jest
     .fn()
-    .mockResolvedValue({ success: true, data: [{ name: 'main', isDefault: true, isCurrent: true }] });
+    .mockResolvedValue({
+      success: true,
+      data: [{ name: 'main', isDefault: true, isCurrent: true }],
+    });
   api.window.openTerminal = openTerminal;
   Object.assign(api, {
-    missionControl: { open: jest.fn(), close: jest.fn(), watch, onSnapshot: jest.fn(() => jest.fn()) },
+    missionControl: {
+      open: jest.fn(),
+      close: jest.fn(),
+      watch,
+      onSnapshot: jest.fn(() => jest.fn()),
+    },
     workspace: { provision, list: jest.fn(), teardown, markActive },
   });
   return { watch, teardown, provision, markActive, openTerminal };
@@ -110,7 +118,10 @@ describe('MissionControl container', () => {
 
   it('re-watches the model when the scoped repository is switched', async () => {
     const user = userEvent.setup();
-    const api = installApi([makeRepository(), makeRepository({ id: OTHER_REPO_ID, name: 'brackwater' })]);
+    const api = installApi([
+      makeRepository(),
+      makeRepository({ id: OTHER_REPO_ID, name: 'brackwater' }),
+    ]);
     renderContainer();
     await waitFor(() => expect(api.watch).toHaveBeenCalledWith(REPO_ID));
 

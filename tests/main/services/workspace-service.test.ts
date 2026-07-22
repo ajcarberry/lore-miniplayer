@@ -60,7 +60,10 @@ function fluentMock({ events = [], error }: { events?: MockEvent[]; error?: Erro
     }),
     waitAsync: jest.fn(async (): Promise<number> => {
       for (const event of events) {
-        chain.registeredCallback?.({ ...event, clone: () => ({ tag: event.tag, data: event.data }) });
+        chain.registeredCallback?.({
+          ...event,
+          clone: () => ({ tag: event.tag, data: event.data }),
+        });
       }
       if (error) {
         throw error;
@@ -131,7 +134,11 @@ describe('WorkspaceService', () => {
     loreRepositoryService = {
       switchBranch: jest.fn(async () => undefined),
       getFileStatus: jest.fn(async () => ({ untracked: [], unstaged: [], staged: [] })),
-      getBranchDivergence: jest.fn(async () => ({ state: 'inSync', latest: 'a', latestRemote: 'a' })),
+      getBranchDivergence: jest.fn(async () => ({
+        state: 'inSync',
+        latest: 'a',
+        latestRemote: 'a',
+      })),
     } as unknown as jest.Mocked<LoreRepositoryService>;
 
     service = new WorkspaceService(mockLog, repositoryService, loreRepositoryService, {
@@ -152,7 +159,12 @@ describe('WorkspaceService', () => {
       mockLore.repositoryInstanceList.mockReturnValue(
         fluentMock({
           events: [
-            instanceEvent({ instanceId: 'inst-1', path: workspaceDir, branchName: BRANCH, revision: 'r1' }),
+            instanceEvent({
+              instanceId: 'inst-1',
+              path: workspaceDir,
+              branchName: BRANCH,
+              revision: 'r1',
+            }),
           ],
         }) as never
       );
@@ -186,7 +198,14 @@ describe('WorkspaceService', () => {
       };
       const events = Object.keys(settings.hooks).sort();
       expect(events).toEqual(
-        ['Notification', 'PostToolUse', 'SessionEnd', 'SessionStart', 'Stop', 'UserPromptSubmit'].sort()
+        [
+          'Notification',
+          'PostToolUse',
+          'SessionEnd',
+          'SessionStart',
+          'Stop',
+          'UserPromptSubmit',
+        ].sort()
       );
       expect(settings.hooks['SessionStart']?.[0]?.hooks[0]).toEqual({
         type: 'http',
@@ -263,7 +282,10 @@ describe('WorkspaceService', () => {
       // Then: user content survives and our hook is appended to SessionStart
       const merged = JSON.parse(fs.readFileSync(settingsPath, 'utf-8')) as {
         permissions: { allow: string[] };
-        hooks: Record<string, Array<{ hooks: Array<{ type: string; url?: string; command?: string }> }>>;
+        hooks: Record<
+          string,
+          Array<{ hooks: Array<{ type: string; url?: string; command?: string }> }>
+        >;
       };
       expect(merged.permissions).toEqual({ allow: ['Bash(ls:*)'] });
       expect(merged.hooks['CustomEvent']).toEqual([
@@ -465,7 +487,9 @@ describe('WorkspaceService', () => {
       fs.mkdirSync(repo.localPath, { recursive: true });
       mockLore.repositoryInstanceList.mockReturnValue(
         fluentMock({
-          events: [instanceEvent({ instanceId: 'primary', path: repo.localPath, branchName: 'main' })],
+          events: [
+            instanceEvent({ instanceId: 'primary', path: repo.localPath, branchName: 'main' }),
+          ],
         }) as never
       );
 
@@ -563,9 +587,7 @@ describe('WorkspaceService', () => {
       const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8')) as {
         hooks: Record<string, Array<{ hooks: Array<{ url: string }> }>>;
       };
-      expect(settings.hooks['Stop']?.[0]?.hooks[0]?.url).toBe(
-        'http://127.0.0.1:5123/hook/swapped'
-      );
+      expect(settings.hooks['Stop']?.[0]?.hooks[0]?.url).toBe('http://127.0.0.1:5123/hook/swapped');
     });
 
     it('fails provisioning when the clone produced no tracked instance', async () => {
@@ -582,9 +604,9 @@ describe('WorkspaceService', () => {
 
     it('refuses a branch name that resolves to the worktree root itself', async () => {
       // When/Then: '.' collapses to the root and is rejected as not a subdirectory
-      await expect(
-        service.provision({ repositoryId: repo.id, branchName: '.' })
-      ).rejects.toThrow('subdirectory');
+      await expect(service.provision({ repositoryId: repo.id, branchName: '.' })).rejects.toThrow(
+        'subdirectory'
+      );
       expect(mockLore.repositoryClone).not.toHaveBeenCalled();
     });
 

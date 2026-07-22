@@ -1158,50 +1158,50 @@ describe('LoreRepositoryService', () => {
       ]);
     });
 
-    it.each([
-      ['mine', 'conflictMine'] as const,
-      ['theirs', 'conflictTheirs'] as const,
-    ])('should surface a conflict resolved as %s', async (resolution, field) => {
-      // Given: the SDK streams a file resolved by picking one side
-      mockLore.repositoryStatus.mockReturnValue(
-        fluentMock({
-          events: [
-            {
-              tag: LoreEventTag.REPOSITORY_STATUS_FILE,
-              data: {
-                path: 'resolved.txt',
-                action: LoreFileAction.KEEP,
-                type: LoreNodeType.FILE,
-                flagStaged: false,
-                flagDirty: true,
-                flagConflict: true,
-                flagConflictUnresolved: false,
-                flagConflictAutomerged: false,
-                flagConflictMine: resolution === 'mine',
-                flagConflictTheirs: resolution === 'theirs',
+    it.each([['mine', 'conflictMine'] as const, ['theirs', 'conflictTheirs'] as const])(
+      'should surface a conflict resolved as %s',
+      async (resolution, field) => {
+        // Given: the SDK streams a file resolved by picking one side
+        mockLore.repositoryStatus.mockReturnValue(
+          fluentMock({
+            events: [
+              {
+                tag: LoreEventTag.REPOSITORY_STATUS_FILE,
+                data: {
+                  path: 'resolved.txt',
+                  action: LoreFileAction.KEEP,
+                  type: LoreNodeType.FILE,
+                  flagStaged: false,
+                  flagDirty: true,
+                  flagConflict: true,
+                  flagConflictUnresolved: false,
+                  flagConflictAutomerged: false,
+                  flagConflictMine: resolution === 'mine',
+                  flagConflictTheirs: resolution === 'theirs',
+                },
               },
-            },
-          ],
-        }) as never
-      );
+            ],
+          }) as never
+        );
 
-      // When: getting file status
-      const status = await service.getFileStatus('/path/to/repo');
+        // When: getting file status
+        const status = await service.getFileStatus('/path/to/repo');
 
-      // Then: only the chosen side's resolution flag is true
-      expect(status.unstaged).toEqual([
-        {
-          path: 'resolved.txt',
-          isUntracked: false,
-          isStaged: false,
-          conflict: true,
-          conflictUnresolved: false,
-          conflictAutomerged: false,
-          conflictMine: field === 'conflictMine',
-          conflictTheirs: field === 'conflictTheirs',
-        },
-      ]);
-    });
+        // Then: only the chosen side's resolution flag is true
+        expect(status.unstaged).toEqual([
+          {
+            path: 'resolved.txt',
+            isUntracked: false,
+            isStaged: false,
+            conflict: true,
+            conflictUnresolved: false,
+            conflictAutomerged: false,
+            conflictMine: field === 'conflictMine',
+            conflictTheirs: field === 'conflictTheirs',
+          },
+        ]);
+      }
+    );
   });
 
   describe('stageFiles / unstageFiles', () => {
@@ -1394,7 +1394,9 @@ describe('LoreRepositoryService notification subscriptions', () => {
 
     // Then: the pushing user's id is no longer discarded (P1 finding c —
     // attribution ships on this userId)
-    expect(received).toEqual([{ repositoryPath: '/repos/a', kind: 'branchPushed', userId: 'user' }]);
+    expect(received).toEqual([
+      { repositoryPath: '/repos/a', kind: 'branchPushed', userId: 'user' },
+    ]);
   });
 
   it('maps branch-created and branch-deleted events to their kinds', async () => {
@@ -1469,7 +1471,13 @@ describe('LoreRepositoryService notification subscriptions', () => {
 
     // Then: the empty array is preserved, not dropped or defaulted away
     expect(received).toEqual([
-      { repositoryPath: '/repos/a', kind: 'resourceLocked', userId: 'user-1', branch: 'main', paths: [] },
+      {
+        repositoryPath: '/repos/a',
+        kind: 'resourceLocked',
+        userId: 'user-1',
+        branch: 'main',
+        paths: [],
+      },
     ]);
   });
 
@@ -1630,7 +1638,9 @@ describe('LoreRepositoryService resolveUserName', () => {
   it('does not cache a failed resolution, retrying the SDK on the next lookup', async () => {
     // Given: both sources fail on the first attempt, then succeed on retry
     mockLore.authUserInfo
-      .mockReturnValueOnce(fluentMock({ error: loreError(6, 'No auth endpoint available') }) as never)
+      .mockReturnValueOnce(
+        fluentMock({ error: loreError(6, 'No auth endpoint available') }) as never
+      )
       .mockReturnValueOnce(fluentMock({ events: [authInfoEvent('user-1', 'Mara Voss')] }) as never);
     mockLore.authLocalUserInfo.mockReturnValue(
       fluentMock({ error: loreError(6, 'No auth endpoint available') }) as never

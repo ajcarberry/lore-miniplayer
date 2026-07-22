@@ -1,7 +1,4 @@
-import {
-  computeActionSignals,
-  isWorkspaceBehindTip,
-} from '../../src/renderer/utils/actionSignals';
+import { computeActionSignals, isWorkspaceBehindTip } from '../../src/renderer/utils/actionSignals';
 
 describe('isWorkspaceBehindTip', () => {
   it('is true only when both hashes are known and differ', () => {

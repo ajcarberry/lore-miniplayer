@@ -375,6 +375,11 @@ export class LoreRepositoryService extends EventEmitter {
           path: data.path,
           isUntracked: data.action === LoreFileAction.ADD,
           isStaged: Boolean(data.flagStaged),
+          conflict: Boolean(data.flagConflict),
+          conflictUnresolved: Boolean(data.flagConflictUnresolved),
+          conflictAutomerged: Boolean(data.flagConflictAutomerged),
+          conflictMine: Boolean(data.flagConflictMine),
+          conflictTheirs: Boolean(data.flagConflictTheirs),
         };
       },
       'Failed to get file status'

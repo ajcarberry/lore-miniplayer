@@ -1052,13 +1052,152 @@ describe('LoreRepositoryService', () => {
       // When: getting file status
       const status = await service.getFileStatus('/path/to/repo');
 
-      // Then: files are grouped and directory nodes are excluded
-      expect(status.staged).toEqual([{ path: 'staged.txt', isUntracked: true, isStaged: true }]);
+      // Then: files are grouped, directory nodes are excluded, and none of
+      // these files carry any conflict flags from the SDK
+      const noConflict = {
+        conflict: false,
+        conflictUnresolved: false,
+        conflictAutomerged: false,
+        conflictMine: false,
+        conflictTheirs: false,
+      };
+      expect(status.staged).toEqual([
+        { path: 'staged.txt', isUntracked: true, isStaged: true, ...noConflict },
+      ]);
       expect(status.untracked).toEqual([
-        { path: 'untracked.txt', isUntracked: true, isStaged: false },
+        { path: 'untracked.txt', isUntracked: true, isStaged: false, ...noConflict },
       ]);
       expect(status.unstaged).toEqual([
-        { path: 'modified.txt', isUntracked: false, isStaged: false },
+        { path: 'modified.txt', isUntracked: false, isStaged: false, ...noConflict },
+      ]);
+    });
+
+    it('should surface an unresolved conflict on a merge-conflicted file', async () => {
+      // Given: the SDK streams a file conflicted by a merge, not yet resolved
+      mockLore.repositoryStatus.mockReturnValue(
+        fluentMock({
+          events: [
+            {
+              tag: LoreEventTag.REPOSITORY_STATUS_FILE,
+              data: {
+                path: 'conflicted.txt',
+                action: LoreFileAction.KEEP,
+                type: LoreNodeType.FILE,
+                flagStaged: false,
+                flagDirty: true,
+                flagConflict: true,
+                flagConflictUnresolved: true,
+                flagConflictAutomerged: false,
+                flagConflictMine: false,
+                flagConflictTheirs: false,
+              },
+            },
+          ],
+        }) as never
+      );
+
+      // When: getting file status
+      const status = await service.getFileStatus('/path/to/repo');
+
+      // Then: the conflict and unresolved flags are surfaced true
+      expect(status.unstaged).toEqual([
+        {
+          path: 'conflicted.txt',
+          isUntracked: false,
+          isStaged: false,
+          conflict: true,
+          conflictUnresolved: true,
+          conflictAutomerged: false,
+          conflictMine: false,
+          conflictTheirs: false,
+        },
+      ]);
+    });
+
+    it('should surface an automerged file without marking it unresolved', async () => {
+      // Given: the SDK streams a file the merge resolved automatically
+      mockLore.repositoryStatus.mockReturnValue(
+        fluentMock({
+          events: [
+            {
+              tag: LoreEventTag.REPOSITORY_STATUS_FILE,
+              data: {
+                path: 'automerged.txt',
+                action: LoreFileAction.KEEP,
+                type: LoreNodeType.FILE,
+                flagStaged: false,
+                flagDirty: true,
+                flagConflict: true,
+                flagConflictUnresolved: false,
+                flagConflictAutomerged: true,
+                flagConflictMine: false,
+                flagConflictTheirs: false,
+              },
+            },
+          ],
+        }) as never
+      );
+
+      // When: getting file status
+      const status = await service.getFileStatus('/path/to/repo');
+
+      // Then: conflict + automerged are true, unresolved is false
+      expect(status.unstaged).toEqual([
+        {
+          path: 'automerged.txt',
+          isUntracked: false,
+          isStaged: false,
+          conflict: true,
+          conflictUnresolved: false,
+          conflictAutomerged: true,
+          conflictMine: false,
+          conflictTheirs: false,
+        },
+      ]);
+    });
+
+    it.each([
+      ['mine', 'conflictMine'] as const,
+      ['theirs', 'conflictTheirs'] as const,
+    ])('should surface a conflict resolved as %s', async (resolution, field) => {
+      // Given: the SDK streams a file resolved by picking one side
+      mockLore.repositoryStatus.mockReturnValue(
+        fluentMock({
+          events: [
+            {
+              tag: LoreEventTag.REPOSITORY_STATUS_FILE,
+              data: {
+                path: 'resolved.txt',
+                action: LoreFileAction.KEEP,
+                type: LoreNodeType.FILE,
+                flagStaged: false,
+                flagDirty: true,
+                flagConflict: true,
+                flagConflictUnresolved: false,
+                flagConflictAutomerged: false,
+                flagConflictMine: resolution === 'mine',
+                flagConflictTheirs: resolution === 'theirs',
+              },
+            },
+          ],
+        }) as never
+      );
+
+      // When: getting file status
+      const status = await service.getFileStatus('/path/to/repo');
+
+      // Then: only the chosen side's resolution flag is true
+      expect(status.unstaged).toEqual([
+        {
+          path: 'resolved.txt',
+          isUntracked: false,
+          isStaged: false,
+          conflict: true,
+          conflictUnresolved: false,
+          conflictAutomerged: false,
+          conflictMine: field === 'conflictMine',
+          conflictTheirs: field === 'conflictTheirs',
+        },
       ]);
     });
   });

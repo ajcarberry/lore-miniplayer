@@ -141,15 +141,15 @@ export type RepositoryUpdateInput = z.infer<typeof RepositoryUpdateInputSchema>;
 export type LoreSyncOptions = z.infer<typeof LoreSyncOptionsSchema>;
 
 // Lore File Status types. The conflict-state fields mirror the SDK's
-// flagConflict* flags (REPOSITORY_STATUS_FILE). All optional: this packet
-// only publishes the shape — P6 maps the SDK flags at the one existing
-// producer (src/main/services/lore-repository.ts) and makes `conflict`
-// dependable there; until then, absent means "not yet reported."
+// flagConflict* flags (REPOSITORY_STATUS_FILE), mapped at the one existing
+// producer (src/main/services/lore-repository.ts). `conflict` is always
+// reported; the other conflict* fields stay optional/false-shaped
+// sub-states of a conflict (unresolved, automerged, resolved mine/theirs).
 export interface LoreFileStatus {
   readonly path: string;
   readonly isUntracked: boolean;
   readonly isStaged: boolean;
-  readonly conflict?: boolean;
+  readonly conflict: boolean;
   readonly conflictUnresolved?: boolean;
   readonly conflictAutomerged?: boolean;
   readonly conflictMine?: boolean;

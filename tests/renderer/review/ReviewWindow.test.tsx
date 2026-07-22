@@ -143,6 +143,22 @@ function installApi(request: ReviewOpenRequest = makeRequest()): Api {
   Object.assign(api, {
     review: { open: jest.fn(), requestContext, onContext },
     diff: { compare },
+    // The merge routing test drives a clean (conflict-free) merge so the merge
+    // view renders its header without needing conflict content.
+    merge: {
+      start: jest.fn().mockResolvedValue({
+        success: true,
+        data: {
+          sourceBranch: 'agent/act2-balance',
+          targetBranch: 'main',
+          allResolved: true,
+          files: [{ path: 'encounters.toml', state: 'merged' }],
+        },
+      }),
+      resolve: jest.fn(),
+      abort: jest.fn(),
+      complete: jest.fn(),
+    },
   });
 
   return { requestContext, onContext, compare, getStatus, stage, unstage, commit, push };
@@ -291,11 +307,19 @@ describe('ReviewWindow — commit workflow', () => {
 });
 
 describe('ReviewWindow — merge workflow routing', () => {
-  it('routes the merge workflow to the stub view without a compare picker', async () => {
-    installApi(makeRequest({ workflow: 'merge' }));
+  it('routes the merge workflow to the merge view without the commit compare picker', async () => {
+    installApi(
+      makeRequest({
+        workflow: 'merge',
+        compare: {
+          source: { kind: 'branchHead', branch: 'agent/act2-balance' },
+          target: { kind: 'branchHead', branch: 'main' },
+        },
+      })
+    );
     renderWindow();
 
-    expect(await screen.findByText('Merge review is coming soon')).toBeInTheDocument();
+    expect(await screen.findByText('Merge — agent/act2-balance → main')).toBeInTheDocument();
     expect(screen.queryByLabelText('Change compare source')).not.toBeInTheDocument();
   });
 });

@@ -3,12 +3,11 @@ import { Center, Loader, Stack } from '@mantine/core';
 import { TitleBar } from '../TitleBar';
 import { useReviewContext } from './useReviewContext';
 import { CommitReview } from './CommitReview';
-import { MergeWorkflowStub } from './MergeWorkflowStub';
+import { MergeView } from './MergeView';
 
 // The review window root (design 2b/2c). Loads its preloaded open request, then
-// routes by workflow: commit is implemented here (P11); merge mode is plumbed
-// through for real and routed to a stub view P14 replaces. The frameless
-// TitleBar chrome is shared across both, matching Mission Control.
+// routes by workflow: commit (P11) and merge (P14, design 2c) each own a view.
+// The frameless TitleBar chrome is shared across both, matching Mission Control.
 export function ReviewWindow(): ReactElement {
   const request = useReviewContext();
 
@@ -20,7 +19,8 @@ export function ReviewWindow(): ReactElement {
           <Loader />
         </Center>
       ) : request.workflow === 'merge' ? (
-        <MergeWorkflowStub request={request} />
+        // Keyed on the request so a re-target remounts with fresh merge state.
+        <MergeView key={JSON.stringify(request)} request={request} />
       ) : (
         // Keyed on the request so a re-target (new compare/title) remounts with
         // fresh seeded state rather than resetting via an effect.

@@ -50,6 +50,15 @@ pnpm dist
 - 🎨 **Light and dark themes** — follows your OS appearance, with a manual override in the player footer
 - 🌈 **Per-repository accent colors** — each repository gets its own accent so you always know which one you're on
 
+**Agentic Development**
+- 🛰️ **Mission Control** — one window showing every workspace of the selected repository in attention order: awaiting review first, in progress with live agent task lists, idle minimized
+- 🏗️ **Provision workspaces** — one click creates a branch in a fresh shared-store checkout, installs Claude Code observer hooks, and opens a terminal for the agent
+- 👁️ **Agent awareness** — the pill grows an attention chip that pulses with a count when agents are blocked or work awaits review, and stays quietly informative while they work
+- 🔍 **Review window** — three-pane review of any workspace: per-file diffs against any revision, the agent's prompt/task list/account beside them, stage/commit/push in place
+- 🔀 **Merge with conflict resolution** — merge a workspace branch into main with per-file accept-mine/accept-theirs, landing the result on the target branch
+- 🏷️ **Attributed collaboration** — pushes and file locks announce who did them by name; conflicted files are flagged directly in the working set
+- 🧹 **Close workspaces cleanly** — guarded teardown removes the directory and archives the branch, refusing when uncommitted or unpushed work would be lost
+
 **Convenience Features**
 - 📂 **Open in file explorer** - quickly browse local repository files
 - 💻 **Open terminal** - start command line at repository location

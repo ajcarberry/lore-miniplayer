@@ -118,7 +118,9 @@ src/
 │   ├── preload.ts  # Secure bridge between main and renderer
 │   ├── security.ts # Deny-by-default navigation/window-open/permission guards
 │   ├── ipc/        # IPC handlers and validators
-│   └── services/   # Business logic (repository store, Lore SDK, branch graph)
+│   └── services/   # Business logic (repository store, Lore SDK, branch graph,
+│                   #   workspaces + teardown, diff, merge, locks, workspace model,
+│                   #   agent observer [localhost hook listener], agent transcript)
 ├── renderer/       # React UI application
 │   ├── App.tsx     # Root component
 │   ├── components/ # UI components
@@ -173,7 +175,8 @@ The application uses **electron-log** for structured error logging with automati
 - Supports branch switching, revision sync (specific revisions, reset, force), cloning
 - **Commit operations**: File staging/unstaging (`fileStage`, `fileUnstage`), commit + push
 - **Working directory status**: `repositoryStatus` streams `REPOSITORY_STATUS_FILE` events with staged/dirty/conflict flags
-- **Push channels to the renderer**: server notifications (`lore:notification`) and clone progress (`lore:repository:clone-progress`) are one-way `webContents.send` pushes forwarded from service EventEmitter events; payloads cross the bridge as `unknown` and are Zod-validated in the renderer before use
+- **Push channels to the renderer**: server notifications (`lore:notification`), clone progress (`lore:repository:clone-progress`), agent observability events, and workspace-model snapshots (`workspace:model:snapshot`) are one-way `webContents.send` pushes forwarded from service EventEmitter events; payloads cross the bridge as `unknown` and are Zod-validated in the renderer before use
+- **Agent observability**: provisioning writes fire-and-forget observer hooks into each workspace's `.claude/settings.local.json` targeting a loopback-only, token-authenticated HTTP listener (`agent-observer.ts`); transcript enrichment (`agent-transcript.ts`, flag `LORE_MINIPLAYER_TRANSCRIPT_ENRICHMENT`) reads only under `~/.claude/projects` — see `docs/agentic-demo-runbook.md` for the live demo script
 - **Notice channel to main**: `window:setNoticeActive` is a one-way renderer→main send (Zod-validated boolean) reporting the sync-needed signal; while active, the window skips its unfocused 70% dim so the collapsed pill's notice pulse stays visible (see `attachFocusDimming` in `window-handlers.ts`)
 
 ## Cross-Platform Support

@@ -49,6 +49,7 @@ import type {
   WorkspaceTeardownResponseSchema,
   WorkspaceMarkActiveRequestSchema,
   WorkspaceMarkActiveResponseSchema,
+  WorkspaceForgetRequestSchema,
   DiffRequestSchema,
   DiffResponseSchema,
   MergeStartRequestSchema,
@@ -259,6 +260,8 @@ export type WorkspaceTeardownResponse = z.infer<typeof WorkspaceTeardownResponse
 
 export type WorkspaceMarkActiveRequest = z.infer<typeof WorkspaceMarkActiveRequestSchema>;
 export type WorkspaceMarkActiveResponse = z.infer<typeof WorkspaceMarkActiveResponseSchema>;
+
+export type WorkspaceForgetRequest = z.infer<typeof WorkspaceForgetRequestSchema>;
 
 export type DiffRequest = z.infer<typeof DiffRequestSchema>;
 export type DiffResponse = z.infer<typeof DiffResponseSchema>;

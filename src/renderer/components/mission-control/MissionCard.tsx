@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 import { ActionIcon, Badge, Box, Button, Group, Paper, Stack, Text } from '@mantine/core';
-import { IconX } from '@tabler/icons-react';
+import { IconEyeOff, IconX } from '@tabler/icons-react';
 import type { AgentTask, WorkspaceCard } from '../../../shared/types';
 import type { OpenReviewIntent } from './reviewIntent';
 import {
@@ -16,6 +16,9 @@ export interface MissionCardProps {
   readonly onOpenTerminal: (path: string) => void;
   readonly onTeardown: (card: WorkspaceCard) => void;
   readonly onReview: (intent: OpenReviewIntent) => void;
+  // Untrack-only removal (design amendment) — the non-destructive
+  // counterpart to onTeardown. Disabled for the active card, same as ✕.
+  readonly onForget: (card: WorkspaceCard) => void;
 }
 
 const TASK_GLYPH: Record<AgentTask['status'], string> = {
@@ -34,8 +37,10 @@ export function MissionCard({
   onOpenTerminal,
   onTeardown,
   onReview,
+  onForget,
 }: MissionCardProps): ReactElement {
-  const { workspace, attention, intention, fileStats, changedFileCount, sessionCommits } = card;
+  const { workspace, attention, isActive, intention, fileStats, changedFileCount, sessionCommits } =
+    card;
   const inProgress = attention.band === 'inProgress';
   const flags = deriveWorkspaceFlags(card);
   const cost = formatCost(resolveCostUsd(card));
@@ -57,9 +62,11 @@ export function MissionCard({
         <CardHeader
           workspace={workspace}
           inProgress={inProgress}
+          isActive={isActive}
           dirty={flags.dirty}
           cost={cost}
           onTeardown={() => onTeardown(card)}
+          onForget={() => onForget(card)}
         />
 
         {intention?.prompt !== undefined && (
@@ -108,16 +115,24 @@ export function MissionCard({
 function CardHeader({
   workspace,
   inProgress,
+  isActive,
   dirty,
   cost,
   onTeardown,
+  onForget,
 }: {
   readonly workspace: WorkspaceCard['workspace'];
   readonly inProgress: boolean;
+  readonly isActive: boolean;
   readonly dirty: boolean;
   readonly cost: string | null;
   readonly onTeardown: () => void;
+  readonly onForget: () => void;
 }): ReactElement {
+  const activeTitle = isActive
+    ? 'This is the workspace you are currently in — close or forget another one instead'
+    : undefined;
+
   return (
     <Group gap={8} wrap='nowrap'>
       <Box
@@ -142,6 +157,11 @@ function CardHeader({
       >
         {workspace.branchName}
       </Text>
+      {isActive && (
+        <Badge color='blue' variant='light' size='sm'>
+          active
+        </Badge>
+      )}
       {dirty ? (
         <Badge color='yellow' variant='light' size='sm'>
           uncommitted
@@ -161,7 +181,20 @@ function CardHeader({
         size='sm'
         variant='subtle'
         color='gray'
+        aria-label={`Forget workspace ${workspace.branchName}`}
+        title={activeTitle ?? 'Forget (stop tracking, keep the files)'}
+        disabled={isActive}
+        onClick={onForget}
+      >
+        <IconEyeOff size={14} />
+      </ActionIcon>
+      <ActionIcon
+        size='sm'
+        variant='subtle'
+        color='gray'
         aria-label={`Close workspace ${workspace.branchName}`}
+        title={activeTitle ?? 'Close workspace (removes the directory and archives the branch)'}
+        disabled={isActive}
         onClick={onTeardown}
       >
         <IconX size={14} />

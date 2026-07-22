@@ -205,7 +205,9 @@ function PlayerCard({
 
 export function MiniPlayer(): ReactElement {
   const server = useServerConnection();
-  const repos = useRepositories(server.isConnected);
+  // includeProvisioned (U2): the footer selector lists every workspace in the
+  // unified registry, not just card-view repositories.
+  const repos = useRepositories(server.isConnected, true);
   const branches = useBranches(repos.selectedRepo, server.isConnected);
   const status = useRepositoryStatus(repos.selectedRepo, server.isConnected);
   const divergence = useBranchDivergence(
@@ -281,7 +283,7 @@ export function MiniPlayer(): ReactElement {
           updated,
           operation: 'MiniPlayer',
         });
-        notifyError('Update Repository Failed', result.error);
+        notifyError('Update Workspace Failed', result.error);
         return;
       }
       void repos.refresh();
@@ -302,7 +304,7 @@ export function MiniPlayer(): ReactElement {
           repo,
           operation: 'MiniPlayer',
         });
-        notifyError('Delete Repository Failed', result.error);
+        notifyError('Delete Workspace Failed', result.error);
         return;
       }
       void repos.refresh();

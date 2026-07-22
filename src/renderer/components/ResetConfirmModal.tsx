@@ -26,7 +26,7 @@ export function ResetConfirmModal({
             Cancel
           </Button>
           <Button color='red' onClick={onConfirm} loading={isResetting} disabled={isResetting}>
-            Reset Repository
+            Reset Workspace
           </Button>
         </Group>
       </Stack>

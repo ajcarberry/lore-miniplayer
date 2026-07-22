@@ -26,6 +26,7 @@ function missionCard(band: WorkspaceBand, needsYou: boolean): WorkspaceCard {
       repositoryId: makeRepository().id,
     },
     attention: { band, needsYou, reasons: needsYou ? ['reviewReady'] : [] },
+    isActive: false,
     fileStats: { added: 0, removed: 0 },
     changedFileCount: 0,
     sessionCommits: [],
@@ -149,9 +150,50 @@ describe('MiniPlayer', () => {
       // assertion). hidden:true keeps the role query from excluding the
       // dropdown while floating-ui's positioning pass transitions it through
       // display:none under parallel test load.
-      await user.click(screen.getByRole('button', { name: 'Repositories' }));
+      await user.click(screen.getByRole('button', { name: 'Workspaces' }));
       const picker = await screen.findByRole('dialog', { hidden: true }, { timeout: 8000 });
       expect(await within(picker).findByText('MyRepo')).toBeInTheDocument();
+    });
+
+    it('should list every registry origin, including provisioned worktrees, and select by localPath', async () => {
+      // Given: a card-view repo and a provisioned worktree of the same repo,
+      // both surfaced by the unified registry (U2: the footer selector lists
+      // every workspace, not just card-view repositories)
+      const attached = makeRepository();
+      const provisioned = makeRepository({
+        id: '5a9d3c8f-6c2e-4d8f-8b2b-2d3e4f5a6b7c',
+        origin: 'provisioned',
+        name: 'test-WT1',
+        url: 'lores://lore.example.com/demo-project',
+        branchName: 'test/WT1',
+        localPath: '/tmp/wt/test-WT1',
+      });
+      (api.repository.list as jest.Mock).mockResolvedValue({
+        success: true,
+        data: [attached, provisioned],
+      });
+      (api.lore.repository.listBranches as jest.Mock).mockResolvedValue({
+        success: true,
+        data: [{ name: 'test/WT1', isDefault: false, isCurrent: true }],
+      });
+
+      // When: the picker is requested with includeProvisioned (verified via
+      // the IPC call) and the provisioned workspace is selected
+      const user = userEvent.setup();
+      renderMiniPlayer();
+      await screen.findByText('On branch');
+      await waitFor(() => expect(api.repository.list).toHaveBeenCalledWith(true));
+      await user.click(screen.getByRole('button', { name: 'Workspaces' }));
+      await user.click(await screen.findByText('demo-project · test/WT1', {}, { timeout: 8000 }));
+
+      // Then: branch/status hooks re-target the provisioned entry's localPath
+      // — nothing downstream assumes the first (card-view) entry is "primary"
+      await waitFor(() =>
+        expect(api.lore.repository.listBranches).toHaveBeenCalledWith('/tmp/wt/test-WT1')
+      );
+      await waitFor(() =>
+        expect(api.lore.repository.checkStatus).toHaveBeenCalledWith('/tmp/wt/test-WT1')
+      );
     });
 
     it("should apply the selected repository's accent as inline CSS vars", async () => {
@@ -445,7 +487,7 @@ describe('MiniPlayer', () => {
       );
       await user.click(screen.getByRole('button', { name: 'More sync options' }));
       await user.click(await screen.findByText('Reset'));
-      await user.click(await screen.findByRole('button', { name: 'Reset Repository' }));
+      await user.click(await screen.findByRole('button', { name: 'Reset Workspace' }));
 
       // Then: a forced reset sync to the current branch is requested
       await waitFor(() =>
@@ -518,7 +560,7 @@ describe('MiniPlayer', () => {
       );
       await user.click(screen.getByRole('button', { name: 'More sync options' }));
       await user.click(await screen.findByText('Reset'));
-      await user.click(await screen.findByRole('button', { name: 'Reset Repository' }));
+      await user.click(await screen.findByRole('button', { name: 'Reset Workspace' }));
 
       // Then: both branch divergence and branch graph are refetched
       await waitFor(() =>
@@ -592,18 +634,18 @@ describe('MiniPlayer', () => {
       const user = userEvent.setup();
       renderMiniPlayer();
       await screen.findByText('On branch');
-      await user.click(screen.getByRole('button', { name: 'Repositories' }));
+      await user.click(screen.getByRole('button', { name: 'Workspaces' }));
       const picker = await screen.findByRole('dialog', { hidden: true }, { timeout: 8000 });
       await user.click(
         await within(picker).findByRole('button', { name: 'Edit MyRepo', hidden: true })
       );
-      await user.type(await screen.findByLabelText(/Repository Name/), '2');
+      await user.type(await screen.findByLabelText(/Workspace Name/), '2');
       await user.click(screen.getByRole('button', { name: 'Save Changes' }));
 
       // Then: the failure is surfaced to the user, not just logged
       await waitFor(() =>
         expect(notifyError).toHaveBeenCalledWith(
-          'Update Repository Failed',
+          'Update Workspace Failed',
           'config store is locked'
         )
       );
@@ -622,18 +664,18 @@ describe('MiniPlayer', () => {
       const user = userEvent.setup();
       renderMiniPlayer();
       await screen.findByText('On branch');
-      await user.click(screen.getByRole('button', { name: 'Repositories' }));
+      await user.click(screen.getByRole('button', { name: 'Workspaces' }));
       const picker = await screen.findByRole('dialog', { hidden: true }, { timeout: 8000 });
       await user.click(
         await within(picker).findByRole('button', { name: 'Edit MyRepo', hidden: true })
       );
-      await user.click(await screen.findByRole('button', { name: 'Delete Repository' }));
+      await user.click(await screen.findByRole('button', { name: 'Delete Workspace' }));
       await user.click(await screen.findByRole('button', { name: 'Remove from Lore' }));
 
       // Then: the failure is surfaced to the user, not just logged
       await waitFor(() =>
         expect(notifyError).toHaveBeenCalledWith(
-          'Delete Repository Failed',
+          'Delete Workspace Failed',
           'config store is locked'
         )
       );

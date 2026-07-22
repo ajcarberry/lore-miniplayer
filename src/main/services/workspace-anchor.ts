@@ -1,0 +1,84 @@
+import type { MainLogger } from '../ipc/logger';
+import { WorkspaceSchema } from '../../shared/schemas';
+import type { LoreBranch, Repository, Workspace } from '../../shared/types';
+
+// Resolves the anchor workspace — the card-view repository Mission Control is
+// scoped to, surfaced as a listed member the same way a provisioned worktree
+// is (packet U1 deferred this composition to U3). Extracted from
+// workspace-model.ts to stay under the project's max-lines limit (see
+// workspace-lore-ops.ts for the same pattern in WorkspaceService).
+
+export interface AnchorLoreDeps {
+  listBranches(repositoryPath: string): Promise<LoreBranch[]>;
+  getCurrentRevision(repositoryPath: string): Promise<string>;
+}
+
+export interface AnchorDeps {
+  readonly repository: { getById(id: string): Promise<Repository | null> };
+  readonly lore: AnchorLoreDeps;
+}
+
+// The card-view repository this Mission Control snapshot is scoped to
+// (`repositoryId` is its own id). Degrades to no anchor — never throws —
+// when the repository record is gone or its current branch cannot be
+// determined; the caller still renders the repository's provisioned members.
+export async function resolveAnchorWorkspace(
+  log: MainLogger,
+  deps: AnchorDeps,
+  repositoryId: string
+): Promise<Workspace | undefined> {
+  const repo = await deps.repository.getById(repositoryId);
+  if (!repo) {
+    return undefined;
+  }
+  const branchName = await safeCurrentBranch(log, deps.lore, repo.localPath);
+  if (branchName === undefined) {
+    return undefined;
+  }
+  const revision = await safeCurrentRevision(log, deps.lore, repo.localPath);
+  return WorkspaceSchema.parse({
+    instanceId: repo.id,
+    path: repo.localPath,
+    branchName,
+    revision,
+    stale: false,
+    repositoryId: repo.id,
+    ...(repo.provisionedAt ? { provisionedAt: repo.provisionedAt } : {}),
+  });
+}
+
+async function safeCurrentBranch(
+  log: MainLogger,
+  lore: AnchorLoreDeps,
+  repositoryPath: string
+): Promise<string | undefined> {
+  try {
+    const branches = await lore.listBranches(repositoryPath);
+    return branches.find(branch => branch.isCurrent)?.name;
+  } catch (error) {
+    logDegrade(log, 'anchorBranch', repositoryPath, error);
+    return undefined;
+  }
+}
+
+async function safeCurrentRevision(
+  log: MainLogger,
+  lore: AnchorLoreDeps,
+  repositoryPath: string
+): Promise<string> {
+  try {
+    return await lore.getCurrentRevision(repositoryPath);
+  } catch (error) {
+    logDegrade(log, 'anchorRevision', repositoryPath, error);
+    return '';
+  }
+}
+
+function logDegrade(log: MainLogger, signal: string, workspacePath: string, error: unknown): void {
+  log.debug('Workspace signal degraded', {
+    operation: 'workspace-model:signal',
+    signal,
+    workspacePath,
+    error: error instanceof Error ? error.message : String(error),
+  });
+}

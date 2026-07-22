@@ -47,6 +47,7 @@ export function makeCard(
   return {
     workspace,
     attention: { band, needsYou: false, reasons: [] },
+    isActive: false,
     fileStats: { added: 38, removed: 21 },
     changedFileCount: 3,
     sessionCommits: [

@@ -15,11 +15,13 @@ import type { WorkspaceObserverConfig } from './workspace-hooks';
 import type {
   Repository,
   Workspace,
+  WorkspaceForgetRequest,
   WorkspaceProvisionRequest,
   WorkspaceTeardownRequest,
   WorkspaceTeardownResult,
 } from '../../shared/types';
 import {
+  WorkspaceForgetRequestSchema,
   WorkspaceProvisionRequestSchema,
   WorkspaceTeardownRequestSchema,
   WorkspaceSchema,
@@ -272,6 +274,24 @@ export class WorkspaceService extends EventEmitter {
     };
   }
 
+  // "Forget" a workspace (design amendment, packet U3): untrack-only — drops
+  // the registry entry so it stops appearing in Mission Control, but never
+  // touches the worktree directory or the branch. The guarded, destructive
+  // path is `teardown`; identification (id or path) is resolved the same way.
+  async forget(request: WorkspaceForgetRequest): Promise<void> {
+    const parsed = WorkspaceForgetRequestSchema.parse(request);
+    const located = await this.locateWorkspace(parsed);
+    if (!located) {
+      throw new Error('Workspace not found or not a tracked instance');
+    }
+    await this.store.removeByLocalPath(located.entry.localPath);
+    this.log.info('Workspace forgotten (untracked, files left in place)', {
+      operation: 'workspace:forget',
+      workspacePath: located.entry.localPath,
+    });
+    this.emit('lifecycle', { repositoryId: located.repo?.id ?? '', path: located.entry.localPath });
+  }
+
   // Write Claude Code observer hooks into the workspace's settings.local.json.
   // Public so P7 can re-inject if it rotates tokens; the writer itself lives in
   // ./workspace-hooks.
@@ -384,14 +404,14 @@ export class WorkspaceService extends EventEmitter {
     return this.toWorkspace(match, repo.id, provisionedAt);
   }
 
-  // Resolve a teardown request to its registry entry (the source of truth),
-  // enriched with the live instance where available. A `workspaceId` matches
-  // either the live instance id or the synthetic id used for stale rows (the
-  // path); a `path` matches the registry entry directly. The parent card-view
-  // repo (matched by url) is returned when one exists, for the checkout-safety
-  // guard and lifecycle attribution.
+  // Resolve a teardown or forget request to its registry entry (the source of
+  // truth), enriched with the live instance where available. A `workspaceId`
+  // matches either the live instance id or the synthetic id used for stale
+  // rows (the path); a `path` matches the registry entry directly. The parent
+  // card-view repo (matched by url) is returned when one exists, for the
+  // checkout-safety guard and lifecycle attribution.
   private async locateWorkspace(
-    parsed: WorkspaceTeardownRequest
+    parsed: { workspaceId: string } | { path: string }
   ): Promise<{ repo?: Repository; entry: Repository; instance?: RawInstance } | null> {
     const cardRepos = await this.repositoryService.getAll();
     const entries = (await this.store.all()).filter(entry => entry.origin === 'provisioned');

@@ -18,6 +18,7 @@ function baseProps(overrides: Partial<MissionCardProps> = {}): MissionCardProps 
     onOpenTerminal: jest.fn(),
     onTeardown: jest.fn(),
     onReview: jest.fn(),
+    onForget: jest.fn(),
     ...overrides,
   };
 }
@@ -125,6 +126,51 @@ describe('MissionCard — in progress', () => {
     expect(screen.getByText('$0.37')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Review' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Merge → main' })).not.toBeInTheDocument();
+  });
+});
+
+describe('MissionCard — active workspace (packet U3)', () => {
+  it('is unmarked and fully interactive by default', () => {
+    renderWithMantine(<MissionCard {...baseProps()} />);
+
+    expect(screen.queryByText('active')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Close workspace/ })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: /Forget workspace/ })).not.toBeDisabled();
+  });
+
+  it('shows an active badge and disables ✕ and Forget with an explanatory title', async () => {
+    const user = userEvent.setup();
+    const onTeardown = jest.fn();
+    const onForget = jest.fn();
+    const card = makeCard('awaitingReview', {
+      isActive: true,
+      attention: { band: 'awaitingReview', needsYou: true, reasons: ['reviewReady'] },
+    });
+    renderWithMantine(<MissionCard {...baseProps({ card, onTeardown, onForget })} />);
+
+    expect(screen.getByText('active')).toBeInTheDocument();
+
+    const closeButton = screen.getByRole('button', { name: /Close workspace/ });
+    const forgetButton = screen.getByRole('button', { name: /Forget workspace/ });
+    expect(closeButton).toBeDisabled();
+    expect(forgetButton).toBeDisabled();
+    expect(closeButton).toHaveAttribute('title', expect.stringContaining('currently in'));
+    expect(forgetButton).toHaveAttribute('title', expect.stringContaining('currently in'));
+
+    // Disabled buttons never dispatch.
+    await user.click(closeButton).catch(() => undefined);
+    await user.click(forgetButton).catch(() => undefined);
+    expect(onTeardown).not.toHaveBeenCalled();
+    expect(onForget).not.toHaveBeenCalled();
+  });
+
+  it('dispatches Forget with the card for a non-active workspace', async () => {
+    const user = userEvent.setup();
+    const onForget = jest.fn();
+    renderWithMantine(<MissionCard {...baseProps({ onForget })} />);
+
+    await user.click(screen.getByRole('button', { name: /Forget workspace/ }));
+    expect(onForget).toHaveBeenCalledWith(expect.objectContaining({ isActive: false }));
   });
 });
 

@@ -60,7 +60,7 @@ describe('AddRepositoryModal', () => {
     // Then: once the modal has rendered and its mount effects have flushed
     // (the fetch decision is synchronous in the mount effect), no listing
     // request was made
-    expect(await screen.findByText('Define Repository')).toBeInTheDocument();
+    expect(await screen.findByText('Define Workspace')).toBeInTheDocument();
     await act(async () => {});
     expect(api.lore.repository.listRemoteRepositories).not.toHaveBeenCalled();
   });
@@ -85,9 +85,9 @@ describe('AddRepositoryModal', () => {
     expect(
       await screen.findByText('Selected directory contains a Lore repository')
     ).toBeInTheDocument();
-    expect(screen.getByLabelText(/Repository Name/)).toHaveValue('existing-repo');
+    expect(screen.getByLabelText(/Workspace Name/)).toHaveValue('existing-repo');
     expect(
-      await screen.findByRole('button', { name: 'Add Existing Repository' })
+      await screen.findByRole('button', { name: 'Add Existing Workspace' })
     ).toBeInTheDocument();
   });
 
@@ -130,7 +130,7 @@ describe('AddRepositoryModal', () => {
     await screen.findByDisplayValue('/repos');
 
     // And: submitting
-    await user.click(screen.getByRole('button', { name: 'Add & Clone Repository' }));
+    await user.click(screen.getByRole('button', { name: 'Add & Clone Workspace' }));
 
     // Then: the repository is created and cloned into <base>/<name>
     await waitFor(() =>
@@ -153,7 +153,7 @@ describe('AddRepositoryModal', () => {
     renderModal();
 
     // Then: the submit button is disabled and nothing can be created
-    expect(screen.getByRole('button', { name: 'Add & Clone Repository' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Add & Clone Workspace' })).toBeDisabled();
     expect(api.repository.create).not.toHaveBeenCalled();
   });
 });

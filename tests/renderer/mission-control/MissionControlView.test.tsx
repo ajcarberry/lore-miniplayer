@@ -35,6 +35,7 @@ function baseProps(overrides: Partial<MissionControlViewProps> = {}): MissionCon
     onOpenTerminal: jest.fn(),
     onReview: jest.fn(),
     onMarkActive: jest.fn(),
+    onForget: jest.fn(),
     onTeardown: jest.fn().mockResolvedValue(undefined),
     onProvision: jest.fn().mockResolvedValue(undefined),
     onRefresh: jest.fn().mockResolvedValue(undefined),
@@ -138,6 +139,51 @@ describe('MissionControlView — idle actions', () => {
     expect(confirm).not.toBeDisabled();
     await user.click(confirm);
     expect(onTeardown).toHaveBeenCalledWith('c', false);
+  });
+});
+
+describe('MissionControlView — forget (packet U3)', () => {
+  it('forgets a workspace from a full card', async () => {
+    const user = userEvent.setup();
+    const onForget = jest.fn();
+    renderWithMantine(<MissionControlView {...baseProps({ onForget })} />);
+
+    const card = screen.getAllByTestId('mission-card')[0]!;
+    await user.click(within(card).getByRole('button', { name: /Forget workspace/ }));
+
+    expect(onForget).toHaveBeenCalledWith('a');
+  });
+
+  it('forgets a workspace from an idle row', async () => {
+    const user = userEvent.setup();
+    const onForget = jest.fn();
+    renderWithMantine(<MissionControlView {...baseProps({ onForget })} />);
+
+    const idleRow = screen.getByTestId('idle-workspace-row');
+    await user.click(within(idleRow).getByRole('button', { name: /Forget workspace/ }));
+
+    expect(onForget).toHaveBeenCalledWith('c');
+  });
+});
+
+describe('MissionControlView — active workspace (packet U3)', () => {
+  it('marks the active card and disables its ✕ and Forget without opening the teardown modal', async () => {
+    const user = userEvent.setup();
+    const onTeardown = jest.fn().mockResolvedValue(undefined);
+    const cards = threeBands();
+    const [awaitingCard] = cards;
+    const activeCards = [{ ...awaitingCard!, isActive: true }, ...cards.slice(1)];
+    renderWithMantine(<MissionControlView {...baseProps({ cards: activeCards, onTeardown })} />);
+
+    const card = screen.getAllByTestId('mission-card')[0]!;
+    expect(within(card).getByText('active')).toBeInTheDocument();
+
+    const closeButton = within(card).getByRole('button', { name: /Close workspace/ });
+    expect(closeButton).toBeDisabled();
+
+    await user.click(closeButton).catch(() => undefined);
+    expect(screen.queryByRole('button', { name: 'Close workspace' })).not.toBeInTheDocument();
+    expect(onTeardown).not.toHaveBeenCalled();
   });
 });
 

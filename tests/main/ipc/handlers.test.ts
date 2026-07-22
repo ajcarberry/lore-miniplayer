@@ -275,6 +275,30 @@ describe('repository handlers', () => {
 
     // Then: the service data is passed through in a success result
     expect(result).toEqual({ success: true, data: repos });
+    // And: the default (card-view-only) call is unchanged for existing callers
+    expect(mockRepositoryService.getAll).toHaveBeenCalledWith(undefined);
+  });
+
+  it('should forward includeProvisioned through to the service', async () => {
+    // Given: the service returns every origin
+    const repos = [{ id: '1', name: 'A' }, { id: '2', name: 'agent-x', origin: 'provisioned' }];
+    mockRepositoryService.getAll.mockResolvedValue(repos as never);
+
+    // When: listing with includeProvisioned
+    const result = await invoke('repository:list', true);
+
+    // Then: the flag reaches the service and all entries pass through
+    expect(mockRepositoryService.getAll).toHaveBeenCalledWith(true);
+    expect(result).toEqual({ success: true, data: repos });
+  });
+
+  it('should reject a non-boolean includeProvisioned argument', async () => {
+    // When: listing with an invalid flag
+    const result = await invoke('repository:list', 'yes');
+
+    // Then: a failure result is returned and the service is never called
+    expect(result).toEqual(expect.objectContaining({ success: false }));
+    expect(mockRepositoryService.getAll).not.toHaveBeenCalled();
   });
 
   it('should normalize the local path when creating', async () => {

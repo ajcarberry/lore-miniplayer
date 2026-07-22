@@ -54,7 +54,7 @@ describe('EditRepositoryModal', () => {
     renderModal();
 
     // Then: the name is prefilled and Save is disabled
-    expect(screen.getByLabelText(/Repository Name/)).toHaveValue('MyRepo');
+    expect(screen.getByLabelText(/Workspace Name/)).toHaveValue('MyRepo');
     expect(screen.getByRole('button', { name: 'Save Changes' })).toBeDisabled();
   });
 
@@ -78,7 +78,7 @@ describe('EditRepositoryModal', () => {
     const { onSave, onClose } = renderModal();
 
     // When: renaming and saving
-    const nameInput = screen.getByLabelText(/Repository Name/);
+    const nameInput = screen.getByLabelText(/Workspace Name/);
     await user.clear(nameInput);
     await user.type(nameInput, 'Renamed');
     await user.click(screen.getByRole('button', { name: 'Save Changes' }));
@@ -113,7 +113,7 @@ describe('EditRepositoryModal', () => {
     const { onDelete } = renderModal();
 
     // When: clicking Delete Repository
-    await user.click(screen.getByRole('button', { name: /Delete Repository/ }));
+    await user.click(screen.getByRole('button', { name: /Delete Workspace/ }));
 
     // Then: a confirmation view appears without deleting yet
     expect(onDelete).not.toHaveBeenCalled();
@@ -130,13 +130,13 @@ describe('EditRepositoryModal', () => {
     // Given: the confirmation view
     const user = userEvent.setup();
     const { onDelete } = renderModal();
-    await user.click(screen.getByRole('button', { name: /Delete Repository/ }));
+    await user.click(screen.getByRole('button', { name: /Delete Workspace/ }));
 
     // When: cancelling
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
 
     // Then: back on the edit form, nothing deleted
-    expect(screen.getByLabelText(/Repository Name/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Workspace Name/)).toBeInTheDocument();
     expect(onDelete).not.toHaveBeenCalled();
   });
 
@@ -221,6 +221,6 @@ describe('EditRepositoryModal', () => {
     renderModal({ repository: null });
 
     // Then: the modal content is absent
-    expect(screen.queryByText('Edit Repository')).not.toBeInTheDocument();
+    expect(screen.queryByText('Edit Workspace')).not.toBeInTheDocument();
   });
 });

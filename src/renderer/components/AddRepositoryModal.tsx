@@ -32,12 +32,12 @@ type RepositoryMode = 'new' | 'existing';
 
 function buttonText(mode: RepositoryMode, cloneProgress: number, cloneComplete: boolean): string {
   if (cloneComplete) {
-    return 'Repository Added!';
+    return 'Workspace Added!';
   }
   if (cloneProgress > 0 && mode === 'new') {
     return `Cloning... ${Math.floor(cloneProgress)}%`;
   }
-  return mode === 'existing' ? 'Add Existing Repository' : 'Add & Clone Repository';
+  return mode === 'existing' ? 'Add Existing Workspace' : 'Add & Clone Workspace';
 }
 
 function isFormComplete(
@@ -109,7 +109,7 @@ export function AddRepositoryModal({
       setMode('existing');
       // Auto-populate name from directory using path.basename
       const basenameResult = await window.electronAPI.path.basename(selectedPath);
-      setFriendlyName(basenameResult.success ? basenameResult.data : 'repository');
+      setFriendlyName(basenameResult.success ? basenameResult.data : 'workspace');
       setSelectedRepoUrl('');
     } else {
       setMode('new');
@@ -136,7 +136,7 @@ export function AddRepositoryModal({
     <Modal
       opened={opened}
       onClose={handleClose}
-      title='Define Repository'
+      title='Define Workspace'
       fullScreen
       closeOnClickOutside={!isCloning}
       closeOnEscape={!isCloning}
@@ -172,7 +172,7 @@ export function AddRepositoryModal({
           description={
             mode === 'existing'
               ? 'Selected directory contains a Lore repository'
-              : 'Select where to store the repository'
+              : 'Select where to store the workspace'
           }
           required
           disabled={isCloning}
@@ -181,14 +181,14 @@ export function AddRepositoryModal({
 
         {/* Repository Name Input - Last */}
         <TextInput
-          label='Repository Name'
+          label='Workspace Name'
           placeholder='my-project'
           value={friendlyName}
           onChange={e => setFriendlyName(e.currentTarget.value)}
           error={friendlyName ? nameError : null}
           description={
             mode === 'existing'
-              ? 'Name for this repository in the app'
+              ? 'Name for this workspace in the app'
               : 'This will be the folder name on your computer'
           }
           required

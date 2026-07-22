@@ -15,7 +15,9 @@ export function registerRepositoryHandlers(
   log: MainLogger,
   repositoryService: RepositoryService
 ): void {
-  handleResult(log, 'repository:list', RepositoryListArgsSchema, () => repositoryService.getAll());
+  handleResult(log, 'repository:list', RepositoryListArgsSchema, (includeProvisioned?) =>
+    repositoryService.getAll(includeProvisioned)
+  );
 
   // The args schema normalizes localPath to OS-specific separators
   handleResult(log, 'repository:create', RepositoryCreateArgsSchema, input =>

@@ -9,7 +9,9 @@ import type {
   BranchGraph,
   FileDiffResult,
   LineStats,
+  LoreBranch,
   LoreFileStatusGroup,
+  Repository,
   RevisionSummary,
   Workspace,
   WorkspaceAttention,
@@ -19,6 +21,7 @@ import type {
 } from '../../shared/types';
 import { WorkspaceModelSnapshotSchema } from '../../shared/schemas';
 import type { AgentSessionRecord } from './agent-observer';
+import { resolveAnchorWorkspace } from './workspace-anchor';
 
 // Payload of the WorkspaceService 'lifecycle' event (a successful
 // provision/adoption or teardown), defined here as the model is its consumer.
@@ -152,11 +155,20 @@ export interface WorkspaceModelDeps {
     getBranchDivergence(repositoryPath: string, branchName: string): Promise<BranchDivergence>;
     getFileStatus(repositoryPath: string): Promise<LoreFileStatusGroup>;
     getBranchGraph(repositoryPath: string, branchName: string): Promise<BranchGraph>;
+    // Resolves the anchor workspace's current branch + revision (packet U3);
+    // it's a card-view checkout, not a self-reporting Lore instance.
+    listBranches(repositoryPath: string): Promise<LoreBranch[]>;
+    getCurrentRevision(repositoryPath: string): Promise<string>;
     on(event: 'notification', listener: () => void): unknown;
     off(event: 'notification', listener: () => void): unknown;
   };
   readonly diff: {
     branchVsParent(repositoryPath: string, branchName: string): Promise<FileDiffResult[]>;
+  };
+  // Resolves the anchor workspace's registry record (packet U3): the
+  // card-view repo the pill/card currently displays, surfaced as a member.
+  readonly repository: {
+    getById(id: string): Promise<Repository | null>;
   };
 }
 
@@ -233,15 +245,24 @@ export class WorkspaceModelService extends EventEmitter {
   }
 
   // Build (and cache) the current snapshot for a repository. Zod-validated
-  // before returning, matching the push-channel discipline.
+  // before returning, matching the push-channel discipline. Members are the
+  // provisioned worktrees PLUS the anchor workspace (the card-view checkout
+  // the pill/card displays) when it resolves — `workspaces.list` excludes the
+  // anchor by design (packet U1); surfacing it is this packet's job.
   async snapshot(repositoryId: string): Promise<WorkspaceModelSnapshot> {
-    const workspaces = await this.deps.workspaces.list(repositoryId);
-    for (const workspace of workspaces) {
+    const [workspaces, anchor] = await Promise.all([
+      this.deps.workspaces.list(repositoryId),
+      resolveAnchorWorkspace(this.log, this.deps, repositoryId),
+    ]);
+    const members = anchor ? [...workspaces, anchor] : workspaces;
+    for (const workspace of members) {
       this.knownWorkspaces.set(workspace.instanceId, workspace);
     }
     const sessions = this.deps.observer.listSessions();
     const cards = await Promise.all(
-      workspaces.map(workspace => this.buildCard(workspace, sessions))
+      members.map(workspace =>
+        this.buildCard(workspace, sessions, workspace.instanceId === anchor?.instanceId)
+      )
     );
     cards.sort(compareCards);
     return WorkspaceModelSnapshotSchema.parse({ repositoryId, cards });
@@ -299,7 +320,8 @@ export class WorkspaceModelService extends EventEmitter {
 
   private async buildCard(
     workspace: Workspace,
-    sessions: AgentSessionRecord[]
+    sessions: AgentSessionRecord[],
+    isActive: boolean
   ): Promise<WorkspaceCard> {
     const record = this.sessionFor(workspace.path, sessions);
     const markedActive = this.resolveMark(workspace, record);
@@ -328,6 +350,7 @@ export class WorkspaceModelService extends EventEmitter {
     return {
       workspace,
       attention,
+      isActive,
       fileStats: aggregateStats(fileDiffs),
       changedFileCount: fileDiffs.length,
       sessionCommits,

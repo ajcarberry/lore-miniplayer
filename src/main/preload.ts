@@ -21,6 +21,7 @@ import type {
   WorkspaceTeardownResponse,
   WorkspaceMarkActiveRequest,
   WorkspaceMarkActiveResponse,
+  WorkspaceForgetRequest,
   DiffRequest,
   DiffResponse,
   MergeStartRequest,
@@ -74,8 +75,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
   },
   repository: {
-    list: async (): Promise<Result<Repository[]>> => {
-      return ipcRenderer.invoke('repository:list') as Promise<Result<Repository[]>>;
+    // includeProvisioned surfaces every registry origin (provisioned
+    // worktrees included); omitted keeps the default card-view-only list.
+    list: async (includeProvisioned?: boolean): Promise<Result<Repository[]>> => {
+      return ipcRenderer.invoke('repository:list', includeProvisioned) as Promise<
+        Result<Repository[]>
+      >;
     },
     create: async (input: RepositoryCreateInput): Promise<Result<Repository>> => {
       return ipcRenderer.invoke('repository:create', input) as Promise<Result<Repository>>;
@@ -257,6 +262,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return ipcRenderer.invoke(IPC_CHANNELS.workspace.markActive, request) as Promise<
         Result<WorkspaceMarkActiveResponse>
       >;
+    },
+    // Untrack-only removal (design amendment): drops the workspace from the
+    // registry without touching the worktree directory or the branch.
+    forget: async (request: WorkspaceForgetRequest): Promise<VoidResult> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.workspace.forget, request) as Promise<VoidResult>;
     },
   },
   // Mission Control window (P10, design 2a). `open`/`close` manage the

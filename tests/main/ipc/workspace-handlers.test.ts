@@ -26,6 +26,7 @@ const mockWorkspaceService = {
   provision: jest.fn(),
   list: jest.fn(),
   teardown: jest.fn(),
+  forget: jest.fn(),
 } as unknown as jest.Mocked<WorkspaceService>;
 
 const mockWorkspaceModel = {
@@ -51,12 +52,13 @@ beforeEach(() => {
 });
 
 describe('workspace handler registration', () => {
-  it('registers the four workspace channels', () => {
-    // Then: provision, list, teardown, and markActive are reachable
+  it('registers the five workspace channels', () => {
+    // Then: provision, list, teardown, markActive, and forget are reachable
     expect(registeredHandlers.has(IPC_CHANNELS.workspace.provision)).toBe(true);
     expect(registeredHandlers.has(IPC_CHANNELS.workspace.list)).toBe(true);
     expect(registeredHandlers.has(IPC_CHANNELS.workspace.teardown)).toBe(true);
     expect(registeredHandlers.has(IPC_CHANNELS.workspace.markActive)).toBe(true);
+    expect(registeredHandlers.has(IPC_CHANNELS.workspace.forget)).toBe(true);
   });
 });
 
@@ -280,5 +282,55 @@ describe('workspace:teardown', () => {
     // Then: the error surfaces as a failure result
     expect(result.success).toBe(false);
     expect(result.error).toContain('uncommitted');
+  });
+});
+
+describe('workspace:forget', () => {
+  it('forwards an id-based forget request and wraps a void success result', async () => {
+    // Given: the service resolves (untrack-only, no return value)
+    mockWorkspaceService.forget.mockResolvedValue(undefined);
+
+    // When: forgetting by id
+    const result = await invoke(IPC_CHANNELS.workspace.forget, { workspaceId: 'inst-1' });
+
+    // Then: the request is forwarded and the result wrapped
+    expect(mockWorkspaceService.forget).toHaveBeenCalledWith({ workspaceId: 'inst-1' });
+    expect(result).toEqual({ success: true, data: undefined });
+  });
+
+  it('forwards a path-based forget request', async () => {
+    // Given: the service resolves
+    mockWorkspaceService.forget.mockResolvedValue(undefined);
+
+    // When: forgetting by path
+    await invoke(IPC_CHANNELS.workspace.forget, { path: '/w/a' });
+
+    // Then: the union member is forwarded intact
+    expect(mockWorkspaceService.forget).toHaveBeenCalledWith({ path: '/w/a' });
+  });
+
+  it('rejects a forget request with neither workspaceId nor path', async () => {
+    // When: forgetting with no identifier
+    const result = (await invoke(IPC_CHANNELS.workspace.forget, {})) as { success: boolean };
+
+    // Then: validation fails before the service is reached
+    expect(result.success).toBe(false);
+    expect(mockWorkspaceService.forget).not.toHaveBeenCalled();
+  });
+
+  it('converts service failures into failure results', async () => {
+    // Given: the service can't find the workspace
+    mockWorkspaceService.forget.mockRejectedValue(
+      new Error('Workspace not found or not a tracked instance')
+    );
+
+    // When: forgetting
+    const result = (await invoke(IPC_CHANNELS.workspace.forget, {
+      workspaceId: 'nope',
+    })) as { success: boolean; error?: string };
+
+    // Then: the error surfaces as a failure result
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('not found');
   });
 });

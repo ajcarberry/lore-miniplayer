@@ -325,9 +325,14 @@ export const ReviewOpenRequestSchema = z.object({
 // and changed-file count against the branch's parent, and the session commits
 // on the branch since provisioning (the branch's own revisions, parent
 // lineage excluded). `lastEventAt` drives recent-ordering within a band.
+// `isActive` marks the one card (at most) that is the anchor workspace — the
+// card-view repository currently open in the pill/card, surfaced as a Mission
+// Control member alongside its provisioned worktrees (packet U1 deferred this
+// composition to U3).
 export const WorkspaceCardSchema = z.object({
   workspace: WorkspaceSchema,
   attention: WorkspaceAttentionSchema,
+  isActive: z.boolean(),
   session: AgentSessionStateSchema.optional(),
   intention: AgentIntentionSchema.optional(),
   fileStats: LineStatsSchema,
@@ -379,6 +384,15 @@ export const WorkspaceMarkActiveRequestSchema = z.object({
   workspaceId: z.string().min(1),
 });
 export const WorkspaceMarkActiveResponseSchema = WorkspaceSchema;
+
+// "Forget" a workspace (design amendment, packet U3): untrack-only, the
+// worktree directory and branch are left untouched — the non-destructive
+// counterpart to the guarded `teardown`. Identified the same way (instance id
+// or path).
+export const WorkspaceForgetRequestSchema = z.union([
+  z.object({ workspaceId: z.string().min(1) }),
+  z.object({ path: z.string().min(1) }),
+]);
 
 export const DiffRequestSchema = z.object({
   repositoryPath: z.string().min(1),
@@ -457,6 +471,7 @@ export const IPC_CHANNELS = {
     list: 'workspace:list',
     teardown: 'workspace:teardown',
     markActive: 'workspace:markActive',
+    forget: 'workspace:forget',
   },
   diff: {
     compare: 'diff:compare',

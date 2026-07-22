@@ -29,6 +29,7 @@ import {
   WorkspaceTeardownRequestSchema,
   WorkspaceTeardownResultSchema,
   WorkspaceMarkActiveRequestSchema,
+  WorkspaceForgetRequestSchema,
   DiffRequestSchema,
   MergeStartRequestSchema,
   MergeResolveRequestSchema,
@@ -1128,6 +1129,32 @@ describe('Workspace IPC request/response schemas', () => {
     // Then: parsing fails
     expect(result.success).toBe(false);
   });
+
+  it('accepts a forget request identified by workspaceId', () => {
+    // When: parsing a forget request keyed by workspaceId
+    const result = WorkspaceForgetRequestSchema.safeParse({ workspaceId: 'inst-1' });
+
+    // Then: parsing succeeds
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a forget request identified by path', () => {
+    // When: parsing a forget request keyed by worktree path
+    const result = WorkspaceForgetRequestSchema.safeParse({
+      path: '/repos/a/.lore-instances/inst-1',
+    });
+
+    // Then: parsing succeeds
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a forget request with neither workspaceId nor path', () => {
+    // When: parsing a forget request with no identifier
+    const result = WorkspaceForgetRequestSchema.safeParse({});
+
+    // Then: parsing fails
+    expect(result.success).toBe(false);
+  });
 });
 
 describe('WorkspaceModelSnapshotSchema', () => {
@@ -1141,6 +1168,7 @@ describe('WorkspaceModelSnapshotSchema', () => {
       repositoryId: '4f8f2c9e-4b1f-4b7e-9a1a-1c2d3e4f5a6b',
     },
     attention: { band: 'awaitingReview', needsYou: true, reasons: ['reviewReady'] },
+    isActive: false,
     fileStats: { added: 5, removed: 2 },
     changedFileCount: 3,
     sessionCommits: [{ revision: 'c1', revisionNumber: 2 }],
@@ -1153,6 +1181,15 @@ describe('WorkspaceModelSnapshotSchema', () => {
 
     // Then: parsing succeeds
     expect(result.success).toBe(true);
+  });
+
+  it('rejects a card missing isActive (packet U3: marks the anchor workspace)', () => {
+    // When: parsing a card without the isActive marker
+    const { isActive: _isActive, ...withoutIsActive } = validCard;
+    const result = WorkspaceCardSchema.safeParse(withoutIsActive);
+
+    // Then: parsing fails
+    expect(result.success).toBe(false);
   });
 
   it('accepts a per-repository snapshot of cards', () => {

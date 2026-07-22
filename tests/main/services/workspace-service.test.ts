@@ -774,6 +774,88 @@ describe('WorkspaceService', () => {
     });
   });
 
+  describe('forget', () => {
+    it('drops the registry entry but leaves the directory and branch untouched', async () => {
+      // Given: a clean, tracked workspace
+      fs.mkdirSync(workspaceDir, { recursive: true });
+      stores.register('shared', { instanceId: 'inst-1', path: workspaceDir, branchName: BRANCH });
+      await seedRegistry([{ path: workspaceDir, branchName: BRANCH }]);
+
+      // When: forgetting it by id
+      await service.forget({ workspaceId: 'inst-1' });
+
+      // Then: the registry entry is gone, but the directory is untouched and
+      // no destructive Lore call was made
+      await expect(
+        new WorkspaceRegistry(mockLog).findByLocalPath(workspaceDir)
+      ).resolves.toBeUndefined();
+      expect(fs.existsSync(workspaceDir)).toBe(true);
+      expect(mockLore.repositoryInstancePrune).not.toHaveBeenCalled();
+      expect(mockLore.branchArchive).not.toHaveBeenCalled();
+    });
+
+    it('resolves a workspace by path as well as by id', async () => {
+      // Given: a clean, tracked workspace
+      fs.mkdirSync(workspaceDir, { recursive: true });
+      stores.register('shared', { instanceId: 'inst-1', path: workspaceDir, branchName: BRANCH });
+      await seedRegistry([{ path: workspaceDir, branchName: BRANCH }]);
+
+      // When: forgetting it by path
+      await service.forget({ path: workspaceDir });
+
+      // Then: it is untracked
+      await expect(
+        new WorkspaceRegistry(mockLog).findByLocalPath(workspaceDir)
+      ).resolves.toBeUndefined();
+      expect(fs.existsSync(workspaceDir)).toBe(true);
+    });
+
+    it('never guards on uncommitted or unpushed work (untrack-only, non-destructive)', async () => {
+      // Given: a tracked workspace with dirty files and unpushed commits
+      fs.mkdirSync(workspaceDir, { recursive: true });
+      stores.register('shared', { instanceId: 'inst-1', path: workspaceDir, branchName: BRANCH });
+      await seedRegistry([{ path: workspaceDir, branchName: BRANCH }]);
+      loreRepositoryService.getFileStatus.mockResolvedValue({
+        untracked: [],
+        unstaged: [{ path: 'a.txt', isUntracked: false, isStaged: false, conflict: false }],
+        staged: [],
+      });
+      loreRepositoryService.getBranchDivergence.mockResolvedValue({
+        state: 'ahead',
+        latest: 'b',
+        latestRemote: 'a',
+      });
+
+      // When/Then: forget still succeeds
+      await expect(service.forget({ workspaceId: 'inst-1' })).resolves.toBeUndefined();
+      await expect(
+        new WorkspaceRegistry(mockLog).findByLocalPath(workspaceDir)
+      ).resolves.toBeUndefined();
+    });
+
+    it('refuses to forget a path that is not a registered workspace', async () => {
+      // When/Then: an untracked path is refused
+      await expect(
+        service.forget({ path: path.join(tmpBase, 'not-a-workspace') })
+      ).rejects.toThrow(/not found|not a tracked instance/i);
+    });
+
+    it('emits a lifecycle event carrying repositoryId + path on success', async () => {
+      // Given: a clean, tracked workspace
+      fs.mkdirSync(workspaceDir, { recursive: true });
+      stores.register('shared', { instanceId: 'inst-1', path: workspaceDir, branchName: BRANCH });
+      await seedRegistry([{ path: workspaceDir, branchName: BRANCH }]);
+      const listener = jest.fn();
+      service.on('lifecycle', listener);
+
+      // When: forgetting it
+      await service.forget({ workspaceId: 'inst-1' });
+
+      // Then: a lifecycle event fires so the model refreshes immediately
+      expect(listener).toHaveBeenCalledWith({ repositoryId: repo.id, path: workspaceDir });
+    });
+  });
+
   describe('lifecycle events', () => {
     it('emits a lifecycle event carrying repositoryId + path on successful provision', async () => {
       // Given: a clone that joins a shared store self-reporting this workspace

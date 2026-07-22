@@ -258,6 +258,19 @@ describe('RepositoryService', () => {
       expect(all.map(r => r.id)).toEqual([attached.id]);
     });
 
+    it('getAll(true) surfaces every origin, including provisioned worktrees', async () => {
+      // Given: a card-view repo and a provisioned worktree in the same registry
+      const attached = await service.create(createInput);
+      const provisionedId = '44444444-4444-4444-8444-444444444444';
+      await seedProvisioned(provisionedId, '/tmp/wt/agent-y');
+
+      // When: requesting every origin
+      const all = await service.getAll(true);
+
+      // Then: both the card-view entry and the provisioned worktree are listed
+      expect(all.map(r => r.id).sort()).toEqual([attached.id, provisionedId].sort());
+    });
+
     it('delete forgets any origin, including a provisioned worktree', async () => {
       // Given: a provisioned worktree tracked in the registry
       const provisionedId = '33333333-3333-4333-8333-333333333333';

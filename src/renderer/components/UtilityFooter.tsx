@@ -29,6 +29,7 @@ import type { Repository, ThemeMode } from '../../shared/types';
 import { loreAccent } from '../../shared/accent';
 import { useThemeMode } from '../hooks/useThemeMode';
 import { logError } from '../utils/logging';
+import { workspaceDisplayName } from '../utils/repository-name';
 import classes from './UtilityFooter.module.css';
 
 interface UtilityFooterProps {
@@ -90,7 +91,7 @@ function RepositoryRow({ repo, isSelected, onSelect, onEdit }: RepositoryRowProp
             style={{ backgroundColor: loreAccent(repo.accentHue).base }}
           />
           <Text size='sm' truncate>
-            {repo.name}
+            {workspaceDisplayName(repo)}
           </Text>
         </Group>
       </UnstyledButton>
@@ -107,9 +108,10 @@ function RepositoryRow({ repo, isSelected, onSelect, onEdit }: RepositoryRowProp
 }
 
 // The card's bottom utility strip: file explorer / terminal shortcuts for
-// the selected repository, a repository picker popover (select, add, edit,
-// refresh), a server popover for the disconnect flow, and the theme mode
-// menu. Rendered only in the connected view.
+// the selected repository, a workspace picker popover (select, add, edit,
+// refresh — every unified-registry entry, provisioned worktrees included),
+// a server popover for the disconnect flow, and the theme mode menu.
+// Rendered only in the connected view.
 export function UtilityFooter({
   selectedRepo,
   repositories,
@@ -198,14 +200,9 @@ export function UtilityFooter({
       </Tooltip>
 
       <Popover position='top' withinPortal shadow='md' width={240}>
-        <Tooltip label='Repositories'>
+        <Tooltip label='Workspaces'>
           <Popover.Target>
-            <ActionIcon
-              variant='subtle'
-              size='lg'
-              className={classes.icon}
-              aria-label='Repositories'
-            >
+            <ActionIcon variant='subtle' size='lg' className={classes.icon} aria-label='Workspaces'>
               <IconFolders size={18} stroke={1.5} />
             </ActionIcon>
           </Popover.Target>
@@ -228,7 +225,7 @@ export function UtilityFooter({
             <UnstyledButton onClick={onAddRepo} p={4}>
               <Group gap={6}>
                 <IconPlus size={14} />
-                <Text size='sm'>Add repository…</Text>
+                <Text size='sm'>Add workspace…</Text>
               </Group>
             </UnstyledButton>
             <UnstyledButton onClick={onRefreshRepos} disabled={isLoadingRepos} p={4}>

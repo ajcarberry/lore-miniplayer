@@ -38,8 +38,14 @@ export class RepositoryService {
     await this.registry.all();
   }
 
-  async getAll(): Promise<Repository[]> {
+  // `includeProvisioned` surfaces every registry origin (U2: the card-view
+  // selector lists all workspaces, provisioned worktrees included); omitted
+  // keeps the default card-view-only list unchanged for existing callers.
+  async getAll(includeProvisioned = false): Promise<Repository[]> {
     const entries = await this.registry.all();
+    if (includeProvisioned) {
+      return entries;
+    }
     return entries.filter(entry => CARD_VIEW_ORIGINS.includes(entry.origin));
   }
 

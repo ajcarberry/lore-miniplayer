@@ -39,6 +39,18 @@ export function MissionControl(): ReactElement {
     });
   }, []);
 
+  const handleForget = useCallback((workspaceId: string): void => {
+    void window.electronAPI.workspace.forget({ workspaceId }).then(result => {
+      if (!result.success) {
+        notifications.show({
+          color: 'red',
+          title: 'Forget workspace failed',
+          message: result.error,
+        });
+      }
+    });
+  }, []);
+
   const handleTeardown = useCallback(async (workspaceId: string, force: boolean): Promise<void> => {
     const result = await window.electronAPI.workspace.teardown({ workspaceId, force });
     if (!result.success) {
@@ -89,6 +101,7 @@ export function MissionControl(): ReactElement {
       onOpenTerminal={handleOpenTerminal}
       onReview={requestOpenReviewWindow}
       onMarkActive={handleMarkActive}
+      onForget={handleForget}
       onTeardown={handleTeardown}
       onProvision={handleProvision}
       onRefresh={handleRefresh}

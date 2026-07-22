@@ -97,7 +97,7 @@ function DeleteConfirmation({
     <Stack gap='lg' style={{ height: '100%', justifyContent: 'space-between' }}>
       <Alert
         icon={<IconAlertTriangle size={16} />}
-        title='Delete Repository'
+        title='Delete Workspace'
         color='red'
         variant='light'
       >
@@ -216,14 +216,14 @@ export function EditRepositoryModal({
   const isFormValid = repositoryName.trim().length > 0;
 
   return (
-    <Modal opened={opened} onClose={handleClose} title='Edit Repository' fullScreen>
+    <Modal opened={opened} onClose={handleClose} title='Edit Workspace' fullScreen>
       {panelView === 'edit' ? (
         <Stack gap='lg' style={{ height: '100%', justifyContent: 'space-between' }}>
           <Stack gap='md'>
             {/* Repository Name - Editable */}
             <TextInput
-              label='Repository Name'
-              placeholder='Enter repository name'
+              label='Workspace Name'
+              placeholder='Enter workspace name'
               value={repositoryName}
               onChange={e => setRepositoryName(e.currentTarget.value)}
               required
@@ -294,7 +294,7 @@ export function EditRepositoryModal({
               leftSection={<IconTrash size={16} />}
               onClick={() => setPanelView('confirmDelete')}
             >
-              Delete Repository
+              Delete Workspace
             </Button>
 
             <Button onClick={handleSave} disabled={!isFormValid || !isDirty}>

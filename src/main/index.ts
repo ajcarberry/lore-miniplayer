@@ -210,6 +210,7 @@ app.whenReady().then(async () => {
     transcript: transcriptService,
     lore: loreRepositoryService,
     diff: diffService,
+    repository: repositoryService,
   });
 
   registerIpcHandlers(

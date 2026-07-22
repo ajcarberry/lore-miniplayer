@@ -13,7 +13,13 @@ export interface RepositoriesState {
 // Loads the stored repositories once connected; the first repository is
 // auto-selected. `repositories === null` doubles as the loading indicator so
 // the initial fetch effect never needs a synchronous setState.
-export function useRepositories(isConnected: boolean): RepositoriesState {
+// `includeProvisioned` (U2) surfaces every registry origin — the footer
+// selector's flat list of all workspaces — while the default (card-view-only)
+// list is preserved for other callers (e.g. Mission Control).
+export function useRepositories(
+  isConnected: boolean,
+  includeProvisioned?: boolean
+): RepositoriesState {
   const [repositories, setRepositories] = useState<Repository[] | null>(null);
   const [selectedRepo, setSelectedRepo] = useState<Repository | null>(null);
 
@@ -23,7 +29,7 @@ export function useRepositories(isConnected: boolean): RepositoriesState {
     }
     let cancelled = false;
     void (async (): Promise<void> => {
-      const result = await window.electronAPI.repository.list();
+      const result = await window.electronAPI.repository.list(includeProvisioned);
       if (cancelled) {
         return;
       }
@@ -41,10 +47,10 @@ export function useRepositories(isConnected: boolean): RepositoriesState {
     return (): void => {
       cancelled = true;
     };
-  }, [isConnected]);
+  }, [isConnected, includeProvisioned]);
 
   const refresh = useCallback(async (): Promise<void> => {
-    const result = await window.electronAPI.repository.list();
+    const result = await window.electronAPI.repository.list(includeProvisioned);
     if (!result.success) {
       logError('Failed to refresh repositories', {
         error: result.error,
@@ -53,7 +59,7 @@ export function useRepositories(isConnected: boolean): RepositoriesState {
       return;
     }
     setRepositories(result.data);
-  }, []);
+  }, [includeProvisioned]);
 
   return {
     repositories: repositories ?? [],

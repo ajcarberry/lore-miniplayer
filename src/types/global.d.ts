@@ -19,6 +19,7 @@ import type {
   WorkspaceTeardownResponse,
   WorkspaceMarkActiveRequest,
   WorkspaceMarkActiveResponse,
+  WorkspaceForgetRequest,
   DiffRequest,
   DiffResponse,
   MergeStartRequest,
@@ -57,7 +58,9 @@ declare global {
         openTerminal: (path: string) => Promise<VoidResult>;
       };
       repository: {
-        list: () => Promise<Result<Repository[]>>;
+        // includeProvisioned surfaces every registry origin (provisioned
+        // worktrees included); omitted keeps the default card-view-only list.
+        list: (includeProvisioned?: boolean) => Promise<Result<Repository[]>>;
         create: (input: RepositoryCreateInput) => Promise<Result<Repository>>;
         update: (input: RepositoryUpdateInput) => Promise<Result<Repository>>;
         delete: (id: string) => Promise<VoidResult>;
@@ -114,6 +117,9 @@ declare global {
         markActive: (
           request: WorkspaceMarkActiveRequest
         ) => Promise<Result<WorkspaceMarkActiveResponse>>;
+        // Untrack-only removal (design amendment): drops the workspace from
+        // the registry without touching the worktree directory or the branch.
+        forget: (request: WorkspaceForgetRequest) => Promise<VoidResult>;
       };
       agent: {
         // Registers a listener for agent session-state updates pushed from

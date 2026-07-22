@@ -164,7 +164,7 @@ describe('UtilityFooter', () => {
       const { onSelectRepo } = renderFooter({ selectedRepo: repoA, repositories: [repoA, repoB] });
 
       // When: opening the repository picker and choosing Beta
-      await user.click(screen.getByRole('button', { name: 'Repositories' }));
+      await user.click(screen.getByRole('button', { name: 'Workspaces' }));
       await user.click(await screen.findByText('Beta', {}, { timeout: 8000 }));
 
       // Then: the selection callback fires with the chosen repository
@@ -176,12 +176,38 @@ describe('UtilityFooter', () => {
       const user = userEvent.setup();
       const { onAddRepo } = renderFooter();
 
-      // When: opening the picker and choosing Add repository…
-      await user.click(screen.getByRole('button', { name: 'Repositories' }));
-      await user.click(await screen.findByText('Add repository…', {}, { timeout: 8000 }));
+      // When: opening the picker and choosing Add workspace…
+      await user.click(screen.getByRole('button', { name: 'Workspaces' }));
+      await user.click(await screen.findByText('Add workspace…', {}, { timeout: 8000 }));
 
       // Then: the add-repository callback fires
       expect(onAddRepo).toHaveBeenCalled();
+    });
+
+    it('should list a provisioned workspace with a repo-name-prefixed display name', async () => {
+      // Given: a card-view repo and a provisioned worktree of the same repo
+      const attached = makeRepository({ name: 'MyRepo' });
+      const provisioned = makeRepository({
+        id: '5a9d3c8f-6c2e-4d8f-8b2b-2d3e4f5a6b7c',
+        origin: 'provisioned',
+        name: 'test-WT1',
+        url: 'lores://lore.example.com/demo-project',
+        branchName: 'test/WT1',
+        localPath: '/tmp/wt/test-WT1',
+      });
+      const user = userEvent.setup();
+      const { onSelectRepo } = renderFooter({
+        selectedRepo: attached,
+        repositories: [attached, provisioned],
+      });
+
+      // When: opening the picker
+      await user.click(screen.getByRole('button', { name: 'Workspaces' }));
+
+      // Then: the provisioned entry reads "<repo name> · <branch>", legible
+      // alongside its card-view sibling, and selecting it fires the callback
+      await user.click(await screen.findByText('demo-project · test/WT1', {}, { timeout: 8000 }));
+      expect(onSelectRepo).toHaveBeenCalledWith(provisioned);
     });
 
     it('should open the edit flow for a repository row', async () => {
@@ -195,7 +221,7 @@ describe('UtilityFooter', () => {
       // pass is still transitioning through display:none for, unlike text
       // queries — wait for row content by text first, then query the edit
       // button with hidden:true so it isn't excluded by that transient state)
-      await user.click(screen.getByRole('button', { name: 'Repositories' }));
+      await user.click(screen.getByRole('button', { name: 'Workspaces' }));
       await screen.findByText('MyRepo', {}, { timeout: 8000 });
       await user.click(
         await screen.findByRole('button', { name: 'Edit MyRepo', hidden: true }, { timeout: 8000 })
@@ -211,7 +237,7 @@ describe('UtilityFooter', () => {
       const { onRefreshRepos } = renderFooter();
 
       // When: opening the picker and clicking Refresh
-      await user.click(screen.getByRole('button', { name: 'Repositories' }));
+      await user.click(screen.getByRole('button', { name: 'Workspaces' }));
       await user.click(await screen.findByText('Refresh', {}, { timeout: 8000 }));
 
       // Then: the refresh callback fires

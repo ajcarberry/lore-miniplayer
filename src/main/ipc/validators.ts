@@ -9,6 +9,7 @@ import {
   WorkspaceListRequestSchema,
   WorkspaceTeardownRequestSchema,
   WorkspaceMarkActiveRequestSchema,
+  WorkspaceForgetRequestSchema,
   DiffRequestSchema,
   MergeStartRequestSchema,
   MergeResolveRequestSchema,
@@ -72,7 +73,9 @@ export const ConfigGetArgsSchema = z.tuple([]);
 export const ConfigSetArgsSchema = z.tuple([ConfigSchema]);
 
 // repository:*
-export const RepositoryListArgsSchema = z.tuple([]);
+// The optional flag surfaces every registry origin (including provisioned
+// worktrees) when true; omitted/false keeps the default card-view-only list.
+export const RepositoryListArgsSchema = z.tuple([z.boolean().optional()]);
 // The localPath is normalized to OS-specific separators before validation,
 // so a denormalized-but-safe input (e.g. '/tmp//repos/../repos/a') passes
 // the traversal check on its normalized form.
@@ -153,6 +156,7 @@ export const WorkspaceProvisionArgsSchema = z.tuple([WorkspaceProvisionRequestSc
 export const WorkspaceListArgsSchema = z.tuple([WorkspaceListRequestSchema]);
 export const WorkspaceTeardownArgsSchema = z.tuple([WorkspaceTeardownRequestSchema]);
 export const WorkspaceMarkActiveArgsSchema = z.tuple([WorkspaceMarkActiveRequestSchema]);
+export const WorkspaceForgetArgsSchema = z.tuple([WorkspaceForgetRequestSchema]);
 
 // missionControl:* / workspace:model:* (P10) — the Mission Control window is
 // opened for a repository (id optional: focuses an already-open window) and the

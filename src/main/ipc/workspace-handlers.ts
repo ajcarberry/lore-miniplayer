@@ -7,14 +7,16 @@ import {
   WorkspaceListArgsSchema,
   WorkspaceTeardownArgsSchema,
   WorkspaceMarkActiveArgsSchema,
+  WorkspaceForgetArgsSchema,
 } from './validators';
 import type { MainLogger } from './logger';
 
 // Workspace lifecycle channels (Mission Control, design 2a): provision a
 // worktree, list a repository's workspaces, tear one down with full cleanup,
-// and manually mark one active (an idle → awaiting-review transition owned by
-// the workspace model). Each request is re-validated at the boundary with its
-// P2 schema.
+// manually mark one active (an idle → awaiting-review transition owned by
+// the workspace model), and forget one (untrack-only, no cleanup — the
+// design amendment's non-destructive removal). Each request is re-validated
+// at the boundary with its P2 schema.
 export function registerWorkspaceHandlers(
   log: MainLogger,
   workspaceService: WorkspaceService,
@@ -34,5 +36,9 @@ export function registerWorkspaceHandlers(
 
   handleResult(log, IPC_CHANNELS.workspace.markActive, WorkspaceMarkActiveArgsSchema, request =>
     workspaceModel.markActive(request.workspaceId)
+  );
+
+  handleResult(log, IPC_CHANNELS.workspace.forget, WorkspaceForgetArgsSchema, request =>
+    workspaceService.forget(request)
   );
 }

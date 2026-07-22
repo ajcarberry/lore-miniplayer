@@ -30,6 +30,9 @@ export interface MissionControlViewProps {
   readonly onOpenTerminal: (path: string) => void;
   readonly onReview: (intent: OpenReviewIntent) => void;
   readonly onMarkActive: (workspaceId: string) => void;
+  // Untrack-only removal (design amendment) — the non-destructive counterpart
+  // to onTeardown; no confirmation modal (nothing is destroyed).
+  readonly onForget: (workspaceId: string) => void;
   // Both resolve when the operation settles; the view drives its own busy state
   // and closes the modal on success.
   readonly onTeardown: (workspaceId: string, force: boolean) => Promise<void>;
@@ -195,11 +198,13 @@ export function MissionControlView(props: MissionControlViewProps): ReactElement
                         <IdleWorkspaceRow
                           key={card.workspace.instanceId}
                           workspace={card.workspace}
+                          isActive={card.isActive}
                           onOpenTerminal={props.onOpenTerminal}
                           onMarkActive={workspace => props.onMarkActive(workspace.instanceId)}
                           onTeardown={workspace =>
                             setTeardownTarget({ workspace, requiresForce: false })
                           }
+                          onForget={workspace => props.onForget(workspace.instanceId)}
                         />
                       ))
                     : bandCards.map(card => (
@@ -209,6 +214,7 @@ export function MissionControlView(props: MissionControlViewProps): ReactElement
                           onOpenTerminal={props.onOpenTerminal}
                           onReview={props.onReview}
                           onTeardown={handleTeardownCard}
+                          onForget={forgetCard => props.onForget(forgetCard.workspace.instanceId)}
                         />
                       ))}
                 </Stack>

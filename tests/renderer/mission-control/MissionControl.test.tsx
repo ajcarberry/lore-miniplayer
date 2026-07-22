@@ -33,6 +33,7 @@ interface Api {
   teardown: jest.Mock;
   provision: jest.Mock;
   markActive: jest.Mock;
+  forget: jest.Mock;
   openTerminal: jest.Mock;
   refresh: jest.Mock;
 }
@@ -43,6 +44,7 @@ function installApi(repositories = [makeRepository()]): Api {
   const teardown = jest.fn().mockResolvedValue({ success: true, data: {} });
   const provision = jest.fn().mockResolvedValue({ success: true, data: {} });
   const markActive = jest.fn().mockResolvedValue({ success: true, data: {} });
+  const forget = jest.fn().mockResolvedValue({ success: true, data: undefined });
   const openTerminal = jest.fn().mockResolvedValue({ success: true, data: undefined });
   const refresh = jest.fn().mockResolvedValue({ success: true, data: undefined });
   api.repository.list = jest.fn().mockResolvedValue({ success: true, data: repositories });
@@ -61,9 +63,9 @@ function installApi(repositories = [makeRepository()]): Api {
       onSnapshot: jest.fn(() => jest.fn()),
       refresh,
     },
-    workspace: { provision, list: jest.fn(), teardown, markActive },
+    workspace: { provision, list: jest.fn(), teardown, markActive, forget },
   });
-  return { watch, teardown, provision, markActive, openTerminal, refresh };
+  return { watch, teardown, provision, markActive, forget, openTerminal, refresh };
 }
 
 function renderContainer(): void {
@@ -106,6 +108,36 @@ describe('MissionControl container', () => {
     await user.click(within(card).getByRole('button', { name: /Close workspace/ }));
     await user.click(await screen.findByRole('button', { name: 'Close workspace' }));
     expect(api.teardown).toHaveBeenCalledWith({ workspaceId: 'inst-1', force: false });
+  });
+
+  it('forgets a workspace (untrack-only IPC, no confirmation)', async () => {
+    const user = userEvent.setup();
+    const api = installApi();
+    renderContainer();
+
+    const card = await screen.findByTestId('mission-card');
+    await user.click(within(card).getByRole('button', { name: /Forget workspace/ }));
+    expect(api.forget).toHaveBeenCalledWith({ workspaceId: 'inst-1' });
+  });
+
+  it('surfaces a forget failure as a notification', async () => {
+    const user = userEvent.setup();
+    const api = installApi();
+    api.forget.mockResolvedValue({ success: false, error: 'not found' });
+    renderContainer();
+
+    const card = await screen.findByTestId('mission-card');
+    await user.click(within(card).getByRole('button', { name: /Forget workspace/ }));
+
+    await waitFor(() =>
+      expect(notifications.show).toHaveBeenCalledWith(
+        expect.objectContaining({
+          color: 'red',
+          title: 'Forget workspace failed',
+          message: 'not found',
+        })
+      )
+    );
   });
 
   it('provisions a new workspace on the selected repository', async () => {

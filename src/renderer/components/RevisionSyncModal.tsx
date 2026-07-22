@@ -140,7 +140,7 @@ export function RevisionSyncModal({
 
         <Alert icon={<IconAlertCircle size={16} />} variant='light' color='blue'>
           <Text size='xs'>
-            This will sync your repository to the specified revision. If &quot;Keep local
+            This will sync your workspace to the specified revision. If &quot;Keep local
             changes&quot; is enabled, Lore will attempt to preserve your uncommitted changes.
           </Text>
         </Alert>

@@ -12,7 +12,9 @@ import type {
   BranchDivergence,
   BranchGraph,
   FileDiffResult,
+  LoreBranch,
   LoreFileStatusGroup,
+  Repository,
   Workspace,
   WorkspaceModelSnapshot,
 } from '../../../src/shared/types';
@@ -125,6 +127,10 @@ class FakeLore extends EventEmitter {
   );
   getBranchDivergence = jest.fn(async (): Promise<BranchDivergence> => IN_SYNC);
   getBranchGraph = jest.fn(async (): Promise<BranchGraph> => emptyGraph());
+  // Anchor-only signals (packet U3): resolving the card-view repo's current
+  // branch + revision. Unused unless a test configures a repository record.
+  listBranches = jest.fn(async (): Promise<LoreBranch[]> => []);
+  getCurrentRevision = jest.fn(async (): Promise<string> => '');
 }
 
 class FakeWorkspaces extends EventEmitter {
@@ -140,6 +146,7 @@ interface Harness {
   observer: FakeObserver;
   lore: FakeLore;
   workspaces: FakeWorkspaces;
+  repository: { getById: jest.Mock<Promise<Repository | null>, [string]> };
   listWorkspaces: jest.Mock<Promise<Workspace[]>, [string]>;
   extract: jest.Mock<Promise<AgentIntention>, [string]>;
   branchVsParent: jest.Mock<Promise<FileDiffResult[]>, [string, string]>;
@@ -154,6 +161,11 @@ function makeHarness(workspaces: Workspace[], options: { refreshMs?: number } = 
     commentary: [],
   }));
   const branchVsParent = jest.fn<Promise<FileDiffResult[]>, [string, string]>(async () => []);
+  // Defaults to "no anchor record" — every existing snapshot test stays
+  // exactly as it was (no anchor member) unless a test configures it.
+  const repository = {
+    getById: jest.fn<Promise<Repository | null>, [string]>(async () => null),
+  };
 
   const deps: WorkspaceModelDeps = {
     workspaces: workspacesFake as unknown as WorkspaceModelDeps['workspaces'],
@@ -161,6 +173,7 @@ function makeHarness(workspaces: Workspace[], options: { refreshMs?: number } = 
     transcript: { extract },
     lore: lore as unknown as WorkspaceModelDeps['lore'],
     diff: { branchVsParent },
+    repository,
   };
 
   const model = new WorkspaceModelService(asLogger, deps, {
@@ -171,6 +184,7 @@ function makeHarness(workspaces: Workspace[], options: { refreshMs?: number } = 
     observer,
     lore,
     workspaces: workspacesFake,
+    repository,
     listWorkspaces: workspacesFake.list,
     extract,
     branchVsParent,
@@ -740,6 +754,104 @@ describe('WorkspaceModelService.watch — bounded refresh cadence', () => {
 
   it('exposes a low-frequency default cadence (does not multiply the 3s polls)', () => {
     expect(WORKSPACE_MODEL_REFRESH_MS).toBeGreaterThanOrEqual(10_000);
+  });
+});
+
+describe('WorkspaceModelService.snapshot — anchor workspace (packet U3)', () => {
+  function anchorRepo(overrides: Partial<Repository> = {}): Repository {
+    return {
+      id: REPO_ID,
+      name: 'anchor-repo',
+      url: 'lore://host/anchor-repo',
+      localPath: '/repo/anchor',
+      accentHue: 10,
+      origin: 'attached',
+      createdAt: '2026-07-01T00:00:00.000Z',
+      updatedAt: '2026-07-01T00:00:00.000Z',
+      ...overrides,
+    };
+  }
+
+  it('includes the anchor as a member marked isActive, alongside its provisioned worktrees', async () => {
+    const { model, repository, lore } = makeHarness([workspace()]);
+    repository.getById.mockResolvedValue(anchorRepo());
+    lore.listBranches.mockResolvedValue([
+      { name: 'feature-x', isDefault: false, isCurrent: false },
+      { name: 'main', isDefault: true, isCurrent: true },
+    ]);
+    lore.getCurrentRevision.mockResolvedValue('rev-anchor');
+
+    const snapshot = await model.snapshot(REPO_ID);
+    expect(snapshot.cards).toHaveLength(2);
+
+    const anchorCard = snapshot.cards.find(card => card.workspace.instanceId === REPO_ID);
+    expect(anchorCard?.isActive).toBe(true);
+    expect(anchorCard?.workspace.branchName).toBe('main');
+    expect(anchorCard?.workspace.path).toBe('/repo/anchor');
+    expect(anchorCard?.workspace.revision).toBe('rev-anchor');
+    expect(anchorCard?.workspace.stale).toBe(false);
+
+    const provisionedCard = snapshot.cards.find(card => card.workspace.instanceId === 'inst-a');
+    expect(provisionedCard?.isActive).toBe(false);
+  });
+
+  it('omits the anchor when the repository record cannot be resolved (backward compatible)', async () => {
+    const { model, repository } = makeHarness([workspace()]);
+    repository.getById.mockResolvedValue(null);
+
+    const snapshot = await model.snapshot(REPO_ID);
+    expect(snapshot.cards).toHaveLength(1);
+    expect(snapshot.cards[0]?.isActive).toBe(false);
+  });
+
+  it('omits the anchor when its current branch cannot be resolved, without failing the snapshot', async () => {
+    const { model, repository, lore } = makeHarness([workspace()]);
+    repository.getById.mockResolvedValue(anchorRepo());
+    lore.listBranches.mockRejectedValue(new Error('boom'));
+
+    const snapshot = await model.snapshot(REPO_ID);
+    expect(snapshot.cards).toHaveLength(1);
+  });
+
+  it('omits the anchor when no branch reports isCurrent', async () => {
+    const { model, repository, lore } = makeHarness([workspace()]);
+    repository.getById.mockResolvedValue(anchorRepo());
+    lore.listBranches.mockResolvedValue([{ name: 'main', isDefault: true, isCurrent: false }]);
+
+    const snapshot = await model.snapshot(REPO_ID);
+    expect(snapshot.cards).toHaveLength(1);
+  });
+
+  it('bands a dirty attached-origin anchor (no agent, no provisionedAt) from Lore signals alone', async () => {
+    const { model, repository, lore } = makeHarness([]);
+    repository.getById.mockResolvedValue(anchorRepo());
+    lore.listBranches.mockResolvedValue([{ name: 'main', isDefault: true, isCurrent: true }]);
+    lore.getFileStatus.mockResolvedValue(dirtyStatus());
+
+    const card = onlyCard(await model.snapshot(REPO_ID));
+    expect(card.attention.band).toBe('awaitingReview');
+    expect(card.attention.reasons).toEqual(['uncommitted']);
+    // Never claim agent knowledge that doesn't exist for a hookless anchor.
+    expect(card.session).toBeUndefined();
+    expect(card.intention).toBeUndefined();
+  });
+
+  it('bands a clean attached-origin anchor idle', async () => {
+    const { model, repository, lore } = makeHarness([]);
+    repository.getById.mockResolvedValue(anchorRepo());
+    lore.listBranches.mockResolvedValue([{ name: 'main', isDefault: true, isCurrent: true }]);
+
+    const card = onlyCard(await model.snapshot(REPO_ID));
+    expect(card.attention.band).toBe('idle');
+  });
+
+  it('validates an anchor-including snapshot against the P2 schema', async () => {
+    const { model, repository, lore } = makeHarness([workspace()]);
+    repository.getById.mockResolvedValue(anchorRepo());
+    lore.listBranches.mockResolvedValue([{ name: 'main', isDefault: true, isCurrent: true }]);
+
+    const snapshot = await model.snapshot(REPO_ID);
+    expect(() => WorkspaceModelSnapshotSchema.parse(snapshot)).not.toThrow();
   });
 });
 

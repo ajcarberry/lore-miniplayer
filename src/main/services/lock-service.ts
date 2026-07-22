@@ -1,3 +1,4 @@
+import * as path from 'node:path';
 import { lore, LoreError } from '@lore-vcs/sdk';
 import type { LoreFluentApi } from '@lore-vcs/sdk';
 import { LoreEventTag } from '@lore-vcs/sdk/types/enums';
@@ -71,13 +72,23 @@ export class LockService {
     return entries.filter(entry => pathSet.has(entry.path));
   }
 
+  // The SDK resolves a relative path arg against the process CWD, NOT
+  // globalArgs.repositoryPath (known gotcha, first hit on fileStage - see
+  // diff-service.ts). A repo-relative path must be made repo-absolute
+  // before being handed to an SDK op. Idempotent for a path that is
+  // already absolute.
+  private toAbsolutePath(repositoryPath: string, filePath: string): string {
+    return path.isAbsolute(filePath) ? filePath : path.join(repositoryPath, filePath);
+  }
+
   // Releases locks on the given paths. A path with no matching lock is
   // simply absent from `released` (lockFileRelease reports it via a
   // separate not-found event this service doesn't need), never an error.
   async release(request: LockReleaseRequest): Promise<LockReleaseResponse> {
     const { repositoryPath, paths } = LockReleaseRequestSchema.parse(request);
+    const absolutePaths = paths.map(p => this.toAbsolutePath(repositoryPath, p));
     const released = await this.collect(
-      lore.lockFileRelease({ repositoryPath }, { paths }),
+      lore.lockFileRelease({ repositoryPath }, { paths: absolutePaths }),
       LoreEventTag.LOCK_FILE_RELEASE,
       (data: LoreEventDataOf<LoreEventTag.LOCK_FILE_RELEASE>) => data.path,
       'Failed to release locks'

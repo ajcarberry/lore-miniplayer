@@ -157,8 +157,9 @@ describe('LockService', () => {
   });
 
   describe('release', () => {
-    it('releases the given paths and returns what was released', async () => {
-      // Given: the SDK releases two locks
+    it('absolutizes repo-relative paths before calling lockFileRelease', async () => {
+      // Given: the SDK releases two locks (the SDK resolves relative path
+      // args against process CWD, not repositoryPath - see diff-service.ts)
       mockLore.lockFileRelease.mockReturnValue(
         fluentMock({
           events: [
@@ -168,15 +169,45 @@ describe('LockService', () => {
         }) as never
       );
 
-      // When: releasing locks on those paths
+      // When: releasing locks on repo-relative paths
       const result = await service.release({ repositoryPath: '/repo', paths: ['a.txt', 'b.txt'] });
 
-      // Then: the SDK is called with the paths, and released echoes them
+      // Then: the SDK is called with repo-absolute paths, and released echoes
+      // the (unmodified) SDK output
       expect(mockLore.lockFileRelease).toHaveBeenCalledWith(
         { repositoryPath: '/repo' },
-        { paths: ['a.txt', 'b.txt'] }
+        { paths: ['/repo/a.txt', '/repo/b.txt'] }
       );
       expect(result).toEqual({ released: ['a.txt', 'b.txt'] });
+    });
+
+    it('leaves already-absolute paths unchanged', async () => {
+      // Given: the SDK releases a lock on an already-absolute path
+      mockLore.lockFileRelease.mockReturnValue(
+        fluentMock({
+          events: [{ tag: LoreEventTag.LOCK_FILE_RELEASE, data: { path: '/repo/a.txt' } }],
+        }) as never
+      );
+
+      // When: releasing a lock given as a repo-absolute path
+      await service.release({ repositoryPath: '/repo', paths: ['/repo/a.txt'] });
+
+      // Then: the path is passed through unmodified, not double-joined
+      expect(mockLore.lockFileRelease).toHaveBeenCalledWith(
+        { repositoryPath: '/repo' },
+        { paths: ['/repo/a.txt'] }
+      );
+    });
+
+    it('rejects an empty paths array before calling the SDK', async () => {
+      // Given: a release request with no paths
+
+      // When: releasing with an empty paths array
+      const promise = service.release({ repositoryPath: '/repo', paths: [] });
+
+      // Then: schema validation rejects it and the SDK is never called
+      await expect(promise).rejects.toThrow();
+      expect(mockLore.lockFileRelease).not.toHaveBeenCalled();
     });
 
     it('reports no releases when nothing matched', async () => {

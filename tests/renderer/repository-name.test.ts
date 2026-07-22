@@ -1,4 +1,5 @@
 import {
+  distinctWorkspaceName,
   groupWorkspacesByRepo,
   repoEyebrowLabel,
   repoNameFromUrl,
@@ -103,6 +104,24 @@ describe('repoEyebrowLabel', () => {
 
     // Then: still treated as redundant — no combined label
     expect(repoEyebrowLabel(primary, 'main')).toBe('demo-project');
+  });
+});
+
+describe('distinctWorkspaceName', () => {
+  it('returns the name when it is meaningfully different from the branch', () => {
+    // Given: two attached workspaces of one repo both checked out to a
+    // branch named "adfa" but registered under distinct names
+    expect(distinctWorkspaceName('personal-test', 'adfa')).toBe('personal-test');
+  });
+
+  it('returns undefined when the name is redundant with the branch', () => {
+    // Given: a provisioned worktree's registry name is a sanitized version
+    // of its branch (slashes replaced with hyphens)
+    expect(distinctWorkspaceName('test-WT1', 'test/WT1')).toBeUndefined();
+  });
+
+  it('ignores case and punctuation differences when judging redundancy', () => {
+    expect(distinctWorkspaceName('Agent Act2 Balance', 'agent/act2-balance')).toBeUndefined();
   });
 });
 

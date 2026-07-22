@@ -61,4 +61,45 @@ describe('IdleWorkspaceRow', () => {
     expect(closeButton).toHaveAttribute('title', expect.stringContaining('currently in'));
     expect(forgetButton).toHaveAttribute('title', expect.stringContaining('currently in'));
   });
+
+  it('shows the registry name as a muted suffix when it differs from the branch', () => {
+    // Given: two attached workspaces of one repo can share a branch name
+    // ("adfa") while being registered under distinct names.
+    const workspace = makeWorkspace({ branchName: 'adfa', name: 'personal-test' });
+
+    renderWithMantine(
+      <IdleWorkspaceRow
+        workspace={workspace}
+        isActive={false}
+        onOpenTerminal={jest.fn()}
+        onTeardown={jest.fn()}
+        onMarkActive={jest.fn()}
+        onForget={jest.fn()}
+      />
+    );
+
+    expect(screen.getByText('adfa')).toBeInTheDocument();
+    expect(screen.getByText('· personal-test')).toBeInTheDocument();
+  });
+
+  it('suppresses the suffix when the name is redundant with the branch', () => {
+    // Given: a provisioned worktree's registry name is a sanitized version of
+    // its branch (slashes replaced with hyphens) — the same idea, spelling
+    // aside, so no suffix should render.
+    const workspace = makeWorkspace({ branchName: 'test/WT1', name: 'test-WT1' });
+
+    renderWithMantine(
+      <IdleWorkspaceRow
+        workspace={workspace}
+        isActive={false}
+        onOpenTerminal={jest.fn()}
+        onTeardown={jest.fn()}
+        onMarkActive={jest.fn()}
+        onForget={jest.fn()}
+      />
+    );
+
+    expect(screen.getByText('test/WT1')).toBeInTheDocument();
+    expect(screen.queryByText('· test-WT1')).not.toBeInTheDocument();
+  });
 });

@@ -27,10 +27,14 @@ export function makeRepository(overrides: Partial<Repository> = {}): Repository 
 }
 
 export function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {
+  const branchName = overrides.branchName ?? 'agent/act2-balance';
   return {
     instanceId: 'inst-1',
     path: '/Users/rowan/work/emberfall-wt/act2-balance',
-    branchName: 'agent/act2-balance',
+    branchName,
+    // Defaults to the branch name (redundant, no suffix) unless a test
+    // overrides it to exercise the distinct-name disambiguation.
+    name: branchName,
     revision: 'r130',
     stale: false,
     repositoryId: REPO_ID,

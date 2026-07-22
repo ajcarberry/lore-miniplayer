@@ -187,6 +187,12 @@ export const WorkspaceSchema = z.object({
   instanceId: z.string().min(1),
   path: z.string().min(1),
   branchName: z.string().min(1),
+  // The workspace's own registry display name (Mission Control disambiguation:
+  // two registry entries can share a `branchName` while being distinct
+  // workspaces). Always equal to `branchName` for a provisioned worktree
+  // (workspace-service names those after their branch); a card-view
+  // (attached/cloned) entry carries its own registry name here.
+  name: RepositorySchema.shape.name,
   revision: z.string(),
   stale: z.boolean(),
   repositoryId: RepositorySchema.shape.id,

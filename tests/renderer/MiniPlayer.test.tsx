@@ -21,6 +21,7 @@ function missionCard(band: WorkspaceBand, needsYou: boolean): WorkspaceCard {
       instanceId: 'inst-1',
       path: '/tmp/my-repo-wt/agent-1',
       branchName: 'agent/task',
+      name: 'agent/task',
       revision: 'r1',
       stale: false,
       repositoryId: makeRepository().id,

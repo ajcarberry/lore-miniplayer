@@ -571,6 +571,7 @@ const validWorkspace = {
   instanceId: 'inst-1',
   path: '/repos/a/.lore-instances/inst-1',
   branchName: 'feat/agent-1',
+  name: 'feat/agent-1',
   revision: 'a1b2c3',
   stale: false,
   repositoryId: '4f8f2c9e-4b1f-4b7e-9a1a-1c2d3e4f5a6b',
@@ -624,7 +625,7 @@ describe('WorkspaceSchema', () => {
     expect(result.success).toBe(false);
   });
 
-  it.each(['instanceId', 'path', 'branchName', 'stale', 'origin'])(
+  it.each(['instanceId', 'path', 'branchName', 'name', 'stale', 'origin'])(
     'rejects a workspace missing %s',
     field => {
       // When: parsing without a required field
@@ -1215,6 +1216,7 @@ describe('WorkspaceModelSnapshotSchema', () => {
       instanceId: 'inst-1',
       path: '/repos/myrepo-wt/agent-x',
       branchName: 'agent-x',
+      name: 'agent-x',
       revision: 'r1',
       stale: false,
       repositoryId: '4f8f2c9e-4b1f-4b7e-9a1a-1c2d3e4f5a6b',

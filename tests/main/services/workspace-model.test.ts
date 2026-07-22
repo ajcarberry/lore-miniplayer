@@ -32,6 +32,7 @@ function workspace(overrides: Partial<Workspace> = {}): Workspace {
     instanceId: 'inst-a',
     path: '/tmp/repo-wt/feature-a',
     branchName: 'feature-a',
+    name: 'feature-a',
     revision: 'rev-a',
     stale: false,
     repositoryId: REPO_ID,

@@ -174,6 +174,34 @@ describe('MissionCard — active workspace (packet U3)', () => {
   });
 });
 
+describe('MissionCard — workspace name disambiguation', () => {
+  it('shows the registry name as a muted suffix when it differs from the branch', () => {
+    // Given: two attached workspaces of one repo can share a branch name
+    // ("adfa") while being registered under distinct names — the card must
+    // surface both so the rows are tellable apart.
+    const card = makeCard('awaitingReview', {
+      workspace: makeWorkspace({ branchName: 'adfa', name: 'personal-test' }),
+    });
+    renderWithMantine(<MissionCard {...baseProps({ card })} />);
+
+    expect(screen.getByText('adfa')).toBeInTheDocument();
+    expect(screen.getByText('· personal-test')).toBeInTheDocument();
+  });
+
+  it('suppresses the suffix when the name is redundant with the branch', () => {
+    // Given: a provisioned worktree's registry name is a sanitized version of
+    // its branch (slashes replaced with hyphens) — the same idea, spelling
+    // aside, so no suffix should render.
+    const card = makeCard('awaitingReview', {
+      workspace: makeWorkspace({ branchName: 'test/WT1', name: 'test-WT1' }),
+    });
+    renderWithMantine(<MissionCard {...baseProps({ card })} />);
+
+    expect(screen.getByText('test/WT1')).toBeInTheDocument();
+    expect(screen.queryByText('· test-WT1')).not.toBeInTheDocument();
+  });
+});
+
 describe('MissionCard — degraded (hookless)', () => {
   it('renders no fabricated agent fields but keeps Lore-derived data and actions', () => {
     const card = makeCard('awaitingReview', {

@@ -41,6 +41,7 @@ export async function resolveAnchorWorkspace(
     instanceId: repo.id,
     path: repo.localPath,
     branchName,
+    name: repo.name,
     revision,
     stale: false,
     repositoryId: repo.id,

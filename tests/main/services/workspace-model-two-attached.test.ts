@@ -221,6 +221,19 @@ describe('WorkspaceModel with two attached siblings of one Lore repo', () => {
     expect(active[0]?.workspace.path).toBe(path.resolve(demoPath));
   });
 
+  it('carries each sibling registry name onto its card (Mission Control disambiguation)', async () => {
+    // Given: the anchor ("demo-project") and its sibling ("adfa") are both
+    // attached registry entries — their cards must each carry the entry's OWN
+    // registry name, not just the (possibly colliding) branch.
+    const snapshot = await model.snapshot(DEMO_ID);
+
+    const anchorCard = snapshot.cards.find(c => c.isActive);
+    const siblingCard = snapshot.cards.find(c => !c.isActive);
+
+    expect(anchorCard?.workspace.name).toBe('demo-project');
+    expect(siblingCard?.workspace.name).toBe('adfa');
+  });
+
   it('watching the adfa id yields exactly two cards (anchor + demo sibling)', async () => {
     const snapshot = await model.snapshot(ADFA_ID);
     expect(snapshot.cards).toHaveLength(2);

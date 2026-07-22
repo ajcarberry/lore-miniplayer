@@ -155,7 +155,7 @@ export class WorkspaceService extends EventEmitter {
     const provisionedAt = new Date().toISOString();
     await this.upsertProvisioned(repo, workspacePath, branchName, provisionedAt);
     this.emit('lifecycle', { repositoryId: repo.id, path: workspacePath });
-    return this.toWorkspace(match, repo.id, 'provisioned', provisionedAt);
+    return this.toWorkspace(match, repo.id, 'provisioned', branchName, provisionedAt);
   }
 
   // List every OTHER workspace of the repository: its provisioned worktrees
@@ -182,7 +182,7 @@ export class WorkspaceService extends EventEmitter {
       const instance = await this.enrichEntry(entry);
       workspaces.push(
         instance
-          ? this.toWorkspace(instance, repo.id, entry.origin, entry.provisionedAt)
+          ? this.toWorkspace(instance, repo.id, entry.origin, entry.name, entry.provisionedAt)
           : this.staleWorkspace(entry, repo.id)
       );
     }
@@ -419,7 +419,7 @@ export class WorkspaceService extends EventEmitter {
       workspacePath,
       branch: branchName,
     });
-    return this.toWorkspace(match, repo.id, 'provisioned', provisionedAt);
+    return this.toWorkspace(match, repo.id, 'provisioned', branchName, provisionedAt);
   }
 
   // Resolve a teardown or forget request to its registry entry (the source of
@@ -498,6 +498,7 @@ export class WorkspaceService extends EventEmitter {
       instanceId: entry.localPath,
       path: entry.localPath,
       branchName: entry.branchName ?? entry.name,
+      name: entry.name,
       revision: '',
       stale: true,
       repositoryId,
@@ -510,12 +511,14 @@ export class WorkspaceService extends EventEmitter {
     inst: RawInstance,
     repositoryId: string,
     origin: WorkspaceOrigin,
+    name: string,
     provisionedAt?: string
   ): Workspace {
     return WorkspaceSchema.parse({
       instanceId: inst.instanceId,
       path: inst.path,
       branchName: inst.branchName,
+      name,
       revision: inst.revision,
       stale: inst.stale,
       repositoryId,

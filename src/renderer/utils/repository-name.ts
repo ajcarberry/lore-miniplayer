@@ -76,6 +76,18 @@ export function repoEyebrowLabel(repository: Repository, branchName: string): st
   return isRedundant ? repoName : `${repoName} · ${repository.name}`;
 }
 
+// Mission Control card/row disambiguation: whether a workspace's registry
+// `name` carries information beyond its own `branchName` — the same loose
+// comparison repoEyebrowLabel uses to judge redundancy. A provisioned
+// worktree is always named after its branch verbatim (workspace-service's
+// upsertProvisioned), so this is always undefined for one; a card-view
+// (attached/cloned) sibling can carry a genuinely distinct name — e.g. two
+// registry entries both checked out to a branch named "adfa" but registered
+// as "adfa" and "personal-test".
+export function distinctWorkspaceName(name: string, branchName: string): string | undefined {
+  return sameIdentity(name, branchName) ? undefined : name;
+}
+
 export interface RepoGroup {
   readonly key: string;
   readonly repoName: string;

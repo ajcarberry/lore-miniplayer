@@ -1,0 +1,8 @@
+{
+  "id": "t1",
+  "subject": "Locate the settings panel component",
+  "description": "Find where the settings UI lives so the toggle can be added.",
+  "status": "completed",
+  "blockedBy": [],
+  "blocks": ["t2"]
+}

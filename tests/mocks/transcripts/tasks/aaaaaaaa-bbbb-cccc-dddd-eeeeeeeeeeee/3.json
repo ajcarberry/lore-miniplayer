@@ -1,0 +1,8 @@
+{
+  "id": "t3",
+  "subject": "Persist the theme choice across restarts",
+  "description": "Store the selected theme in config so it survives an app restart.",
+  "status": "pending",
+  "blockedBy": ["t2"],
+  "blocks": []
+}

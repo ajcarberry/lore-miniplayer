@@ -1,0 +1,8 @@
+{
+  "id": "t2",
+  "subject": "Add the dark mode toggle control",
+  "description": "Render the toggle in the settings panel and wire it to the theme store.",
+  "status": "in_progress",
+  "blockedBy": ["t1"],
+  "blocks": ["t3"]
+}

@@ -36,6 +36,9 @@ const DEFAULT_MAX_BYTES = 8 * 1024 * 1024;
 export interface AgentTranscriptOptions {
   // Explicit on/off. When omitted, resolved from the env feature flag.
   readonly enabled?: boolean;
+  // Root the hook-supplied transcript_path must resolve inside before any read.
+  // Injectable for tests; defaults to `~/.claude/projects`.
+  readonly projectsRoot?: string;
   // Root of the per-session task directories. Injectable for tests; defaults
   // to `~/.claude/tasks`.
   readonly tasksRoot?: string;
@@ -109,6 +112,7 @@ interface SidecarState {
 
 export class AgentTranscriptService {
   private readonly enabled: boolean;
+  private readonly projectsRoot: string;
   private readonly tasksRoot: string;
   private readonly maxBytes: number;
   private readonly now: () => number;
@@ -118,6 +122,9 @@ export class AgentTranscriptService {
     options: AgentTranscriptOptions = {}
   ) {
     this.enabled = options.enabled ?? resolveEnabledFromEnv();
+    this.projectsRoot = path.resolve(
+      options.projectsRoot ?? path.join(os.homedir(), '.claude', 'projects')
+    );
     this.tasksRoot = options.tasksRoot ?? path.join(os.homedir(), '.claude', 'tasks');
     this.maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
     this.now = options.now ?? Date.now;
@@ -131,13 +138,21 @@ export class AgentTranscriptService {
       return emptyIntention();
     }
 
-    const content = await this.readBounded(transcriptPath);
+    // `transcript_path` arrives from an external, attacker-influenceable hook
+    // payload. Confine every read to the Claude Code projects root so a crafted
+    // path can never turn enrichment into an arbitrary-file-read primitive.
+    const safePath = await this.containedTranscriptPath(transcriptPath);
+    if (safePath === undefined) {
+      return emptyIntention();
+    }
+
+    const content = await this.readBounded(safePath);
     if (content === undefined) {
       return emptyIntention();
     }
 
     const parsed = this.parseTranscript(content);
-    const sessionId = parsed.sessionId ?? path.basename(transcriptPath, '.jsonl');
+    const sessionId = parsed.sessionId ?? path.basename(safePath, '.jsonl');
     const tasks = await this.readTasks(sessionId, parsed.newestAssistantMs);
 
     this.log.debug('Parsed agent transcript', {
@@ -165,6 +180,39 @@ export class AgentTranscriptService {
       ...(parsed.summary !== undefined ? { summary: parsed.summary } : {}),
       ...(sessionId.length > 0 ? { sessionId } : {}),
     };
+  }
+
+  // Confines a hook-supplied transcript path to the projects root, returning the
+  // real (symlink-resolved) path only when it stays inside — otherwise undefined
+  // (treated as "no transcript"). Two gates: a lexical check rejects `..`
+  // traversal and absolute escapes; a realpath check rejects a symlink planted
+  // inside the root that redirects the read outside it. Both sides are compared
+  // in realpath form so a symlinked root prefix (e.g. macOS /var → /private/var)
+  // does not cause false rejections.
+  private async containedTranscriptPath(transcriptPath: string): Promise<string | undefined> {
+    if (!isWithin(path.resolve(transcriptPath), this.projectsRoot)) {
+      this.log.warn('Refusing transcript path outside the Claude projects root', {
+        operation: 'agent-transcript:contain',
+        transcriptPath,
+      });
+      return undefined;
+    }
+    let realPath: string;
+    try {
+      realPath = await fs.realpath(transcriptPath);
+    } catch {
+      // Missing/unreadable is the common case (no session yet); degrade quietly.
+      return undefined;
+    }
+    const realRoot = await fs.realpath(this.projectsRoot).catch(() => this.projectsRoot);
+    if (!isWithin(realPath, realRoot)) {
+      this.log.warn('Refusing transcript path that symlinks outside the Claude projects root', {
+        operation: 'agent-transcript:contain',
+        transcriptPath,
+      });
+      return undefined;
+    }
+    return realPath;
   }
 
   // Reads the transcript, tail-first when it exceeds the byte cap. Returns
@@ -391,6 +439,13 @@ export class AgentTranscriptService {
     }
     return tasks;
   }
+}
+
+// True when `candidate` is `root` itself or a path nested under it (both already
+// resolved). The `+ path.sep` guard stops a sibling prefix match (e.g.
+// `/a/projects-evil` against root `/a/projects`).
+function isWithin(candidate: string, root: string): boolean {
+  return candidate === root || candidate.startsWith(root + path.sep);
 }
 
 // off/0/false disables enrichment; anything else (including unset) leaves it ON.

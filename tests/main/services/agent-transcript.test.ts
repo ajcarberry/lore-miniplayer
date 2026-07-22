@@ -30,9 +30,14 @@ const NEWEST_ASSISTANT_MS = Date.parse('2026-07-22T10:06:00.000Z');
 const FIXED_NOW = NEWEST_ASSISTANT_MS + 30_000;
 
 function newService(overrides: Record<string, unknown> = {}): AgentTranscriptService {
+  // Every fixture/temp transcript lives beside its tasks dir, so the projects
+  // root (the read-containment boundary) defaults to that dir's parent unless a
+  // test overrides it explicitly.
+  const tasksRoot = (overrides['tasksRoot'] as string | undefined) ?? TASKS_ROOT;
   return new AgentTranscriptService(logger, {
     enabled: true,
-    tasksRoot: TASKS_ROOT,
+    tasksRoot,
+    projectsRoot: path.dirname(tasksRoot),
     now: () => FIXED_NOW,
     ...overrides,
   });
@@ -260,7 +265,8 @@ describe('AgentTranscriptService', () => {
       try {
         // No `enabled` option => resolved from env (unset => ON). Default
         // tasksRoot points at ~/.claude/tasks (no fixture there) => no tasks.
-        const service = new AgentTranscriptService(logger, {});
+        // projectsRoot is pinned to the fixture dir so the read is permitted.
+        const service = new AgentTranscriptService(logger, { projectsRoot: FIXTURE_DIR });
         const intention = await service.extract(REALISTIC_TRANSCRIPT);
         expect(intention.prompt).toBe('Add a dark mode toggle to the settings panel.');
         expect(intention.tasks).toEqual([]);
@@ -413,6 +419,119 @@ describe('AgentTranscriptService', () => {
         { subject: 'First real task', status: 'pending' },
         { subject: 'Trailing task', status: 'done' },
       ]);
+    });
+  });
+
+  // Security: `transcript_path` is delivered by an external hook payload and is
+  // attacker-influenceable. Enrichment must never become an arbitrary-file-read
+  // primitive — reads are confined to the Claude Code projects root.
+  describe('transcript path containment', () => {
+    it('refuses a transcript path outside the projects root and never reads it', async () => {
+      // Given: a real, secret-bearing file OUTSIDE the projects root
+      const projectsRoot = path.join(tmpBase, 'projects');
+      await fsp.mkdir(projectsRoot, { recursive: true });
+      const secret = path.join(tmpBase, 'secret.jsonl');
+      await fsp.writeFile(
+        secret,
+        JSON.stringify({
+          type: 'user',
+          sessionId: 'leak',
+          timestamp: '2026-07-22T10:00:00.000Z',
+          message: { role: 'user', content: 'TOP SECRET CONTENT' },
+        }),
+        'utf8'
+      );
+
+      // When: a crafted payload points transcript_path at the outside file
+      const intention = await new AgentTranscriptService(logger, {
+        enabled: true,
+        projectsRoot,
+        tasksRoot: tmpBase,
+      }).extract(secret);
+
+      // Then: nothing is read; a typed empty result comes back and the refusal
+      // is logged without leaking the file's content
+      expect(intention).toEqual({ tasks: [], commentary: [] });
+      expect(mockLog.warn).toHaveBeenCalledWith(
+        'Refusing transcript path outside the Claude projects root',
+        expect.objectContaining({ operation: 'agent-transcript:contain' })
+      );
+      const logged = (mockLog.warn as jest.Mock).mock.calls.map(a => JSON.stringify(a)).join(' ');
+      expect(logged).not.toContain('TOP SECRET');
+    });
+
+    it('refuses a `..` traversal that escapes the projects root', async () => {
+      const projectsRoot = path.join(tmpBase, 'projects');
+      await fsp.mkdir(projectsRoot, { recursive: true });
+      const outside = path.join(tmpBase, 'outside.jsonl');
+      await fsp.writeFile(outside, '{"type":"user"}', 'utf8');
+
+      const traversal = path.join(projectsRoot, '..', 'outside.jsonl');
+      const intention = await new AgentTranscriptService(logger, {
+        enabled: true,
+        projectsRoot,
+        tasksRoot: tmpBase,
+      }).extract(traversal);
+
+      expect(intention).toEqual({ tasks: [], commentary: [] });
+    });
+
+    it('refuses a symlink inside the root that redirects the read outside it', async () => {
+      // Given: a secret outside the root and a symlink INSIDE the root -> secret
+      const projectsRoot = path.join(tmpBase, 'projects');
+      await fsp.mkdir(projectsRoot, { recursive: true });
+      const secret = path.join(tmpBase, 'secret.jsonl');
+      await fsp.writeFile(
+        secret,
+        JSON.stringify({
+          type: 'user',
+          sessionId: 'leak',
+          timestamp: '2026-07-22T10:00:00.000Z',
+          message: { role: 'user', content: 'SECRET VIA SYMLINK' },
+        }),
+        'utf8'
+      );
+      const link = path.join(projectsRoot, 'session.jsonl');
+      fs.symlinkSync(secret, link);
+
+      // When: the payload points at the in-root symlink (passes the lexical gate)
+      const intention = await new AgentTranscriptService(logger, {
+        enabled: true,
+        projectsRoot,
+        tasksRoot: tmpBase,
+      }).extract(link);
+
+      // Then: the realpath gate catches the escape; nothing leaks
+      expect(intention).toEqual({ tasks: [], commentary: [] });
+      expect(mockLog.warn).toHaveBeenCalledWith(
+        'Refusing transcript path that symlinks outside the Claude projects root',
+        expect.objectContaining({ operation: 'agent-transcript:contain' })
+      );
+    });
+
+    it('reads a normal transcript that resolves inside the root', async () => {
+      // Given: a transcript that lives inside the projects root
+      const projectsRoot = path.join(tmpBase, 'projects');
+      await fsp.mkdir(projectsRoot, { recursive: true });
+      const file = path.join(projectsRoot, 'session.jsonl');
+      await fsp.writeFile(
+        file,
+        JSON.stringify({
+          type: 'user',
+          sessionId: 'ok',
+          timestamp: '2026-07-22T10:00:00.000Z',
+          message: { role: 'user', content: 'Legitimate in-root prompt.' },
+        }),
+        'utf8'
+      );
+
+      const intention = await new AgentTranscriptService(logger, {
+        enabled: true,
+        projectsRoot,
+        tasksRoot: tmpBase,
+      }).extract(file);
+
+      expect(intention.prompt).toBe('Legitimate in-root prompt.');
     });
   });
 });

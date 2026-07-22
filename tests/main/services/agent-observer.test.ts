@@ -90,6 +90,16 @@ describe('AgentObserverService', () => {
       // crypto.randomBytes(32) hex -> 64 chars, effectively unguessable.
       expect(token).toMatch(/^[0-9a-f]{64}$/);
     });
+
+    it('bounds slow/held connections with explicit header and request timeouts', () => {
+      // Slowloris posture: the listener must not rely on version-dependent Node
+      // defaults. Both timeouts are finite and positive so a trickling or held
+      // connection is torn down instead of tying up a socket indefinitely.
+      const server = (service as unknown as { server: http.Server | null }).server;
+      expect(server).not.toBeNull();
+      expect(server?.headersTimeout).toBeGreaterThan(0);
+      expect(server?.requestTimeout).toBeGreaterThan(0);
+    });
   });
 
   describe('token authentication', () => {

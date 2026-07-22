@@ -251,6 +251,22 @@ export class WorkspaceService {
   // Public so P7 can re-inject if it rotates tokens.
   async writeObserverHooks(workspacePath: string): Promise<void> {
     const settingsPath = path.join(workspacePath, CLAUDE_SETTINGS_REL);
+
+    // Never write observer plumbing through a symlinked `.claude` directory or
+    // settings file: a symlink planted in the workspace could redirect the write
+    // outside the worktree (e.g. clobber the user's global ~/.claude settings).
+    // Both are checked with lstat (which does not follow the link).
+    if (
+      (await this.isSymlink(path.join(workspacePath, '.claude'))) ||
+      (await this.isSymlink(settingsPath))
+    ) {
+      this.log.error('Refusing to write observer hooks through a symlinked settings path', {
+        operation: 'workspace:writeObserverHooks',
+        settingsPath,
+      });
+      return;
+    }
+
     const token = this.observerConfig.tokenForWorkspace(workspacePath);
     const url = `http://127.0.0.1:${this.observerConfig.port}/hook/${token}`;
     const hookGroup = { hooks: [{ type: 'http', url }] };
@@ -401,6 +417,11 @@ export class WorkspaceService {
 
   private samePath(a: string, b: string): boolean {
     return path.resolve(a) === path.resolve(b);
+  }
+
+  private async isSymlink(target: string): Promise<boolean> {
+    const stats = await fs.lstat(target).catch(() => null);
+    return stats?.isSymbolicLink() ?? false;
   }
 
   private async pathExists(target: string): Promise<boolean> {

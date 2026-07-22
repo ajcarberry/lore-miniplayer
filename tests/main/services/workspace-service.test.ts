@@ -323,6 +323,24 @@ describe('WorkspaceService', () => {
       const url = settings.hooks['SessionStart']?.[0]?.hooks[0]?.url ?? '';
       expect(url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/hook\/.+/);
     });
+
+    it('refuses to write through a symlinked .claude directory that escapes the workspace', async () => {
+      // Given: `.claude` inside the workspace is a symlink pointing OUTSIDE it
+      const outside = path.join(tmpBase, 'victim-claude');
+      fs.mkdirSync(outside, { recursive: true });
+      fs.mkdirSync(workspaceDir, { recursive: true });
+      fs.symlinkSync(outside, path.join(workspaceDir, '.claude'));
+
+      // When: injecting observer hooks
+      await service.writeObserverHooks(workspaceDir);
+
+      // Then: nothing is written through the symlink and the refusal is logged
+      expect(fs.existsSync(path.join(outside, 'settings.local.json'))).toBe(false);
+      expect((mockLog as unknown as { error: jest.Mock }).error).toHaveBeenCalledWith(
+        'Refusing to write observer hooks through a symlinked settings path',
+        expect.objectContaining({ operation: 'workspace:writeObserverHooks' })
+      );
+    });
   });
 
   describe('list', () => {

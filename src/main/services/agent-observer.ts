@@ -26,6 +26,15 @@ const PORT_SCAN_ATTEMPTS = 20;
 // Code hook never approaches this.
 const MAX_BODY_BYTES = 1_048_576; // 1 MiB
 
+// Slowloris / connection-hoarding posture (defense-in-depth, not relying on
+// version-dependent Node defaults). A fire-and-forget hook completes in
+// milliseconds; any connection that dawdles past these bounds is torn down so a
+// malicious local process cannot tie up sockets by trickling headers/body or
+// holding idle connections open.
+const HEADERS_TIMEOUT_MS = 5_000;
+const REQUEST_TIMEOUT_MS = 10_000;
+const SOCKET_IDLE_TIMEOUT_MS = 15_000;
+
 // The verified hook stdin fields the observer reads (research note "Hook
 // injection"). Everything is optional/defensive: the format is external and
 // may drift, so unknown shapes degrade rather than throw.
@@ -123,8 +132,13 @@ export class AgentObserverService extends EventEmitter {
     const server = http.createServer((req, res) => {
       this.handleRequest(req, res);
     });
+    server.headersTimeout = HEADERS_TIMEOUT_MS;
+    server.requestTimeout = REQUEST_TIMEOUT_MS;
     server.on('connection', socket => {
       this.sockets.add(socket);
+      // Tear down a connection that goes idle (headers/body trickle, or a held
+      // keep-alive socket) rather than letting it linger.
+      socket.setTimeout(SOCKET_IDLE_TIMEOUT_MS, () => socket.destroy());
       socket.on('close', () => this.sockets.delete(socket));
     });
     this.server = server;

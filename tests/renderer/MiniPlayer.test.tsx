@@ -24,6 +24,7 @@ function missionCard(band: WorkspaceBand, needsYou: boolean): WorkspaceCard {
       revision: 'r1',
       stale: false,
       repositoryId: makeRepository().id,
+      origin: 'provisioned',
     },
     attention: { band, needsYou, reasons: needsYou ? ['reviewReady'] : [] },
     isActive: false,

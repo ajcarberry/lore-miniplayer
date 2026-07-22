@@ -34,6 +34,7 @@ export function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {
     revision: 'r130',
     stale: false,
     repositoryId: REPO_ID,
+    origin: 'provisioned',
     provisionedAt: '2026-07-20T00:00:00.000Z',
     ...overrides,
   };

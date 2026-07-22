@@ -20,6 +20,7 @@ describe('deriveWorkspaceFlags', () => {
       dirty: true,
       unpushed: false,
       requiresForce: true,
+      isRepoCheckout: false,
     });
   });
 
@@ -31,6 +32,7 @@ describe('deriveWorkspaceFlags', () => {
       dirty: false,
       unpushed: true,
       requiresForce: true,
+      isRepoCheckout: false,
     });
   });
 
@@ -42,6 +44,24 @@ describe('deriveWorkspaceFlags', () => {
       dirty: false,
       unpushed: false,
       requiresForce: false,
+      isRepoCheckout: false,
+    });
+  });
+
+  it('flags a clean attached-origin workspace as a repo checkout, independent of requiresForce', () => {
+    // Given: an origin-'attached' workspace with no dirty/unpushed reasons at all
+    const card = makeCard('idle', {
+      attention: { band: 'idle', needsYou: false, reasons: [] },
+      workspace: { ...makeCard('idle').workspace, origin: 'attached' },
+    });
+
+    // Then: isRepoCheckout is true purely from origin; requiresForce (dirty/
+    // unpushed only) stays false — the caller ORs both to gate the checkbox
+    expect(deriveWorkspaceFlags(card)).toEqual({
+      dirty: false,
+      unpushed: false,
+      requiresForce: false,
+      isRepoCheckout: true,
     });
   });
 });

@@ -191,6 +191,11 @@ export const WorkspaceSchema = z.object({
   stale: z.boolean(),
   repositoryId: RepositorySchema.shape.id,
   provisionedAt: z.string().datetime().optional(),
+  // How this workspace was created (packet U1 origins) — the renderer needs
+  // this to know a card-view (attached/cloned) checkout is a real repository
+  // directory, not an app-provisioned worktree, e.g. teardown's confirmation
+  // requirement.
+  origin: WorkspaceOriginSchema,
 });
 
 // Mission Control's three bands (design 2a): awaiting review leads, in

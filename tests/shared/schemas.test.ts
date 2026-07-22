@@ -574,6 +574,7 @@ const validWorkspace = {
   revision: 'a1b2c3',
   stale: false,
   repositoryId: '4f8f2c9e-4b1f-4b7e-9a1a-1c2d3e4f5a6b',
+  origin: 'provisioned',
 };
 
 describe('WorkspaceSchema', () => {
@@ -623,7 +624,7 @@ describe('WorkspaceSchema', () => {
     expect(result.success).toBe(false);
   });
 
-  it.each(['instanceId', 'path', 'branchName', 'stale'])(
+  it.each(['instanceId', 'path', 'branchName', 'stale', 'origin'])(
     'rejects a workspace missing %s',
     field => {
       // When: parsing without a required field
@@ -1217,6 +1218,7 @@ describe('WorkspaceModelSnapshotSchema', () => {
       revision: 'r1',
       stale: false,
       repositoryId: '4f8f2c9e-4b1f-4b7e-9a1a-1c2d3e4f5a6b',
+      origin: 'provisioned',
     },
     attention: { band: 'awaitingReview', needsYou: true, reasons: ['reviewReady'] },
     isActive: false,

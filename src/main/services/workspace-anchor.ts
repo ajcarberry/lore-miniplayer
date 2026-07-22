@@ -43,6 +43,7 @@ export async function resolveAnchorWorkspace(
     revision,
     stale: false,
     repositoryId: repo.id,
+    origin: repo.origin,
     ...(repo.provisionedAt ? { provisionedAt: repo.provisionedAt } : {}),
   });
 }

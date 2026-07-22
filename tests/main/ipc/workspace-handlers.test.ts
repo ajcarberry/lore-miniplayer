@@ -74,6 +74,7 @@ describe('workspace:markActive', () => {
       revision: 'r1',
       stale: false,
       repositoryId: MARK_REPO_ID,
+      origin: 'provisioned' as const,
     };
     mockWorkspaceModel.markActive.mockResolvedValue(workspace);
 
@@ -121,6 +122,7 @@ describe('workspace:provision', () => {
       revision: 'r1',
       stale: false,
       repositoryId: REPO_ID,
+      origin: 'provisioned' as const,
     };
     mockWorkspaceService.provision.mockResolvedValue(workspace);
 
@@ -189,6 +191,7 @@ describe('workspace:list', () => {
         revision: 'r',
         stale: false,
         repositoryId: REPO_ID,
+        origin: 'provisioned' as const,
       },
     ];
     mockWorkspaceService.list.mockResolvedValue(workspaces);

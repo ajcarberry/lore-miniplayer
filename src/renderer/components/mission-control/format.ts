@@ -7,17 +7,23 @@ import type { WorkspaceCard } from '../../../shared/types';
 // Whether a workspace has uncommitted or unpushed work — the two conditions
 // P3's teardown guard refuses on unless force is set (design 2a's ✕ force
 // path). Derived from the model's attention reasons (P9), never invented.
+// `isRepoCheckout` is a SEPARATE, origin-driven requirement (the workspace-
+// unification amendment's hardening): an attached/cloned entry is a real
+// repository checkout, not an app-provisioned worktree, so closing it always
+// needs explicit confirmation regardless of dirty/unpushed state.
 export interface WorkspaceFlags {
   readonly dirty: boolean;
   readonly unpushed: boolean;
   readonly requiresForce: boolean;
+  readonly isRepoCheckout: boolean;
 }
 
 export function deriveWorkspaceFlags(card: WorkspaceCard): WorkspaceFlags {
   const reasons = card.attention.reasons;
   const dirty = reasons.includes('uncommitted');
   const unpushed = reasons.includes('unpushed') || reasons.includes('diverged');
-  return { dirty, unpushed, requiresForce: dirty || unpushed };
+  const isRepoCheckout = card.workspace.origin !== 'provisioned';
+  return { dirty, unpushed, requiresForce: dirty || unpushed, isRepoCheckout };
 }
 
 // The per-workspace cost, preferring the live session total, falling back to

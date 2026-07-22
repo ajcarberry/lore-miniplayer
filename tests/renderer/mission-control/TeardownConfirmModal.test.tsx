@@ -9,6 +9,7 @@ function baseProps(overrides: Partial<TeardownConfirmModalProps> = {}): Teardown
     opened: true,
     workspace: makeWorkspace(),
     requiresForce: false,
+    isRepoCheckout: false,
     isTearingDown: false,
     onClose: jest.fn(),
     onConfirm: jest.fn(),
@@ -47,6 +48,30 @@ describe('TeardownConfirmModal', () => {
     expect(confirm).toBeDisabled();
 
     await user.click(screen.getByLabelText('Force close and discard this work'));
+    expect(confirm).not.toBeDisabled();
+
+    await user.click(confirm);
+    expect(onConfirm).toHaveBeenCalledWith(true);
+  });
+
+  it('always gates the confirm behind a checkbox for a repository checkout, even when clean', async () => {
+    // Given: an attached/cloned target with no dirty/unpushed work at all
+    // (requiresForce false) — the repo-checkout requirement is independent
+    const user = userEvent.setup();
+    const onConfirm = jest.fn();
+    renderWithMantine(
+      <TeardownConfirmModal
+        {...baseProps({ requiresForce: false, isRepoCheckout: true, onConfirm })}
+      />
+    );
+
+    // Then: the dirty/unpushed alert does not appear, but the confirm is
+    // still disabled until the repository-checkout checkbox is checked
+    expect(screen.queryByLabelText('Force close and discard this work')).not.toBeInTheDocument();
+    const confirm = screen.getByRole('button', { name: 'Close workspace' });
+    expect(confirm).toBeDisabled();
+
+    await user.click(screen.getByLabelText('Confirm closing this repository checkout'));
     expect(confirm).not.toBeDisabled();
 
     await user.click(confirm);

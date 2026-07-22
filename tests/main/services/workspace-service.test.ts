@@ -590,6 +590,124 @@ describe('WorkspaceService', () => {
       // When/Then: listing fails cleanly
       await expect(service.list(repo.id)).rejects.toThrow('not found');
     });
+
+    it('includes an attached-origin sibling of the same Lore repo, enriched the same way as a provisioned member', async () => {
+      // Given: another attached checkout of the SAME Lore repo (e.g. the
+      // user's "adfa" folder) — a real registry entry, not a worktree
+      const siblingDir = path.join(tmpBase, 'adfa');
+      fs.mkdirSync(siblingDir, { recursive: true });
+      const store = new WorkspaceRegistry(mockLog);
+      await store.upsertById(
+        RepositorySchema.parse({
+          id: randomUUID(),
+          name: 'adfa',
+          url: repo.url,
+          localPath: siblingDir,
+          accentHue: 74,
+          origin: 'attached',
+          createdAt: PROVISIONED_AT,
+          updatedAt: PROVISIONED_AT,
+        })
+      );
+      stores.register('adfa-store', {
+        instanceId: 'inst-adfa',
+        path: siblingDir,
+        branchName: 'main',
+        revision: 'r-adfa',
+      });
+
+      // When: listing the anchor repo's workspaces
+      const workspaces = await service.list(repo.id);
+
+      // Then: the attached sibling appears, enriched from its own path exactly
+      // like a provisioned member would be
+      const sibling = workspaces.find(w => w.path === siblingDir);
+      expect(sibling).toBeDefined();
+      expect(sibling?.instanceId).toBe('inst-adfa');
+      expect(sibling?.branchName).toBe('main');
+      expect(sibling?.stale).toBe(false);
+      expect(sibling?.repositoryId).toBe(repo.id);
+      // And: it never claims a provisionedAt it never had
+      expect(sibling?.provisionedAt).toBeUndefined();
+    });
+
+    it('does not duplicate the anchor: excludes its own registry entry from the member list', async () => {
+      // Given: the anchor repo's own row is present in the shared registry
+      // (RepositoryService and WorkspaceService share one file post-U1)
+      const store = new WorkspaceRegistry(mockLog);
+      await store.upsertById(
+        RepositorySchema.parse({
+          id: repo.id,
+          name: repo.name,
+          url: repo.url,
+          localPath: repo.localPath,
+          accentHue: 74,
+          origin: 'attached',
+          createdAt: PROVISIONED_AT,
+          updatedAt: PROVISIONED_AT,
+        })
+      );
+
+      // When: listing the anchor repo's workspaces
+      const workspaces = await service.list(repo.id);
+
+      // Then: the anchor's own path never appears as a member (workspace-model
+      // re-adds it separately, marked isActive)
+      expect(workspaces.some(w => w.path === repo.localPath)).toBe(false);
+    });
+
+    it('excludes an attached-origin entry belonging to an unrelated Lore repo', async () => {
+      // Given: an attached checkout of a DIFFERENT repo (different url, no
+      // shared loreRepositoryId)
+      const unrelatedDir = path.join(tmpBase, 'other-repo');
+      fs.mkdirSync(unrelatedDir, { recursive: true });
+      const store = new WorkspaceRegistry(mockLog);
+      await store.upsertById(
+        RepositorySchema.parse({
+          id: randomUUID(),
+          name: 'other-repo',
+          url: 'lores://lore.example.com/unrelated',
+          localPath: unrelatedDir,
+          accentHue: 172,
+          origin: 'attached',
+          createdAt: PROVISIONED_AT,
+          updatedAt: PROVISIONED_AT,
+        })
+      );
+
+      // When: listing the anchor repo's workspaces
+      const workspaces = await service.list(repo.id);
+
+      // Then: the unrelated repo's entry is excluded
+      expect(workspaces.some(w => w.path === unrelatedDir)).toBe(false);
+    });
+
+    it('lists a stale attached-origin sibling whose directory is gone', async () => {
+      // Given: an attached sibling registry entry whose directory no longer exists
+      const goneDir = path.join(tmpBase, 'gone-adfa');
+      const store = new WorkspaceRegistry(mockLog);
+      await store.upsertById(
+        RepositorySchema.parse({
+          id: randomUUID(),
+          name: 'gone-adfa',
+          url: repo.url,
+          localPath: goneDir,
+          accentHue: 296,
+          origin: 'attached',
+          createdAt: PROVISIONED_AT,
+          updatedAt: PROVISIONED_AT,
+        })
+      );
+
+      // When: listing the anchor repo's workspaces
+      const workspaces = await service.list(repo.id);
+
+      // Then: it is still listed, flagged stale rather than dropped or throwing
+      const gone = workspaces.find(w => w.path === goneDir);
+      expect(gone).toBeDefined();
+      expect(gone?.stale).toBe(true);
+      expect(gone?.branchName).toBe('gone-adfa');
+    });
   });
 
   describe('loreRepositoryId grouping', () => {
@@ -722,7 +840,9 @@ describe('WorkspaceService', () => {
       // Then: guards ran, the dir is gone, and the registry entry is removed
       expect(loreRepositoryService.getFileStatus).toHaveBeenCalledWith(workspaceDir);
       expect(fs.existsSync(workspaceDir)).toBe(false);
-      await expect(new WorkspaceRegistry(mockLog).findByLocalPath(workspaceDir)).resolves.toBeUndefined();
+      await expect(
+        new WorkspaceRegistry(mockLog).findByLocalPath(workspaceDir)
+      ).resolves.toBeUndefined();
 
       // And: prune + archive targeted the SIBLING's path (the shared store), not
       // the primary checkout
@@ -900,6 +1020,74 @@ describe('WorkspaceService', () => {
       expect(result.directoryRemoved).toBe(true);
       expect(result.localBranchRemoved).toBe(false);
     });
+
+    async function registerAttachedSibling(): Promise<string> {
+      const siblingDir = path.join(tmpBase, 'adfa');
+      fs.mkdirSync(siblingDir, { recursive: true });
+      stores.register('adfa-store', {
+        instanceId: 'inst-adfa',
+        path: siblingDir,
+        branchName: 'main',
+      });
+      await new WorkspaceRegistry(mockLog).upsertById(
+        RepositorySchema.parse({
+          id: randomUUID(),
+          name: 'adfa',
+          url: repo.url,
+          localPath: siblingDir,
+          accentHue: 74,
+          origin: 'attached',
+          createdAt: PROVISIONED_AT,
+          updatedAt: PROVISIONED_AT,
+        })
+      );
+      return siblingDir;
+    }
+
+    it('refuses to close a clean attached-origin sibling without force (repository checkouts always require confirmation)', async () => {
+      // Given: a clean, self-reporting attached sibling of the anchor repo
+      const siblingDir = await registerAttachedSibling();
+
+      // When/Then: a bare teardown request (no force) is refused, even though
+      // nothing is dirty or unpushed, and nothing is removed
+      await expect(service.teardown({ workspaceId: 'inst-adfa', force: false })).rejects.toThrow(
+        'repository checkout'
+      );
+      expect(fs.existsSync(siblingDir)).toBe(true);
+      await expect(
+        new WorkspaceRegistry(mockLog).findByLocalPath(siblingDir)
+      ).resolves.toBeDefined();
+    });
+
+    it('tears down a non-anchor attached-origin sibling when force is set (amendment: ✕ works regardless of origin)', async () => {
+      // Given: an attached sibling of the anchor repo, clean and self-reporting
+      const siblingDir = await registerAttachedSibling();
+
+      // When: tearing it down with explicit confirmation
+      const result = await service.teardown({ workspaceId: 'inst-adfa', force: true });
+
+      // Then: the "repo's own checkout" guard does not (wrongly) refuse an
+      // attached entry that legitimately IS its own repo record, and the
+      // directory + registry entry are removed
+      expect(result.directoryRemoved).toBe(true);
+      expect(fs.existsSync(siblingDir)).toBe(false);
+      await expect(
+        new WorkspaceRegistry(mockLog).findByLocalPath(siblingDir)
+      ).resolves.toBeUndefined();
+    });
+
+    it('provisioned entries keep the existing behavior: no force required when clean', async () => {
+      // Given: a clean, tracked PROVISIONED workspace with a sibling (existing
+      // fixture) — the new attached/cloned confirmation guard must not apply
+      await registeredWorkspace(true);
+
+      // When: tearing down without force
+      const result = await service.teardown({ workspaceId: 'inst-1', force: false });
+
+      // Then: it succeeds exactly as before (provisioned behavior unchanged)
+      expect(result.directoryRemoved).toBe(true);
+      expect(fs.existsSync(workspaceDir)).toBe(false);
+    });
   });
 
   describe('forget', () => {
@@ -963,9 +1151,9 @@ describe('WorkspaceService', () => {
 
     it('refuses to forget a path that is not a registered workspace', async () => {
       // When/Then: an untracked path is refused
-      await expect(
-        service.forget({ path: path.join(tmpBase, 'not-a-workspace') })
-      ).rejects.toThrow(/not found|not a tracked instance/i);
+      await expect(service.forget({ path: path.join(tmpBase, 'not-a-workspace') })).rejects.toThrow(
+        /not found|not a tracked instance/i
+      );
     });
 
     it('emits a lifecycle event carrying repositoryId + path on success', async () => {
@@ -981,6 +1169,39 @@ describe('WorkspaceService', () => {
 
       // Then: a lifecycle event fires so the model refreshes immediately
       expect(listener).toHaveBeenCalledWith({ repositoryId: repo.id, path: workspaceDir });
+    });
+
+    it('forgets a non-anchor attached-origin sibling without touching its directory (amendment: Forget works regardless of origin)', async () => {
+      // Given: an attached sibling of the anchor repo
+      const siblingDir = path.join(tmpBase, 'adfa');
+      fs.mkdirSync(siblingDir, { recursive: true });
+      stores.register('adfa-store', {
+        instanceId: 'inst-adfa',
+        path: siblingDir,
+        branchName: 'main',
+      });
+      const siblingId = randomUUID();
+      await new WorkspaceRegistry(mockLog).upsertById(
+        RepositorySchema.parse({
+          id: siblingId,
+          name: 'adfa',
+          url: repo.url,
+          localPath: siblingDir,
+          accentHue: 74,
+          origin: 'attached',
+          createdAt: PROVISIONED_AT,
+          updatedAt: PROVISIONED_AT,
+        })
+      );
+
+      // When: forgetting it by its self-reported instance id
+      await service.forget({ workspaceId: 'inst-adfa' });
+
+      // Then: untracked, but the directory is left in place
+      await expect(
+        new WorkspaceRegistry(mockLog).findByLocalPath(siblingDir)
+      ).resolves.toBeUndefined();
+      expect(fs.existsSync(siblingDir)).toBe(true);
     });
   });
 

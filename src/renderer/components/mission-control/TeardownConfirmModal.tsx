@@ -9,6 +9,11 @@ export interface TeardownConfirmModalProps {
   // Uncommitted or unpushed work is present — teardown refuses unless forced
   // (mirrors P3's guard). The force checkbox only appears in this case.
   readonly requiresForce: boolean;
+  // The target is an attached/cloned entry (a real repository checkout, not
+  // an app-provisioned worktree) — the amendment's hardening requires
+  // explicit confirmation to close one regardless of dirty/unpushed state
+  // (mirrors WorkspaceService.teardown's server-side guard).
+  readonly isRepoCheckout: boolean;
   readonly isTearingDown: boolean;
   readonly onClose: () => void;
   readonly onConfirm: (force: boolean) => void;
@@ -17,11 +22,13 @@ export interface TeardownConfirmModalProps {
 // Confirms the destructive workspace close (design 2a's ✕). States exactly what
 // is removed: the worktree directory and the archived local branch; the remote
 // branch is NOT removed (a server ask — P1d). When uncommitted/unpushed work
-// exists, the force checkbox gates the confirm button.
+// exists, or the target is a repository checkout, a force checkbox gates the
+// confirm button.
 export function TeardownConfirmModal({
   opened,
   workspace,
   requiresForce,
+  isRepoCheckout,
   isTearingDown,
   onClose,
   onConfirm,
@@ -30,7 +37,7 @@ export function TeardownConfirmModal({
   // remounts this component for each teardown target), so no reset effect.
   const [force, setForce] = useState(false);
 
-  const confirmDisabled = isTearingDown || (requiresForce && !force);
+  const confirmDisabled = isTearingDown || ((requiresForce || isRepoCheckout) && !force);
 
   return (
     <Modal opened={opened} onClose={onClose} title='Close workspace' centered size='md'>
@@ -59,6 +66,21 @@ export function TeardownConfirmModal({
                 checked={force}
                 onChange={event => setForce(event.currentTarget.checked)}
                 label='Force close and discard this work'
+              />
+            </Stack>
+          </Alert>
+        )}
+
+        {isRepoCheckout && (
+          <Alert color='red' variant='light' title='Repository checkout'>
+            <Stack gap='xs'>
+              <Text size='sm'>
+                This is a repository checkout — closing it requires explicit confirmation.
+              </Text>
+              <Checkbox
+                checked={force}
+                onChange={event => setForce(event.currentTarget.checked)}
+                label='Confirm closing this repository checkout'
               />
             </Stack>
           </Alert>

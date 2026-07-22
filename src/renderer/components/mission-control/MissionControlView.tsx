@@ -54,6 +54,7 @@ const BAND_ORDER: readonly WorkspaceBand[] = ['awaitingReview', 'inProgress', 'i
 interface TeardownTarget {
   readonly workspace: Workspace;
   readonly requiresForce: boolean;
+  readonly isRepoCheckout: boolean;
 }
 
 // The Mission Control surface (design 2a), scoped to the selected repository:
@@ -73,9 +74,11 @@ export function MissionControlView(props: MissionControlViewProps): ReactElement
     cards.filter(card => card.attention.band === band);
 
   const handleTeardownCard = (card: WorkspaceCard): void => {
+    const flags = deriveWorkspaceFlags(card);
     setTeardownTarget({
       workspace: card.workspace,
-      requiresForce: deriveWorkspaceFlags(card).requiresForce,
+      requiresForce: flags.requiresForce,
+      isRepoCheckout: flags.isRepoCheckout,
     });
   };
 
@@ -202,7 +205,11 @@ export function MissionControlView(props: MissionControlViewProps): ReactElement
                           onOpenTerminal={props.onOpenTerminal}
                           onMarkActive={workspace => props.onMarkActive(workspace.instanceId)}
                           onTeardown={workspace =>
-                            setTeardownTarget({ workspace, requiresForce: false })
+                            setTeardownTarget({
+                              workspace,
+                              requiresForce: false,
+                              isRepoCheckout: workspace.origin !== 'provisioned',
+                            })
                           }
                           onForget={workspace => props.onForget(workspace.instanceId)}
                         />
@@ -229,6 +236,7 @@ export function MissionControlView(props: MissionControlViewProps): ReactElement
         opened={teardownTarget !== null}
         workspace={teardownTarget?.workspace ?? null}
         requiresForce={teardownTarget?.requiresForce ?? false}
+        isRepoCheckout={teardownTarget?.isRepoCheckout ?? false}
         isTearingDown={isTearingDown}
         onClose={() => setTeardownTarget(null)}
         onConfirm={handleConfirmTeardown}

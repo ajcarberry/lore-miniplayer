@@ -68,6 +68,7 @@ interface Harness {
   openListener: (event: unknown, rawRepositoryId: unknown) => void;
   closeListener: () => void;
   watchHandler: (event: unknown, ...args: unknown[]) => Promise<unknown>;
+  refreshHandler: (event: unknown, ...args: unknown[]) => Promise<unknown>;
   instances: FakeWindow[];
 }
 
@@ -87,6 +88,7 @@ function setup(overrides: Partial<MissionControlWindowDeps> = {}): Harness {
     watch: jest.fn(),
     unwatch: jest.fn(),
     snapshot: jest.fn().mockResolvedValue({ repositoryId: REPO_ID, cards: [] }),
+    refreshNow: jest.fn().mockResolvedValue(undefined),
   };
   const harden = jest.fn();
   wh.registerMissionControlWindow(mockLog, {
@@ -110,6 +112,12 @@ function setup(overrides: Partial<MissionControlWindowDeps> = {}): Harness {
   if (!watchCall) {
     throw new Error('no watch handler');
   }
+  const refreshCall = electron.ipcMain.handle.mock.calls.find(
+    ([ch]) => ch === IPC_CHANNELS.workspaceModel.refresh
+  );
+  if (!refreshCall) {
+    throw new Error('no refresh handler');
+  }
 
   return {
     model,
@@ -118,6 +126,7 @@ function setup(overrides: Partial<MissionControlWindowDeps> = {}): Harness {
     openListener: findOn(IPC_CHANNELS.missionControl.open),
     closeListener: findOn(IPC_CHANNELS.missionControl.close) as () => void,
     watchHandler: watchCall[1] as (event: unknown, ...args: unknown[]) => Promise<unknown>,
+    refreshHandler: refreshCall[1] as (event: unknown, ...args: unknown[]) => Promise<unknown>,
     instances: electron.BrowserWindow.__instances,
   };
 }
@@ -201,5 +210,32 @@ describe('registerMissionControlWindow — watch handler', () => {
     const result = await h.watchHandler({}, 'nope');
     expect(result).toMatchObject({ success: false });
     expect(h.model.watch).not.toHaveBeenCalled();
+  });
+});
+
+describe('registerMissionControlWindow — manual refresh handler', () => {
+  it('triggers the model refresh for the given repository and returns a void success result', async () => {
+    const h = setup();
+    const result = await h.refreshHandler({}, REPO_ID);
+
+    expect(h.model.refreshNow).toHaveBeenCalledWith(REPO_ID);
+    expect(result).toEqual({ success: true, data: undefined });
+  });
+
+  it('validates the repository id the same way watch does, without calling refreshNow', async () => {
+    const h = setup();
+    const result = await h.refreshHandler({}, 'nope');
+
+    expect(result).toMatchObject({ success: false });
+    expect(h.model.refreshNow).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a thrown refresh failure as a failure result', async () => {
+    const h = setup();
+    h.model.refreshNow.mockRejectedValueOnce(new Error('refresh boom'));
+
+    const result = await h.refreshHandler({}, REPO_ID);
+
+    expect(result).toEqual({ success: false, error: 'refresh boom' });
   });
 });

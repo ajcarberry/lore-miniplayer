@@ -2,6 +2,7 @@ import {
   LoreFilePathsArgsSchema,
   PathJoinInputSchema,
   PathBasenameInputSchema,
+  WorkspaceModelRefreshArgsSchema,
 } from '../../../src/main/ipc/validators';
 
 describe('Path input schemas', () => {
@@ -71,5 +72,33 @@ describe('LoreFilePathsArgsSchema (stage/unstage)', () => {
 
     // Then: parsing succeeds
     expect(result.success).toBe(true);
+  });
+});
+
+describe('WorkspaceModelRefreshArgsSchema (workspace:model:refresh)', () => {
+  const repositoryId = '11111111-1111-4111-8111-111111111111';
+
+  it('should accept a single valid repository id', () => {
+    // When: parsing a well-formed repository id tuple
+    const result = WorkspaceModelRefreshArgsSchema.safeParse([repositoryId]);
+
+    // Then: parsing succeeds
+    expect(result.success).toBe(true);
+  });
+
+  it('should reject a malformed repository id', () => {
+    // When: parsing a non-uuid string
+    const result = WorkspaceModelRefreshArgsSchema.safeParse(['not-a-uuid']);
+
+    // Then: parsing fails
+    expect(result.success).toBe(false);
+  });
+
+  it('should reject a missing repository id', () => {
+    // When: parsing an empty argument tuple
+    const result = WorkspaceModelRefreshArgsSchema.safeParse([]);
+
+    // Then: parsing fails
+    expect(result.success).toBe(false);
   });
 });

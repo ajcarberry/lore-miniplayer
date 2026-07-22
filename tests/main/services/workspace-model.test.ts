@@ -560,6 +560,47 @@ describe('WorkspaceModelService.markActive', () => {
   });
 });
 
+describe('WorkspaceModelService.refreshNow — manual refresh control', () => {
+  it('rebuilds and emits a snapshot for the currently watched repository', async () => {
+    const { model } = makeHarness([workspace()]);
+    const emitted: WorkspaceModelSnapshot[] = [];
+    model.on('snapshot', snapshot => emitted.push(snapshot));
+
+    model.watch(REPO_ID);
+    await flush();
+    expect(emitted).toHaveLength(1); // initial, from watch()
+
+    await model.refreshNow(REPO_ID);
+    expect(emitted).toHaveLength(2); // manual refresh reuses the same path
+
+    model.unwatch();
+  });
+
+  it('is a no-op for a repository that is not the one currently watched', async () => {
+    const { model } = makeHarness([workspace()]);
+    const emitted: WorkspaceModelSnapshot[] = [];
+    model.on('snapshot', snapshot => emitted.push(snapshot));
+
+    model.watch(REPO_ID);
+    await flush();
+    expect(emitted).toHaveLength(1);
+
+    await model.refreshNow('22222222-2222-4222-8222-222222222222');
+    expect(emitted).toHaveLength(1); // unchanged: not the watched repository
+
+    model.unwatch();
+  });
+
+  it('is a no-op when no repository is being watched', async () => {
+    const { model } = makeHarness([workspace()]);
+    const emitted: WorkspaceModelSnapshot[] = [];
+    model.on('snapshot', snapshot => emitted.push(snapshot));
+
+    await model.refreshNow(REPO_ID);
+    expect(emitted).toHaveLength(0);
+  });
+});
+
 describe('WorkspaceModelService.watch — event-driven emission', () => {
   it('emits a snapshot on watch, on an agent push, and on a repository notification', async () => {
     const { model, observer, lore } = makeHarness([workspace()]);

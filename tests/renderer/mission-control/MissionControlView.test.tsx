@@ -37,6 +37,7 @@ function baseProps(overrides: Partial<MissionControlViewProps> = {}): MissionCon
     onMarkActive: jest.fn(),
     onTeardown: jest.fn().mockResolvedValue(undefined),
     onProvision: jest.fn().mockResolvedValue(undefined),
+    onRefresh: jest.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -137,6 +138,49 @@ describe('MissionControlView — idle actions', () => {
     expect(confirm).not.toBeDisabled();
     await user.click(confirm);
     expect(onTeardown).toHaveBeenCalledWith('c', false);
+  });
+});
+
+describe('MissionControlView — manual refresh', () => {
+  it('invokes onRefresh when the header refresh control is clicked', async () => {
+    const user = userEvent.setup();
+    const onRefresh = jest.fn().mockResolvedValue(undefined);
+    renderWithMantine(<MissionControlView {...baseProps({ onRefresh })} />);
+
+    await user.click(screen.getByRole('button', { name: 'Refresh workspaces' }));
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows a busy loading state while the refresh is in flight, then clears it', async () => {
+    const user = userEvent.setup();
+    let resolveRefresh: () => void = () => undefined;
+    const onRefresh = jest.fn(
+      () =>
+        new Promise<void>(resolve => {
+          resolveRefresh = resolve;
+        })
+    );
+    renderWithMantine(<MissionControlView {...baseProps({ onRefresh })} />);
+
+    const button = screen.getByRole('button', { name: 'Refresh workspaces' });
+    await user.click(button);
+
+    expect(button).toHaveAttribute('aria-busy', 'true');
+
+    resolveRefresh();
+    await waitFor(() => expect(button).not.toHaveAttribute('aria-busy', 'true'));
+  });
+
+  it('clears the loading state when the refresh rejects, without throwing', async () => {
+    const user = userEvent.setup();
+    const onRefresh = jest.fn().mockRejectedValue(new Error('refresh failed'));
+    renderWithMantine(<MissionControlView {...baseProps({ onRefresh })} />);
+
+    const button = screen.getByRole('button', { name: 'Refresh workspaces' });
+    await user.click(button);
+
+    await waitFor(() => expect(onRefresh).toHaveBeenCalled());
+    await waitFor(() => expect(button).not.toHaveAttribute('aria-busy', 'true'));
   });
 });
 

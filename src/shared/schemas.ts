@@ -464,7 +464,9 @@ export const IPC_CHANNELS = {
   // Mission Control window (P10, design 2a). `open`/`close` manage the
   // secondary window; `watch` (invoke) targets the workspace model at a repo
   // and returns its current snapshot; `snapshot` is the one-way push the model
-  // emits on every rebuild (Zod-validated in the renderer before use).
+  // emits on every rebuild (Zod-validated in the renderer before use);
+  // `refresh` (invoke) triggers an immediate rebuild on demand (the header's
+  // manual refresh control) alongside the existing automatic triggers.
   missionControl: {
     open: 'missionControl:open',
     close: 'missionControl:close',
@@ -472,6 +474,7 @@ export const IPC_CHANNELS = {
   workspaceModel: {
     watch: 'workspace:model:watch',
     snapshot: 'workspace:model:snapshot',
+    refresh: 'workspace:model:refresh',
   },
   // Review window (P11, design 2b/2c). `open` (send) creates or focuses the
   // per-workspace window with its targets + workflow preloaded;

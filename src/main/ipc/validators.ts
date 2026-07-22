@@ -157,9 +157,12 @@ export const WorkspaceMarkActiveArgsSchema = z.tuple([WorkspaceMarkActiveRequest
 // missionControl:* / workspace:model:* (P10) — the Mission Control window is
 // opened for a repository (id optional: focuses an already-open window) and the
 // workspace model is watched at a repository, returning its current snapshot.
+// `refresh` (the header's manual refresh control) takes the same repository id
+// as `watch`.
 const repositoryIdArg = RepositorySchema.shape.id;
 export const MissionControlOpenArgsSchema = z.tuple([repositoryIdArg.optional()]);
 export const WorkspaceModelWatchArgsSchema = z.tuple([repositoryIdArg]);
+export const WorkspaceModelRefreshArgsSchema = z.tuple([repositoryIdArg]);
 
 // diff:* — the review window's compare picker
 export const DiffCompareArgsSchema = z.tuple([DiffRequestSchema]);

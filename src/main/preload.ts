@@ -276,6 +276,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
         Result<WorkspaceModelSnapshot>
       >;
     },
+    refresh: async (repositoryId: string): Promise<VoidResult> => {
+      return ipcRenderer.invoke(
+        IPC_CHANNELS.workspaceModel.refresh,
+        repositoryId
+      ) as Promise<VoidResult>;
+    },
     onSnapshot: (callback: (snapshot: unknown) => void): (() => void) => {
       const listener = (_event: unknown, payload: unknown): void => {
         callback(payload);

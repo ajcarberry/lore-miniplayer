@@ -265,6 +265,17 @@ export class WorkspaceModelService extends EventEmitter {
     return workspace;
   }
 
+  // Manual refresh trigger (Mission Control header's refresh control).
+  // Reuses the same immediate-refresh path the agent/notification/lifecycle
+  // events and low-frequency timer use; a no-op if repositoryId isn't the one
+  // currently watched.
+  async refreshNow(repositoryId: string): Promise<void> {
+    if (this.watchedRepositoryId !== repositoryId) {
+      return;
+    }
+    await this.refresh();
+  }
+
   // --- internals ------------------------------------------------------------
 
   // Rebuild and emit the watched repository's snapshot. Never throws into the

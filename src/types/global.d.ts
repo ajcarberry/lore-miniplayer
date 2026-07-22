@@ -142,12 +142,14 @@ declare global {
       };
       // Mission Control window (design 2a). open/close manage the secondary
       // window; watch targets the workspace model at a repo and returns its
-      // snapshot; onSnapshot subscribes to subsequent rebuilds (payloads
-      // validated in the renderer).
+      // snapshot; refresh triggers an immediate rebuild on demand (the
+      // header's manual refresh control); onSnapshot subscribes to
+      // subsequent rebuilds (payloads validated in the renderer).
       missionControl: {
         open: (repositoryId?: string) => void;
         close: () => void;
         watch: (repositoryId: string) => Promise<Result<WorkspaceModelSnapshot>>;
+        refresh: (repositoryId: string) => Promise<VoidResult>;
         onSnapshot: (callback: (snapshot: unknown) => void) => () => void;
       };
       locks: {

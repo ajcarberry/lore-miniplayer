@@ -1,7 +1,17 @@
 import type { ReactElement } from 'react';
 import { useState } from 'react';
-import { Button, Group, Menu, ScrollArea, Stack, Text, UnstyledButton } from '@mantine/core';
-import { IconChevronDown, IconPlus } from '@tabler/icons-react';
+import {
+  ActionIcon,
+  Button,
+  Group,
+  Menu,
+  ScrollArea,
+  Stack,
+  Text,
+  Tooltip,
+  UnstyledButton,
+} from '@mantine/core';
+import { IconChevronDown, IconPlus, IconRefresh } from '@tabler/icons-react';
 import type { Repository, Workspace, WorkspaceBand, WorkspaceCard } from '../../../shared/types';
 import { TitleBar } from '../TitleBar';
 import { MissionCard } from './MissionCard';
@@ -24,6 +34,10 @@ export interface MissionControlViewProps {
   // and closes the modal on success.
   readonly onTeardown: (workspaceId: string, force: boolean) => Promise<void>;
   readonly onProvision: (branchName: string) => Promise<void>;
+  // Manual refresh (header control), alongside the automatic triggers
+  // (agent pushes, notifications, lifecycle events, 30s cadence). Resolves
+  // when the invoke settles; the view drives its own brief loading state.
+  readonly onRefresh: () => Promise<void>;
 }
 
 const BAND_LABEL: Record<WorkspaceBand, string> = {
@@ -50,6 +64,7 @@ export function MissionControlView(props: MissionControlViewProps): ReactElement
   const [isTearingDown, setIsTearingDown] = useState(false);
   const [provisionOpen, setProvisionOpen] = useState(false);
   const [isProvisioning, setIsProvisioning] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const byBand = (band: WorkspaceBand): WorkspaceCard[] =>
     cards.filter(card => card.attention.band === band);
@@ -81,6 +96,15 @@ export function MissionControlView(props: MissionControlViewProps): ReactElement
       .then(() => setProvisionOpen(false))
       .catch(() => undefined)
       .finally(() => setIsProvisioning(false));
+  };
+
+  const handleRefresh = (): void => {
+    setIsRefreshing(true);
+    // Failure is surfaced by the container; just clear the loading state.
+    void props
+      .onRefresh()
+      .catch(() => undefined)
+      .finally(() => setIsRefreshing(false));
   };
 
   return (
@@ -120,6 +144,17 @@ export function MissionControlView(props: MissionControlViewProps): ReactElement
         <Text size='xs' c='dimmed' ff='var(--font-mono)'>
           {`${cards.length} ${cards.length === 1 ? 'workspace' : 'workspaces'} · this repo only`}
         </Text>
+        <Tooltip label='Refresh workspaces'>
+          <ActionIcon
+            variant='subtle'
+            size='sm'
+            aria-label='Refresh workspaces'
+            loading={isRefreshing}
+            onClick={handleRefresh}
+          >
+            <IconRefresh size={14} />
+          </ActionIcon>
+        </Tooltip>
         <Button
           ml='auto'
           size='xs'

@@ -2,6 +2,7 @@ jest.mock('@mantine/notifications', () => ({ notifications: { show: jest.fn() } 
 
 import type { ReactElement } from 'react';
 import { MantineProvider } from '@mantine/core';
+import { notifications } from '@mantine/notifications';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MissionControl } from '../../../src/renderer/components/mission-control/MissionControl';
@@ -33,6 +34,7 @@ interface Api {
   provision: jest.Mock;
   markActive: jest.Mock;
   openTerminal: jest.Mock;
+  refresh: jest.Mock;
 }
 
 function installApi(repositories = [makeRepository()]): Api {
@@ -42,6 +44,7 @@ function installApi(repositories = [makeRepository()]): Api {
   const provision = jest.fn().mockResolvedValue({ success: true, data: {} });
   const markActive = jest.fn().mockResolvedValue({ success: true, data: {} });
   const openTerminal = jest.fn().mockResolvedValue({ success: true, data: undefined });
+  const refresh = jest.fn().mockResolvedValue({ success: true, data: undefined });
   api.repository.list = jest.fn().mockResolvedValue({ success: true, data: repositories });
   api.lore.repository.listBranches = jest
     .fn()
@@ -56,10 +59,11 @@ function installApi(repositories = [makeRepository()]): Api {
       close: jest.fn(),
       watch,
       onSnapshot: jest.fn(() => jest.fn()),
+      refresh,
     },
     workspace: { provision, list: jest.fn(), teardown, markActive },
   });
-  return { watch, teardown, provision, markActive, openTerminal };
+  return { watch, teardown, provision, markActive, openTerminal, refresh };
 }
 
 function renderContainer(): void {
@@ -114,6 +118,32 @@ describe('MissionControl container', () => {
     await user.click(screen.getByRole('button', { name: 'Provision' }));
 
     expect(api.provision).toHaveBeenCalledWith({ repositoryId: REPO_ID, branchName: 'agent/new' });
+  });
+
+  it('manually refreshes the watched repository from the header control', async () => {
+    const user = userEvent.setup();
+    const api = installApi();
+    renderContainer();
+
+    await screen.findByText('agent/act2-balance');
+    await user.click(screen.getByRole('button', { name: 'Refresh workspaces' }));
+    expect(api.refresh).toHaveBeenCalledWith(REPO_ID);
+  });
+
+  it('surfaces a manual refresh failure as a notification', async () => {
+    const user = userEvent.setup();
+    const api = installApi();
+    api.refresh.mockResolvedValue({ success: false, error: 'offline' });
+    renderContainer();
+
+    await screen.findByText('agent/act2-balance');
+    await user.click(screen.getByRole('button', { name: 'Refresh workspaces' }));
+
+    await waitFor(() =>
+      expect(notifications.show).toHaveBeenCalledWith(
+        expect.objectContaining({ color: 'red', title: 'Refresh failed', message: 'offline' })
+      )
+    );
   });
 
   it('re-watches the model when the scoped repository is switched', async () => {

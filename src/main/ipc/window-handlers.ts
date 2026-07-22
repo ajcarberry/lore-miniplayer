@@ -18,6 +18,7 @@ import {
   WindowNoticeActiveSchema,
   WindowOpenTerminalArgsSchema,
   WorkspaceModelWatchArgsSchema,
+  WorkspaceModelRefreshArgsSchema,
 } from './validators';
 import type { MainLogger } from './logger';
 
@@ -234,12 +235,14 @@ export function registerWindowHandlers(log: MainLogger): void {
 // ---------------------------------------------------------------------------
 
 // The subset of the workspace model this window drives: it warms the snapshot
-// cache (watch/snapshot) so markActive can resolve a workspace, and releases
-// the model's listeners when the window closes (CLAUDE.md cleanup rule).
+// cache (watch/snapshot) so markActive can resolve a workspace, releases the
+// model's listeners when the window closes (CLAUDE.md cleanup rule), and lets
+// the header's manual refresh control trigger an immediate rebuild.
 export interface MissionControlModel {
   watch(repositoryId: string): void;
   unwatch(): void;
   snapshot(repositoryId: string): Promise<WorkspaceModelSnapshot>;
+  refreshNow(repositoryId: string): Promise<void>;
 }
 
 export interface MissionControlWindowDeps {
@@ -342,6 +345,17 @@ export function registerMissionControlWindow(
       deps.model.watch(repositoryId);
       return deps.model.snapshot(repositoryId);
     }
+  );
+
+  // Manual refresh (the header's refresh control): trigger an immediate
+  // rebuild for the watched repository, reusing the same refresh path the
+  // automatic triggers use. The rebuilt snapshot arrives via the push
+  // channel, not this invoke's own response.
+  handleResult(
+    log,
+    IPC_CHANNELS.workspaceModel.refresh,
+    WorkspaceModelRefreshArgsSchema,
+    repositoryId => deps.model.refreshNow(repositoryId)
   );
 }
 

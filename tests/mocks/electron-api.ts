@@ -71,6 +71,7 @@ export function createMockElectronAPI(): ElectronAPI {
       open: jest.fn(),
       close: jest.fn(),
       watch: jest.fn().mockResolvedValue({ success: true, data: { repositoryId: '', cards: [] } }),
+      refresh: jest.fn().mockResolvedValue({ success: true, data: undefined }),
       // Returns a cleanup fn like the real bridge; tests capture the
       // registered callback via mock.calls to fire snapshot pushes.
       onSnapshot: jest.fn().mockReturnValue(jest.fn()),

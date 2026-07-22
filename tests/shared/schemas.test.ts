@@ -1318,4 +1318,14 @@ describe('IPC_CHANNELS', () => {
     expect(names.every(name => typeof name === 'string' && name.length > 0)).toBe(true);
     expect(new Set(names).size).toBe(names.length);
   });
+
+  it('declares a manual refresh channel that mirrors the watch/snapshot naming and stays unique', () => {
+    // Given: the full workspaceModel channel group (watch/snapshot/refresh)
+    // When: reading the manual refresh channel name
+    // Then: it is colon-namespaced under workspace:model like its siblings,
+    // and collides with none of them
+    expect(IPC_CHANNELS.workspaceModel.refresh).toBe('workspace:model:refresh');
+    const names = Object.values(IPC_CHANNELS.workspaceModel);
+    expect(new Set(names).size).toBe(names.length);
+  });
 });

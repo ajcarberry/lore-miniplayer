@@ -64,6 +64,21 @@ export function MissionControl(): ReactElement {
     [selectedRepo]
   );
 
+  // Manual refresh (header control), alongside the automatic triggers (agent
+  // pushes, notifications, workspace lifecycle events, 30s cadence). The
+  // rebuilt snapshot arrives via the existing onSnapshot push, not this call's
+  // own response.
+  const handleRefresh = useCallback(async (): Promise<void> => {
+    if (!selectedRepo) {
+      return;
+    }
+    const result = await window.electronAPI.missionControl.refresh(selectedRepo.id);
+    if (!result.success) {
+      notifications.show({ color: 'red', title: 'Refresh failed', message: result.error });
+      throw new Error(result.error);
+    }
+  }, [selectedRepo]);
+
   return (
     <MissionControlView
       repositories={repositories}
@@ -76,6 +91,7 @@ export function MissionControl(): ReactElement {
       onMarkActive={handleMarkActive}
       onTeardown={handleTeardown}
       onProvision={handleProvision}
+      onRefresh={handleRefresh}
     />
   );
 }

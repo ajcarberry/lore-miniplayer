@@ -49,6 +49,7 @@ const validRepository = {
   url: 'lore.example.com/MyRepo',
   localPath: '/Users/dev/repos/my-repo',
   accentHue: 74,
+  origin: 'attached',
   createdAt: '2026-07-17T00:00:00.000Z',
   updatedAt: '2026-07-17T00:00:00.000Z',
 };
@@ -156,6 +157,46 @@ describe('RepositorySchema', () => {
 
     // Then: parsing fails
     expect(result.success).toBe(false);
+  });
+
+  it.each(['attached', 'cloned', 'provisioned'])('should accept the %s origin', origin => {
+    // When: parsing with each valid workspace origin
+    const result = RepositorySchema.safeParse({ ...validRepository, origin });
+
+    // Then: parsing succeeds
+    expect(result.success).toBe(true);
+  });
+
+  it('should reject an unknown origin', () => {
+    // When: parsing with an origin outside the enum
+    const result = RepositorySchema.safeParse({ ...validRepository, origin: 'imported' });
+
+    // Then: parsing fails
+    expect(result.success).toBe(false);
+  });
+
+  it('should reject a missing origin', () => {
+    // Given: a repository object without the required origin field
+    const { origin: _origin, ...withoutOrigin } = validRepository;
+
+    // When: parsing it
+    const result = RepositorySchema.safeParse(withoutOrigin);
+
+    // Then: parsing fails (origin is required in the unified model)
+    expect(result.success).toBe(false);
+  });
+
+  it('should accept a provisioned entry carrying branchName and provisionedAt', () => {
+    // When: parsing a provisioned worktree entry
+    const result = RepositorySchema.safeParse({
+      ...validRepository,
+      origin: 'provisioned',
+      branchName: 'agent-x',
+      provisionedAt: '2026-07-22T00:00:00.000Z',
+    });
+
+    // Then: parsing succeeds
+    expect(result.success).toBe(true);
   });
 });
 

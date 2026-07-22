@@ -43,15 +43,16 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { lore, LoreError } from '@lore-vcs/sdk';
 import { LoreEventTag } from '@lore-vcs/sdk/types/enums';
+import { randomUUID } from 'node:crypto';
 import {
   WorkspaceService,
   WorkspaceOperationError,
 } from '../../../src/main/services/workspace-service';
-import { WorkspaceStore } from '../../../src/main/services/workspace-store';
+import { WorkspaceRegistry } from '../../../src/main/services/workspace-store';
 import type { RepositoryService } from '../../../src/main/services/repository';
 import type { LoreRepositoryService } from '../../../src/main/services/lore-repository';
 import type { Repository } from '../../../src/shared/types';
-import { WorkspaceSchema } from '../../../src/shared/schemas';
+import { RepositorySchema, WorkspaceSchema } from '../../../src/shared/schemas';
 
 const mockLore = lore as jest.Mocked<typeof lore>;
 
@@ -164,24 +165,34 @@ describe('WorkspaceService', () => {
   const BRANCH = 'agent-x';
   const PROVISIONED_AT = '2026-07-22T00:00:00.000Z';
 
-  // Seed the persistent registry (workspaces.json) directly, standing in for a
-  // prior provision without driving the SDK.
+  // Seed the persistent registry (workspaces.json) directly with provisioned
+  // worktree entries of `repo` (joined to it by url), standing in for a prior
+  // provision without driving the SDK. The registry key is url — the seeded
+  // entry gets its own uuid, NOT repo.id, proving list joins by url.
   async function seedRegistry(
     entries: Array<{
-      repositoryId?: string;
       path: string;
       branchName: string;
       provisionedAt?: string;
     }>
   ): Promise<void> {
-    const store = new WorkspaceStore(mockLog);
+    const store = new WorkspaceRegistry(mockLog);
     for (const entry of entries) {
-      await store.add({
-        repositoryId: entry.repositoryId ?? repo.id,
-        path: entry.path,
-        branchName: entry.branchName,
-        provisionedAt: entry.provisionedAt ?? PROVISIONED_AT,
-      });
+      const at = entry.provisionedAt ?? PROVISIONED_AT;
+      await store.upsertByLocalPath(
+        RepositorySchema.parse({
+          id: randomUUID(),
+          name: entry.branchName,
+          url: repo.url,
+          localPath: entry.path,
+          accentHue: 74,
+          origin: 'provisioned',
+          branchName: entry.branchName,
+          provisionedAt: at,
+          createdAt: at,
+          updatedAt: at,
+        })
+      );
     }
   }
 
@@ -196,6 +207,7 @@ describe('WorkspaceService', () => {
       url: 'lores://lore.example.com/myrepo',
       localPath: path.join(tmpBase, 'myrepo'),
       accentHue: 0,
+      origin: 'attached',
       createdAt: '2026-07-22T00:00:00.000Z',
       updatedAt: '2026-07-22T00:00:00.000Z',
     };
@@ -277,16 +289,16 @@ describe('WorkspaceService', () => {
       expect(workspace.repositoryId).toBe(repo.id);
       expect(typeof workspace.provisionedAt).toBe('string');
 
-      // And: the entry is persisted to workspaces.json (survives a reload)
-      const reloaded = await new WorkspaceStore(mockLog).listByRepository(repo.id);
-      expect(reloaded).toEqual([
-        {
-          repositoryId: repo.id,
-          path: workspaceDir,
-          branchName: BRANCH,
-          provisionedAt: workspace.provisionedAt,
-        },
-      ]);
+      // And: a unified provisioned entry is persisted to workspaces.json
+      // (survives a reload), joined to the repo by url
+      const reloaded = await new WorkspaceRegistry(mockLog).findByLocalPath(workspaceDir);
+      expect(reloaded).toMatchObject({
+        url: repo.url,
+        localPath: workspaceDir,
+        branchName: BRANCH,
+        origin: 'provisioned',
+        provisionedAt: workspace.provisionedAt,
+      });
 
       // And: observer hooks are written into the new workspace
       const settingsPath = path.join(workspaceDir, '.claude', 'settings.local.json');
@@ -339,8 +351,8 @@ describe('WorkspaceService', () => {
       expect(mockLore.repositoryClone).not.toHaveBeenCalled();
       expect(workspace.instanceId).toBe('inst-orphan');
       expect(workspace.path).toBe(workspaceDir);
-      const reloaded = await new WorkspaceStore(mockLog).findByPath(workspaceDir);
-      expect(reloaded).toMatchObject({ branchName: BRANCH, repositoryId: repo.id });
+      const reloaded = await new WorkspaceRegistry(mockLog).findByLocalPath(workspaceDir);
+      expect(reloaded).toMatchObject({ branchName: BRANCH, url: repo.url, origin: 'provisioned' });
     });
 
     it('refuses a branch name that escapes the worktree root', async () => {
@@ -376,7 +388,7 @@ describe('WorkspaceService', () => {
       expect(mockLore.branchCreate).not.toHaveBeenCalled();
       expect(mockLore.repositoryInstanceList).not.toHaveBeenCalled();
       expect(fs.existsSync(workspaceDir)).toBe(false);
-      await expect(new WorkspaceStore(mockLog).list()).resolves.toEqual([]);
+      await expect(new WorkspaceRegistry(mockLog).all()).resolves.toEqual([]);
     });
 
     it('wraps a non-Error clone rejection using its string form', async () => {
@@ -582,7 +594,7 @@ describe('WorkspaceService', () => {
       // Then: guards ran, the dir is gone, and the registry entry is removed
       expect(loreRepositoryService.getFileStatus).toHaveBeenCalledWith(workspaceDir);
       expect(fs.existsSync(workspaceDir)).toBe(false);
-      await expect(new WorkspaceStore(mockLog).findByPath(workspaceDir)).resolves.toBeUndefined();
+      await expect(new WorkspaceRegistry(mockLog).findByLocalPath(workspaceDir)).resolves.toBeUndefined();
 
       // And: prune + archive targeted the SIBLING's path (the shared store), not
       // the primary checkout
@@ -889,7 +901,7 @@ describe('WorkspaceService', () => {
       await expect(
         service.provision({ repositoryId: repo.id, branchName: BRANCH })
       ).rejects.toThrow('was not registered as an instance');
-      await expect(new WorkspaceStore(mockLog).list()).resolves.toEqual([]);
+      await expect(new WorkspaceRegistry(mockLog).all()).resolves.toEqual([]);
     });
 
     it('refuses a branch name that resolves to the worktree root itself', async () => {

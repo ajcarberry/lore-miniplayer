@@ -5,6 +5,20 @@ export const AccentHueSchema = z.number().refine(hue => ACCENT_HUE_VALUES.includ
   message: 'accentHue must be one of the defined Lore accent hues',
 });
 
+// Workspace unification (Amendment 2026-07-22): a workspace is a local
+// directory bound to a Lore repo. `origin` records how the entry was created —
+// `attached` (an existing folder was tracked), `cloned` (a card-view clone),
+// `provisioned` (a Mission Control shared-store worktree). Entries sharing a
+// `url` are the same Lore repo. See the U1 packet.
+export const WorkspaceOriginSchema = z.enum(['attached', 'cloned', 'provisioned']);
+
+// The unified registry model (packet U1 names this `Workspace`; it is realized
+// as the extended `Repository` here because the name `Workspace` is already
+// bound to the live shared-store-instance type below that the — out-of-scope —
+// renderer consumes. `Repository` already carried every base field; unification
+// adds `origin` plus the provisioned-only `branchName`/`provisionedAt`. U2 owns
+// the renderer rename that lets this become `Workspace` with `Repository` as
+// the alias.)
 export const RepositorySchema = z.object({
   id: z.string().uuid(),
   name: z
@@ -35,6 +49,10 @@ export const RepositorySchema = z.object({
       return path.startsWith('/') || /^[A-Za-z]:/.test(path);
     }, 'Must be an absolute path'),
   accentHue: AccentHueSchema,
+  origin: WorkspaceOriginSchema,
+  // Provisioned worktrees only: the checked-out branch and when it was created.
+  branchName: z.string().min(1).optional(),
+  provisionedAt: z.string().datetime().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });

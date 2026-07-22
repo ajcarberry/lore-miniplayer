@@ -11,6 +11,7 @@ export function makeRepository(overrides: Partial<Repository> = {}): Repository 
     url: 'lore.example.com/MyRepo',
     localPath: '/tmp/my-repo',
     accentHue: 74,
+    origin: 'attached',
     createdAt: '2026-07-17T00:00:00.000Z',
     updatedAt: '2026-07-17T00:00:00.000Z',
     ...overrides,

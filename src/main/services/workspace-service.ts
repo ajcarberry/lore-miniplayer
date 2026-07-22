@@ -9,8 +9,7 @@ import type { RepositoryService } from './repository';
 import type { LoreRepositoryService } from './lore-repository';
 import type { LoreEventDataOf } from './lore-events';
 import { run, collect, WorkspaceOperationError } from './workspace-lore-ops';
-import { WorkspaceStore } from './workspace-store';
-import type { WorkspaceRegistryEntry } from './workspace-store';
+import { WorkspaceRegistry } from './workspace-store';
 import { writeObserverHooks } from './workspace-hooks';
 import type { WorkspaceObserverConfig } from './workspace-hooks';
 import type {
@@ -60,12 +59,14 @@ interface RawInstance {
 export class WorkspaceService extends EventEmitter {
   private observerConfig: WorkspaceObserverConfig;
 
-  // App-side persistent registry of provisioned workspaces (workspaces.json).
-  // The source of truth for WHICH workspaces exist: Lore's instance registry is
-  // PER-STORE, so the repository's primary checkout cannot see its shared-store
-  // worktrees (P18 live finding). Live fields are enriched from each
+  // The unified workspace registry (workspaces.json, packet U1). The source of
+  // truth for WHICH workspaces exist: Lore's instance registry is PER-STORE, so
+  // the repository's primary checkout cannot see its shared-store worktrees
+  // (P18 live finding). Provisioned worktrees are stored here as unified
+  // entries (origin 'provisioned') alongside card-view repositories; grouping
+  // by a repo's `url` finds its worktrees. Live fields are enriched from each
   // workspace's OWN path at read time.
-  private readonly store: WorkspaceStore;
+  private readonly store: WorkspaceRegistry;
 
   constructor(
     private readonly log: MainLogger,
@@ -74,7 +75,7 @@ export class WorkspaceService extends EventEmitter {
     observerConfig?: WorkspaceObserverConfig
   ) {
     super();
-    this.store = new WorkspaceStore(log);
+    this.store = new WorkspaceRegistry(log);
     this.observerConfig = observerConfig ?? {
       port: DEFAULT_OBSERVER_PORT,
       tokenForWorkspace: (): string => randomUUID(),
@@ -108,7 +109,7 @@ export class WorkspaceService extends EventEmitter {
       // matching-branch instance is an orphaned workspace (e.g. provisioned by
       // the pre-fix flow that never persisted a registry entry). Heal it into
       // the registry instead of failing outright.
-      const adopted = await this.adoptExisting(workspacePath, branchName, repo.id);
+      const adopted = await this.adoptExisting(workspacePath, branchName, repo);
       if (adopted) {
         this.emit('lifecycle', { repositoryId: repo.id, path: workspacePath });
         return adopted;
@@ -151,12 +152,7 @@ export class WorkspaceService extends EventEmitter {
 
     // Registry entry is written only after verification succeeds.
     const provisionedAt = new Date().toISOString();
-    await this.store.add({
-      repositoryId: repo.id,
-      path: workspacePath,
-      branchName,
-      provisionedAt,
-    });
+    await this.upsertProvisioned(repo, workspacePath, branchName, provisionedAt);
     this.emit('lifecycle', { repositoryId: repo.id, path: workspacePath });
     return this.toWorkspace(match, repo.id, provisionedAt);
   }
@@ -172,7 +168,11 @@ export class WorkspaceService extends EventEmitter {
     if (!repo) {
       throw new Error(`Repository with id "${repositoryId}" not found`);
     }
-    const entries = await this.store.listByRepository(repo.id);
+    // Workspaces sharing this repo's url are its worktrees (grouping key = url,
+    // packet U1). The anchor repo itself is a card-view entry, not a worktree,
+    // and is excluded here — surfacing it as a Mission Control member is U3's
+    // job (see the packet's list-by-url note).
+    const entries = await this.provisionedForUrl(repo.url);
     const workspaces: Workspace[] = [];
     for (const entry of entries) {
       const instance = await this.enrichEntry(entry);
@@ -203,10 +203,10 @@ export class WorkspaceService extends EventEmitter {
     const { repo, entry, instance } = located;
     // The registry is the source of truth for the path; the branch name comes
     // from the registry too, so a missing/stale live instance can't strand it.
-    const workspacePath = entry.path;
-    const branchName = entry.branchName;
+    const workspacePath = entry.localPath;
+    const branchName = entry.branchName ?? entry.name;
 
-    await this.assertSafeTeardownPath(workspacePath, repo.localPath);
+    await this.assertSafeTeardownPath(workspacePath, repo?.localPath);
 
     if (!parsed.force) {
       await this.assertNoUnsavedWork(workspacePath, branchName);
@@ -217,14 +217,15 @@ export class WorkspaceService extends EventEmitter {
       workspacePath,
     });
     await fs.rm(workspacePath, { recursive: true, force: true });
-    await this.store.remove(workspacePath);
+    await this.store.removeByLocalPath(workspacePath);
 
     // Prune + archive act on the SHARED store, not the primary checkout's
     // private store (P18). Both require a live handle into that store, so they
     // run against ANOTHER registered workspace of the same repo (a sibling that
-    // shares the store). Tearing down the last one leaves a harmless orphan
-    // record in the now-unreferenced store — skip with a log line.
-    const sibling = await this.siblingWorkspacePath(repo.id, workspacePath);
+    // shares the store, found by url). Tearing down the last one leaves a
+    // harmless orphan record in the now-unreferenced store — skip with a log
+    // line.
+    const sibling = await this.siblingWorkspacePath(entry.url, workspacePath);
 
     let localBranchRemoved = false;
     if (sibling) {
@@ -260,7 +261,7 @@ export class WorkspaceService extends EventEmitter {
       );
     }
 
-    this.emit('lifecycle', { repositoryId: repo.id, path: workspacePath });
+    this.emit('lifecycle', { repositoryId: repo?.id ?? '', path: workspacePath });
     return {
       workspaceId: instance?.instanceId ?? workspacePath,
       path: workspacePath,
@@ -301,10 +302,10 @@ export class WorkspaceService extends EventEmitter {
 
   private async assertSafeTeardownPath(
     workspacePath: string,
-    repoLocalPath: string
+    repoLocalPath?: string
   ): Promise<void> {
     const resolved = path.resolve(workspacePath);
-    if (resolved === path.resolve(repoLocalPath)) {
+    if (repoLocalPath !== undefined && resolved === path.resolve(repoLocalPath)) {
       throw new Error('Refusing to remove the repository checkout itself');
     }
     const stats = await fs.lstat(resolved).catch(() => null);
@@ -328,50 +329,82 @@ export class WorkspaceService extends EventEmitter {
     }
   }
 
+  // Write (or refresh) a provisioned worktree as a unified registry entry
+  // (origin 'provisioned'), keyed by resolved localPath so re-provisioning or
+  // adopting the same directory never duplicates it. `name` is the branch
+  // (name uniqueness is per-url), `url` links it to its parent repo.
+  private async upsertProvisioned(
+    repo: Repository,
+    workspacePath: string,
+    branchName: string,
+    provisionedAt: string
+  ): Promise<void> {
+    const existing = await this.store.findByLocalPath(workspacePath);
+    const entry: Repository = {
+      id: existing?.id ?? (randomUUID() as string),
+      name: branchName,
+      url: repo.url,
+      localPath: workspacePath,
+      accentHue: existing?.accentHue ?? (await this.store.nextAccentHue()),
+      origin: 'provisioned',
+      branchName,
+      provisionedAt,
+      createdAt: existing?.createdAt ?? provisionedAt,
+      updatedAt: new Date().toISOString(),
+    };
+    await this.store.upsertByLocalPath(entry);
+  }
+
+  // Provisioned worktrees sharing a repo's url (its shared-store checkouts).
+  private async provisionedForUrl(url: string): Promise<Repository[]> {
+    const entries = await this.store.findByUrl(url);
+    return entries.filter(entry => entry.origin === 'provisioned');
+  }
+
   // Adopt an already-on-disk workspace into the registry when it self-reports a
   // matching-branch instance. Returns the adopted Workspace, or undefined when
   // the directory is not a matching workspace (so the caller can refuse).
   private async adoptExisting(
     workspacePath: string,
     branchName: string,
-    repositoryId: string
+    repo: Repository
   ): Promise<Workspace | undefined> {
     const match = await this.selfInstance(workspacePath);
     if (!match || match.branchName !== branchName) {
       return undefined;
     }
-    const existing = await this.store.findByPath(workspacePath);
+    const existing = await this.store.findByLocalPath(workspacePath);
     const provisionedAt = existing?.provisionedAt ?? new Date().toISOString();
-    await this.store.add({ repositoryId, path: workspacePath, branchName, provisionedAt });
+    await this.upsertProvisioned(repo, workspacePath, branchName, provisionedAt);
     this.log.info('Adopted an existing workspace into the registry', {
       operation: 'workspace:provision',
       workspacePath,
       branch: branchName,
     });
-    return this.toWorkspace(match, repositoryId, provisionedAt);
+    return this.toWorkspace(match, repo.id, provisionedAt);
   }
 
   // Resolve a teardown request to its registry entry (the source of truth),
   // enriched with the live instance where available. A `workspaceId` matches
   // either the live instance id or the synthetic id used for stale rows (the
-  // path); a `path` matches the registry entry directly.
+  // path); a `path` matches the registry entry directly. The parent card-view
+  // repo (matched by url) is returned when one exists, for the checkout-safety
+  // guard and lifecycle attribution.
   private async locateWorkspace(
     parsed: WorkspaceTeardownRequest
-  ): Promise<{ repo: Repository; entry: WorkspaceRegistryEntry; instance?: RawInstance } | null> {
-    const entries = await this.store.list();
+  ): Promise<{ repo?: Repository; entry: Repository; instance?: RawInstance } | null> {
+    const cardRepos = await this.repositoryService.getAll();
+    const entries = (await this.store.all()).filter(entry => entry.origin === 'provisioned');
     for (const entry of entries) {
-      const repo = await this.repositoryService.getById(entry.repositoryId);
-      if (!repo) {
-        continue;
-      }
+      const repo = cardRepos.find(candidate => candidate.url === entry.url);
       const instance = await this.enrichEntry(entry);
       const matches =
         'workspaceId' in parsed
           ? instance?.instanceId === parsed.workspaceId ||
-            this.samePath(entry.path, parsed.workspaceId)
-          : this.samePath(entry.path, parsed.path);
+            this.samePath(entry.localPath, parsed.workspaceId)
+          : this.samePath(entry.localPath, parsed.path);
       if (matches) {
-        return instance ? { repo, entry, instance } : { repo, entry };
+        return { ...(repo ? { repo } : {}), entry, ...(instance ? { instance } : {}) };
       }
     }
     return null;
@@ -380,11 +413,11 @@ export class WorkspaceService extends EventEmitter {
   // The live instance a workspace path self-reports for its own directory (its
   // shared store lists it). Undefined when the directory is gone or the query
   // fails — never throws (P18 enrichment contract).
-  private async enrichEntry(entry: WorkspaceRegistryEntry): Promise<RawInstance | undefined> {
-    if (!(await this.pathExists(entry.path))) {
+  private async enrichEntry(entry: Repository): Promise<RawInstance | undefined> {
+    if (!(await this.pathExists(entry.localPath))) {
       return undefined;
     }
-    return this.selfInstance(entry.path);
+    return this.selfInstance(entry.localPath);
   }
 
   private async selfInstance(workspacePath: string): Promise<RawInstance | undefined> {
@@ -401,29 +434,29 @@ export class WorkspaceService extends EventEmitter {
     }
   }
 
-  // Another registered workspace of the same repo (sharing the same Lore store),
-  // excluding the one being torn down. Prune/archive run against it.
+  // Another registered worktree of the same repo (sharing the same Lore store
+  // by url), excluding the one being torn down. Prune/archive run against it.
   private async siblingWorkspacePath(
-    repositoryId: string,
+    url: string,
     excludePath: string
   ): Promise<string | undefined> {
-    const entries = await this.store.listByRepository(repositoryId);
-    const sibling = entries.find(entry => !this.samePath(entry.path, excludePath));
-    return sibling?.path;
+    const entries = await this.provisionedForUrl(url);
+    const sibling = entries.find(entry => !this.samePath(entry.localPath, excludePath));
+    return sibling?.localPath;
   }
 
   // A stale Mission Control row for a registered workspace whose directory is
   // gone or whose store cannot be queried. The path doubles as a stable
   // synthetic instance id (the live id is unknown).
-  private staleWorkspace(entry: WorkspaceRegistryEntry, repositoryId: string): Workspace {
+  private staleWorkspace(entry: Repository, repositoryId: string): Workspace {
     return WorkspaceSchema.parse({
-      instanceId: entry.path,
-      path: entry.path,
-      branchName: entry.branchName,
+      instanceId: entry.localPath,
+      path: entry.localPath,
+      branchName: entry.branchName ?? entry.name,
       revision: '',
       stale: true,
       repositoryId,
-      provisionedAt: entry.provisionedAt,
+      ...(entry.provisionedAt ? { provisionedAt: entry.provisionedAt } : {}),
     });
   }
 

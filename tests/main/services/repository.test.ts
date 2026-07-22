@@ -13,17 +13,45 @@ jest.mock('electron', () => ({
 
 jest.mock('electron-log/main.js', () => ({
   __esModule: true,
-  default: { error: jest.fn(), initialize: jest.fn() },
+  default: {
+    error: jest.fn(),
+    warn: jest.fn(),
+    info: jest.fn(),
+    debug: jest.fn(),
+    initialize: jest.fn(),
+  },
 }));
 
 import log from 'electron-log/main.js';
 import { RepositoryService } from '../../../src/main/services/repository';
+import { WorkspaceRegistry } from '../../../src/main/services/workspace-store';
+import { RepositorySchema } from '../../../src/shared/schemas';
 
 const createInput = {
   name: 'My Repo',
   url: 'lore.example.com/MyRepo',
   localPath: '/tmp/repos/my-repo',
 };
+
+// A provisioned worktree seeded straight into the unified registry (as
+// WorkspaceService.provision would), to prove RepositoryService excludes it
+// from the card-view getAll but still forgets it via delete.
+async function seedProvisioned(id: string, localPath: string): Promise<void> {
+  await new WorkspaceRegistry(log as never).upsertByLocalPath(
+    RepositorySchema.parse({
+      id,
+      name: 'agent-x',
+      url: 'lore.example.com/MyRepo',
+      localPath,
+      accentHue: 74,
+      origin: 'provisioned',
+      branchName: 'agent-x',
+      provisionedAt: '2026-07-22T00:00:00.000Z',
+      createdAt: '2026-07-22T00:00:00.000Z',
+      updatedAt: '2026-07-22T00:00:00.000Z',
+    })
+  );
+}
 
 describe('RepositoryService', () => {
   let service: RepositoryService;
@@ -40,8 +68,8 @@ describe('RepositoryService', () => {
 
   describe('initialize', () => {
     it('should create an empty store file on first run', async () => {
-      // Then: the store file exists and holds no repositories
-      const storePath = path.join(mockUserData.dir, 'repositories.json');
+      // Then: the unified registry file exists and holds no repositories
+      const storePath = path.join(mockUserData.dir, 'workspaces.json');
       expect(fs.existsSync(storePath)).toBe(true);
       await expect(service.getAll()).resolves.toEqual([]);
     });
@@ -124,11 +152,12 @@ describe('RepositoryService', () => {
     });
 
     it('should reject renaming to another repository name', async () => {
-      // Given: two repositories
+      // Given: two repositories sharing the same Lore url (name uniqueness is
+      // per-url now)
       await service.create(createInput);
       const second = await service.create({
         name: 'Second',
-        url: 'lore.example.com/Second',
+        url: createInput.url,
         localPath: '/tmp/repos/second',
       });
 
@@ -171,6 +200,74 @@ describe('RepositoryService', () => {
 
       // Then: the delete is rejected
       await expect(promise).rejects.toThrow('not found');
+    });
+  });
+
+  describe('unified registry (packet U1)', () => {
+    it('records origin "attached" by default and "cloned" when requested', async () => {
+      // When: creating via the default path and via the clone path
+      const attached = await service.create(createInput);
+      const cloned = await service.create(
+        { ...createInput, name: 'Cloned', localPath: '/tmp/repos/cloned' },
+        'cloned'
+      );
+
+      // Then: each entry records how it came to exist
+      expect(attached.origin).toBe('attached');
+      expect(cloned.origin).toBe('cloned');
+    });
+
+    it('allows the same name across different urls (name uniqueness is per-url)', async () => {
+      // Given: a repository named "My Repo" at one url
+      await service.create(createInput);
+
+      // When: creating another "My Repo" at a DIFFERENT url
+      const other = service.create({
+        ...createInput,
+        url: 'lore.example.com/Other',
+        localPath: '/tmp/repos/other',
+      });
+
+      // Then: it is allowed (branch/worktree names repeat across repos)
+      await expect(other).resolves.toMatchObject({ name: 'My Repo' });
+    });
+
+    it('still rejects a duplicate localPath across all origins', async () => {
+      // Given: a provisioned worktree occupying a path
+      await service.create(createInput);
+      await seedProvisioned('11111111-1111-4111-8111-111111111111', '/tmp/wt/agent-x');
+
+      // When: creating a card-view repo at that same path
+      const clash = service.create({
+        ...createInput,
+        name: 'Clash',
+        localPath: '/tmp/wt/agent-x',
+      });
+
+      // Then: the localPath collision is rejected regardless of origin
+      await expect(clash).rejects.toThrow('already configured for path');
+    });
+
+    it('getAll surfaces card-view origins but hides provisioned worktrees', async () => {
+      // Given: a card-view repo and a provisioned worktree in the same registry
+      const attached = await service.create(createInput);
+      await seedProvisioned('22222222-2222-4222-8222-222222222222', '/tmp/wt/agent-x');
+
+      // Then: only the card-view entry is listed
+      const all = await service.getAll();
+      expect(all.map(r => r.id)).toEqual([attached.id]);
+    });
+
+    it('delete forgets any origin, including a provisioned worktree', async () => {
+      // Given: a provisioned worktree tracked in the registry
+      const provisionedId = '33333333-3333-4333-8333-333333333333';
+      await seedProvisioned(provisionedId, '/tmp/wt/agent-x');
+
+      // When: forgetting it by id (untrack-only)
+      await service.delete(provisionedId);
+
+      // Then: it is gone from the registry (and getById no longer resolves it)
+      await expect(service.getById(provisionedId)).resolves.toBeNull();
     });
   });
 
@@ -251,8 +348,8 @@ describe('RepositoryService', () => {
   });
 
   describe('corrupted store handling', () => {
-    it('should surface a load error for a corrupted store file', async () => {
-      // Given: a store file with invalid content
+    it('should surface a load error for a corrupted legacy store file', async () => {
+      // Given: a legacy repositories.json with invalid content (a migration source)
       const storePath = path.join(mockUserData.dir, 'repositories.json');
       fs.writeFileSync(storePath, '{"repositories": "not-an-array"}');
 
@@ -260,7 +357,7 @@ describe('RepositoryService', () => {
       const promise = service.getAll();
 
       // Then: the failure is reported rather than silently swallowed
-      await expect(promise).rejects.toThrow('Failed to load repositories');
+      await expect(promise).rejects.toThrow('Failed to load workspace registry');
     });
   });
 });

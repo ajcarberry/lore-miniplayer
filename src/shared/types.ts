@@ -1,6 +1,7 @@
 import type { z } from 'zod';
 import type {
   RepositorySchema,
+  WorkspaceOriginSchema,
   RepositoryCreateInputSchema,
   RepositoryUpdateInputSchema,
   LoreBranchSchema,
@@ -137,7 +138,13 @@ export type MergeToParent = z.infer<typeof MergeToParentSchema>;
 // source — merges accepted into the child from the parent.
 export type BranchGraph = z.infer<typeof BranchGraphSchema>;
 
+// The unified workspace-registry model (packet U1). Named `Repository` for
+// renderer compatibility this pass; U2 renames it to `Workspace`.
 export type Repository = z.infer<typeof RepositorySchema>;
+
+// How a workspace entry came to exist: `attached` (existing folder tracked),
+// `cloned` (card-view clone), `provisioned` (Mission Control worktree).
+export type WorkspaceOrigin = z.infer<typeof WorkspaceOriginSchema>;
 
 export type RepositoryCreateInput = z.infer<typeof RepositoryCreateInputSchema>;
 

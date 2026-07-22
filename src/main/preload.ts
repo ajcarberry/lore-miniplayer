@@ -19,6 +19,8 @@ import type {
   WorkspaceListResponse,
   WorkspaceTeardownRequest,
   WorkspaceTeardownResponse,
+  DiffRequest,
+  DiffResponse,
 } from '../shared/types';
 
 // Expose window control APIs
@@ -227,6 +229,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ): Promise<Result<WorkspaceTeardownResponse>> => {
       return ipcRenderer.invoke(IPC_CHANNELS.workspace.teardown, request) as Promise<
         Result<WorkspaceTeardownResponse>
+      >;
+    },
+  },
+  // The review window's compare picker (design 2b).
+  diff: {
+    compare: async (request: DiffRequest): Promise<Result<DiffResponse>> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.diff.compare, request) as Promise<
+        Result<DiffResponse>
       >;
     },
   },

@@ -39,6 +39,7 @@ import { registerIpcHandlers } from '../../../src/main/ipc/handlers';
 import type { RepositoryService } from '../../../src/main/services/repository';
 import type { LoreRepositoryService } from '../../../src/main/services/lore-repository';
 import type { WorkspaceService } from '../../../src/main/services/workspace-service';
+import type { DiffService } from '../../../src/main/services/diff-service';
 
 const mockRepositoryService = {
   getAll: jest.fn(),
@@ -71,6 +72,11 @@ const mockWorkspaceService = {
   teardown: jest.fn(),
 } as unknown as jest.Mocked<WorkspaceService>;
 
+const mockDiffService = {
+  compare: jest.fn(),
+  branchVsParent: jest.fn(),
+} as unknown as jest.Mocked<DiffService>;
+
 function invoke(channel: string, ...args: unknown[]): unknown {
   const handler = registeredHandlers.get(channel);
   if (!handler) {
@@ -81,7 +87,13 @@ function invoke(channel: string, ...args: unknown[]): unknown {
 
 beforeAll(() => {
   mockUserData.dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lore-miniplayer-handlers-test-'));
-  registerIpcHandlers(log, mockRepositoryService, mockLoreRepositoryService, mockWorkspaceService);
+  registerIpcHandlers(
+    log,
+    mockRepositoryService,
+    mockLoreRepositoryService,
+    mockWorkspaceService,
+    mockDiffService
+  );
 });
 
 afterAll(() => {

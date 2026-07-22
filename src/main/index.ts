@@ -7,6 +7,7 @@ import { RepositoryService } from './services/repository';
 import { initializeLoreSdk, shutdownLoreSdk } from './services/lore-sdk';
 import { LoreRepositoryService } from './services/lore-repository';
 import { WorkspaceService } from './services/workspace-service';
+import { DiffService } from './services/diff-service';
 import { loadWindowPosition, saveWindowPosition } from './ipc/config-handlers';
 import { hardenSession, hardenWebContents } from './security';
 import { COLLAPSED_WINDOW_SIZE, resolveRestorePosition } from '../shared/window-position';
@@ -174,7 +175,8 @@ app.whenReady().then(async () => {
   // Owns workspace provisioning/teardown; P7 later injects the observer hook
   // listener's port + token via workspaceService.setObserverConfig(...).
   const workspaceService = new WorkspaceService(log, repositoryService, loreRepositoryService);
-  registerIpcHandlers(log, repositoryService, loreRepositoryService, workspaceService);
+  const diffService = new DiffService();
+  registerIpcHandlers(log, repositoryService, loreRepositoryService, workspaceService, diffService);
 
   // Then initialize the services
   await repositoryService.initialize();

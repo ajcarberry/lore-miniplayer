@@ -7,6 +7,7 @@ import {
   WorkspaceProvisionRequestSchema,
   WorkspaceListRequestSchema,
   WorkspaceTeardownRequestSchema,
+  DiffRequestSchema,
 } from '../../shared/schemas';
 
 export const ThemeModeSchema = z.enum(['auto', 'light', 'dark']);
@@ -142,3 +143,6 @@ export const PathBasenameArgsSchema = z.tuple([PathBasenameInputSchema]);
 export const WorkspaceProvisionArgsSchema = z.tuple([WorkspaceProvisionRequestSchema]);
 export const WorkspaceListArgsSchema = z.tuple([WorkspaceListRequestSchema]);
 export const WorkspaceTeardownArgsSchema = z.tuple([WorkspaceTeardownRequestSchema]);
+
+// diff:* — the review window's compare picker
+export const DiffCompareArgsSchema = z.tuple([DiffRequestSchema]);

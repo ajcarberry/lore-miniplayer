@@ -17,6 +17,8 @@ import type {
   WorkspaceListResponse,
   WorkspaceTeardownRequest,
   WorkspaceTeardownResponse,
+  DiffRequest,
+  DiffResponse,
 } from '../shared/types';
 
 declare global {
@@ -91,6 +93,9 @@ declare global {
         ) => Promise<Result<WorkspaceProvisionResponse>>;
         list: (request: WorkspaceListRequest) => Promise<Result<WorkspaceListResponse>>;
         teardown: (request: WorkspaceTeardownRequest) => Promise<Result<WorkspaceTeardownResponse>>;
+      };
+      diff: {
+        compare: (request: DiffRequest) => Promise<Result<DiffResponse>>;
       };
     };
   }

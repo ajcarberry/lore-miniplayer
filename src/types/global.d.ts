@@ -21,6 +21,15 @@ import type {
   WorkspaceMarkActiveResponse,
   DiffRequest,
   DiffResponse,
+  MergeStartRequest,
+  MergeStartResponse,
+  MergeResolveRequest,
+  MergeResolveResponse,
+  MergeAbortRequest,
+  MergeAbortResponse,
+  MergeCompleteRequest,
+  MergeCompleteResponse,
+  WorkspaceModelSnapshot,
   LockQueryRequest,
   LockQueryResponse,
   LockReleaseRequest,
@@ -111,6 +120,23 @@ declare global {
       };
       diff: {
         compare: (request: DiffRequest) => Promise<Result<DiffResponse>>;
+      };
+      // The review window's merge workflow (design 2c, P13).
+      merge: {
+        start: (request: MergeStartRequest) => Promise<Result<MergeStartResponse>>;
+        resolve: (request: MergeResolveRequest) => Promise<Result<MergeResolveResponse>>;
+        abort: (request: MergeAbortRequest) => Promise<Result<MergeAbortResponse>>;
+        complete: (request: MergeCompleteRequest) => Promise<Result<MergeCompleteResponse>>;
+      };
+      // Mission Control window (design 2a). open/close manage the secondary
+      // window; watch targets the workspace model at a repo and returns its
+      // snapshot; onSnapshot subscribes to subsequent rebuilds (payloads
+      // validated in the renderer).
+      missionControl: {
+        open: (repositoryId?: string) => void;
+        close: () => void;
+        watch: (repositoryId: string) => Promise<Result<WorkspaceModelSnapshot>>;
+        onSnapshot: (callback: (snapshot: unknown) => void) => () => void;
       };
       locks: {
         query: (request: LockQueryRequest) => Promise<Result<LockQueryResponse>>;

@@ -1,5 +1,6 @@
 import { ipcMain, BrowserWindow, screen } from 'electron';
 import * as os from 'node:os';
+import * as path from 'node:path';
 import { spawn } from 'node:child_process';
 import {
   COLLAPSED_WINDOW_SIZE,
@@ -8,8 +9,15 @@ import {
   computeExpandedBounds,
 } from '../../shared/window-position';
 import type { Bounds, ExpandAnchor } from '../../shared/window-position';
+import { IPC_CHANNELS } from '../../shared/schemas';
+import type { WorkspaceModelSnapshot } from '../../shared/types';
 import { handleResult } from './result-helpers';
-import { WindowNoticeActiveSchema, WindowOpenTerminalArgsSchema } from './validators';
+import {
+  MissionControlOpenArgsSchema,
+  WindowNoticeActiveSchema,
+  WindowOpenTerminalArgsSchema,
+  WorkspaceModelWatchArgsSchema,
+} from './validators';
 import type { MainLogger } from './logger';
 
 // Focus dimming with a notice override. The window dims to 70% opacity when it
@@ -215,5 +223,123 @@ export function registerWindowHandlers(log: MainLogger): void {
 
   handleResult(log, 'window:open-terminal', WindowOpenTerminalArgsSchema, workingDirectory =>
     openTerminal(workingDirectory)
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Mission Control window (P10, design 2a): a secondary, single-instance window
+// scoped to the selected repository. It is NOT the always-on-top ambient pill —
+// it is a normal, movable window with the app's own frameless TitleBar chrome.
+// ---------------------------------------------------------------------------
+
+// The subset of the workspace model this window drives: it warms the snapshot
+// cache (watch/snapshot) so markActive can resolve a workspace, and releases
+// the model's listeners when the window closes (CLAUDE.md cleanup rule).
+export interface MissionControlModel {
+  watch(repositoryId: string): void;
+  unwatch(): void;
+  snapshot(repositoryId: string): Promise<WorkspaceModelSnapshot>;
+}
+
+export interface MissionControlWindowDeps {
+  readonly preloadPath: string;
+  readonly rendererDir: string;
+  readonly devServerUrl?: string;
+  // Security wiring stays with the caller (index.ts owns the logger + dev URL);
+  // applied to every window this factory creates, per security.ts.
+  readonly harden: (win: BrowserWindow) => void;
+  readonly model: MissionControlModel;
+}
+
+// Mission Control content is 680px (design 2a); the window adds chrome padding.
+const MISSION_CONTROL_SIZE = { width: 720, height: 780 } as const;
+
+// Single ambient Mission Control window; module-scoped so the snapshot
+// forwarder in index.ts can reach it and so re-opening focuses rather than
+// duplicating (packet: one instance max).
+let missionControlWindow: BrowserWindow | null = null;
+
+export function getMissionControlWindow(): BrowserWindow | null {
+  return missionControlWindow;
+}
+
+export function registerMissionControlWindow(
+  log: MainLogger,
+  deps: MissionControlWindowDeps
+): void {
+  ipcMain.on(IPC_CHANNELS.missionControl.open, (_event, rawRepositoryId: unknown): void => {
+    const parsed = MissionControlOpenArgsSchema.safeParse([rawRepositoryId]);
+    if (!parsed.success) {
+      log.error('Invalid missionControl:open payload', {
+        rawRepositoryId,
+        operation: IPC_CHANNELS.missionControl.open,
+      });
+      return;
+    }
+    const [repositoryId] = parsed.data;
+
+    // Already open: re-target the model at the requested repo and focus.
+    if (missionControlWindow && !missionControlWindow.isDestroyed()) {
+      if (repositoryId !== undefined) {
+        deps.model.watch(repositoryId);
+      }
+      missionControlWindow.focus();
+      return;
+    }
+
+    const win = new BrowserWindow({
+      width: MISSION_CONTROL_SIZE.width,
+      height: MISSION_CONTROL_SIZE.height,
+      frame: false,
+      title: 'Mission Control',
+      backgroundColor: '#f7f2e7',
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        sandbox: true,
+        webSecurity: true,
+        allowRunningInsecureContent: false,
+        preload: deps.preloadPath,
+      },
+    });
+    deps.harden(win);
+
+    if (deps.devServerUrl !== undefined) {
+      void win.loadURL(`${deps.devServerUrl}/mission-control.html`);
+    } else {
+      void win.loadFile(path.join(deps.rendererDir, 'mission-control.html'));
+    }
+
+    win.on('closed', () => {
+      missionControlWindow = null;
+      // The model was watching this repo only for the window; release it.
+      deps.model.unwatch();
+    });
+
+    if (repositoryId !== undefined) {
+      deps.model.watch(repositoryId);
+    }
+    missionControlWindow = win;
+  });
+
+  // Close from the opener (the ambient window's footer icon toggles it). The
+  // window's own TitleBar close uses the shared window:close handler instead.
+  ipcMain.on(IPC_CHANNELS.missionControl.close, () => {
+    if (missionControlWindow && !missionControlWindow.isDestroyed()) {
+      missionControlWindow.close();
+    }
+  });
+
+  // Point the workspace model at a repository and return its current snapshot.
+  // watch() warms the cache markActive depends on and starts the snapshot push
+  // stream; the returned snapshot seeds the renderer without a push race.
+  handleResult(
+    log,
+    IPC_CHANNELS.workspaceModel.watch,
+    WorkspaceModelWatchArgsSchema,
+    repositoryId => {
+      deps.model.watch(repositoryId);
+      return deps.model.snapshot(repositoryId);
+    }
   );
 }

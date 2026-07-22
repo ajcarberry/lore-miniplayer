@@ -41,6 +41,7 @@ import type { LoreRepositoryService } from '../../../src/main/services/lore-repo
 import type { WorkspaceService } from '../../../src/main/services/workspace-service';
 import type { WorkspaceModelService } from '../../../src/main/services/workspace-model';
 import type { DiffService } from '../../../src/main/services/diff-service';
+import type { MergeService } from '../../../src/main/services/merge-service';
 import type { LockService } from '../../../src/main/services/lock-service';
 
 const mockRepositoryService = {
@@ -83,6 +84,13 @@ const mockDiffService = {
   branchVsParent: jest.fn(),
 } as unknown as jest.Mocked<DiffService>;
 
+const mockMergeService = {
+  start: jest.fn(),
+  resolve: jest.fn(),
+  abort: jest.fn(),
+  complete: jest.fn(),
+} as unknown as jest.Mocked<MergeService>;
+
 const mockLockService = {
   query: jest.fn(),
   release: jest.fn(),
@@ -105,6 +113,7 @@ beforeAll(() => {
     mockWorkspaceService,
     mockWorkspaceModel,
     mockDiffService,
+    mockMergeService,
     mockLockService
   );
 });

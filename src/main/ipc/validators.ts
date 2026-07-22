@@ -2,6 +2,7 @@ import * as path from 'node:path';
 import { z } from 'zod';
 import {
   LoreSyncOptionsSchema,
+  RepositorySchema,
   RepositoryCreateInputSchema,
   RepositoryUpdateInputSchema,
   WorkspaceProvisionRequestSchema,
@@ -9,6 +10,10 @@ import {
   WorkspaceTeardownRequestSchema,
   WorkspaceMarkActiveRequestSchema,
   DiffRequestSchema,
+  MergeStartRequestSchema,
+  MergeResolveRequestSchema,
+  MergeAbortRequestSchema,
+  MergeCompleteRequestSchema,
   LockQueryRequestSchema,
   LockReleaseRequestSchema,
 } from '../../shared/schemas';
@@ -148,8 +153,22 @@ export const WorkspaceListArgsSchema = z.tuple([WorkspaceListRequestSchema]);
 export const WorkspaceTeardownArgsSchema = z.tuple([WorkspaceTeardownRequestSchema]);
 export const WorkspaceMarkActiveArgsSchema = z.tuple([WorkspaceMarkActiveRequestSchema]);
 
+// missionControl:* / workspace:model:* (P10) — the Mission Control window is
+// opened for a repository (id optional: focuses an already-open window) and the
+// workspace model is watched at a repository, returning its current snapshot.
+const repositoryIdArg = RepositorySchema.shape.id;
+export const MissionControlOpenArgsSchema = z.tuple([repositoryIdArg.optional()]);
+export const WorkspaceModelWatchArgsSchema = z.tuple([repositoryIdArg]);
+
 // diff:* — the review window's compare picker
 export const DiffCompareArgsSchema = z.tuple([DiffRequestSchema]);
+
+// --- merge:* (P13) — the review window's merge workflow (design 2c) --------
+// Each channel re-validates its request with the P2 contract schema.
+export const MergeStartArgsSchema = z.tuple([MergeStartRequestSchema]);
+export const MergeResolveArgsSchema = z.tuple([MergeResolveRequestSchema]);
+export const MergeAbortArgsSchema = z.tuple([MergeAbortRequestSchema]);
+export const MergeCompleteArgsSchema = z.tuple([MergeCompleteRequestSchema]);
 
 // locks:* — lock visibility (query) and release (spec: show + release,
 // never enforce acquisition)

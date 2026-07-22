@@ -44,7 +44,10 @@ export default defineConfig({
     build: {
       rollupOptions: {
         input: {
-          index: resolve(__dirname, 'index.html')
+          index: resolve(__dirname, 'index.html'),
+          // Mission Control (P10) is a second BrowserWindow with its own
+          // renderer entry point.
+          missionControl: resolve(__dirname, 'mission-control.html')
         }
       }
     },

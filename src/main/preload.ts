@@ -23,6 +23,15 @@ import type {
   WorkspaceMarkActiveResponse,
   DiffRequest,
   DiffResponse,
+  MergeStartRequest,
+  MergeStartResponse,
+  MergeResolveRequest,
+  MergeResolveResponse,
+  MergeAbortRequest,
+  MergeAbortResponse,
+  MergeCompleteRequest,
+  MergeCompleteResponse,
+  WorkspaceModelSnapshot,
   LockQueryRequest,
   LockQueryResponse,
   LockReleaseRequest,
@@ -247,11 +256,63 @@ contextBridge.exposeInMainWorld('electronAPI', {
       >;
     },
   },
+  // Mission Control window (P10, design 2a). `open`/`close` manage the
+  // secondary window; `watch` points the workspace model at a repository and
+  // returns its current snapshot; `onSnapshot` subscribes to subsequent model
+  // rebuilds (payload crosses the bridge as unknown, Zod-validated in the
+  // renderer before use).
+  missionControl: {
+    open: (repositoryId?: string): void => {
+      ipcRenderer.send(IPC_CHANNELS.missionControl.open, repositoryId);
+    },
+    close: (): void => {
+      ipcRenderer.send(IPC_CHANNELS.missionControl.close);
+    },
+    watch: async (repositoryId: string): Promise<Result<WorkspaceModelSnapshot>> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.workspaceModel.watch, repositoryId) as Promise<
+        Result<WorkspaceModelSnapshot>
+      >;
+    },
+    onSnapshot: (callback: (snapshot: unknown) => void): (() => void) => {
+      const listener = (_event: unknown, payload: unknown): void => {
+        callback(payload);
+      };
+      ipcRenderer.on(IPC_CHANNELS.workspaceModel.snapshot, listener);
+      return (): void => {
+        ipcRenderer.removeListener(IPC_CHANNELS.workspaceModel.snapshot, listener);
+      };
+    },
+  },
   // The review window's compare picker (design 2b).
   diff: {
     compare: async (request: DiffRequest): Promise<Result<DiffResponse>> => {
       return ipcRenderer.invoke(IPC_CHANNELS.diff.compare, request) as Promise<
         Result<DiffResponse>
+      >;
+    },
+  },
+  // The review window's merge workflow (design 2c): start a branch→main merge,
+  // resolve conflicts accept-mine/accept-theirs per file, abort, or complete
+  // (commit + push). One merge in flight per repository.
+  merge: {
+    start: async (request: MergeStartRequest): Promise<Result<MergeStartResponse>> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.merge.start, request) as Promise<
+        Result<MergeStartResponse>
+      >;
+    },
+    resolve: async (request: MergeResolveRequest): Promise<Result<MergeResolveResponse>> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.merge.resolve, request) as Promise<
+        Result<MergeResolveResponse>
+      >;
+    },
+    abort: async (request: MergeAbortRequest): Promise<Result<MergeAbortResponse>> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.merge.abort, request) as Promise<
+        Result<MergeAbortResponse>
+      >;
+    },
+    complete: async (request: MergeCompleteRequest): Promise<Result<MergeCompleteResponse>> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.merge.complete, request) as Promise<
+        Result<MergeCompleteResponse>
       >;
     },
   },

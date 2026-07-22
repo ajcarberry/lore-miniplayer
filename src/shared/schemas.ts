@@ -420,4 +420,16 @@ export const IPC_CHANNELS = {
   agent: {
     observability: 'agent:observability',
   },
+  // Mission Control window (P10, design 2a). `open`/`close` manage the
+  // secondary window; `watch` (invoke) targets the workspace model at a repo
+  // and returns its current snapshot; `snapshot` is the one-way push the model
+  // emits on every rebuild (Zod-validated in the renderer before use).
+  missionControl: {
+    open: 'missionControl:open',
+    close: 'missionControl:close',
+  },
+  workspaceModel: {
+    watch: 'workspace:model:watch',
+    snapshot: 'workspace:model:snapshot',
+  },
 } as const;

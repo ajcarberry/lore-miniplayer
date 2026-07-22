@@ -2,7 +2,11 @@ import { app, BrowserWindow, screen, session } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { registerIpcHandlers } from './ipc/handlers';
-import { attachFocusDimming } from './ipc/window-handlers';
+import {
+  attachFocusDimming,
+  registerMissionControlWindow,
+  getMissionControlWindow,
+} from './ipc/window-handlers';
 import { RepositoryService } from './services/repository';
 import { initializeLoreSdk, shutdownLoreSdk } from './services/lore-sdk';
 import { LoreRepositoryService } from './services/lore-repository';
@@ -11,8 +15,9 @@ import { AgentObserverService } from './services/agent-observer';
 import { AgentTranscriptService } from './services/agent-transcript';
 import { WorkspaceModelService } from './services/workspace-model';
 import { DiffService } from './services/diff-service';
+import { MergeService } from './services/merge-service';
 import { LockService } from './services/lock-service';
-import { IPC_CHANNELS } from '../shared/schemas';
+import { IPC_CHANNELS, WorkspaceModelSnapshotSchema } from '../shared/schemas';
 import { loadWindowPosition, saveWindowPosition } from './ipc/config-handlers';
 import { hardenSession, hardenWebContents } from './security';
 import { COLLAPSED_WINDOW_SIZE, resolveRestorePosition } from '../shared/window-position';
@@ -185,6 +190,9 @@ app.whenReady().then(async () => {
   // listener's port + token via workspaceService.setObserverConfig(...).
   const workspaceService = new WorkspaceService(log, repositoryService, loreRepositoryService);
   const diffService = new DiffService();
+  // Owns the review window's merge workflow (design 2c): start/resolve/abort/
+  // complete a branch→main merge, one in flight per repository.
+  const mergeService = new MergeService(log, loreRepositoryService);
   const lockService = new LockService();
 
   // Agent observability (hook listener) + transcript enrichment feed the
@@ -210,6 +218,7 @@ app.whenReady().then(async () => {
     workspaceService,
     workspaceModel,
     diffService,
+    mergeService,
     lockService
   );
 
@@ -226,6 +235,41 @@ app.whenReady().then(async () => {
   });
   await agentObserverService.start();
   workspaceService.setObserverConfig(agentObserverService.getObserverConfig());
+
+  // Mission Control window (P10, design 2a). Register its open/close + model
+  // watch handlers, and forward the workspace model's snapshot rebuilds to the
+  // open window over the P10 push channel — Zod-validated before it leaves the
+  // main process, mirroring the other push channels. The window drives
+  // watch()/unwatch() over its lifetime so the model only builds snapshots
+  // while Mission Control is showing them.
+  const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+  const missionControlDevServerUrl = app.isPackaged
+    ? undefined
+    : process.env['ELECTRON_RENDERER_URL'];
+  registerMissionControlWindow(log, {
+    preloadPath: path.join(moduleDir, '../preload/preload.js'),
+    rendererDir: path.join(moduleDir, '../renderer'),
+    ...(missionControlDevServerUrl ? { devServerUrl: missionControlDevServerUrl } : {}),
+    harden: win => hardenWebContents(win.webContents, log, missionControlDevServerUrl),
+    model: workspaceModel,
+  });
+  workspaceModel.on('snapshot', snapshot => {
+    const win = getMissionControlWindow();
+    if (!win || win.isDestroyed()) {
+      return;
+    }
+    try {
+      win.webContents.send(
+        IPC_CHANNELS.workspaceModel.snapshot,
+        WorkspaceModelSnapshotSchema.parse(snapshot)
+      );
+    } catch (error) {
+      log.error('Failed to forward workspace snapshot to Mission Control', {
+        error,
+        operation: 'workspace:model:snapshot',
+      });
+    }
+  });
 
   // Deny-by-default browser permission requests
   hardenSession(session.defaultSession, log);

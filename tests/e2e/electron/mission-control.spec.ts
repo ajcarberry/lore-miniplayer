@@ -107,7 +107,7 @@ test.describe('Mission Control (offline repository, no live server)', () => {
     // worktrees, the anchor is the sole member: one idle row, marked active,
     // not the old "no workspaces" empty state (that copy is now only reached
     // when the anchor itself fails to resolve, e.g. a deleted repository).
-    await expect(mcWindow.getByText('1 workspace · this repo only')).toBeVisible();
+    await expect(mcWindow.getByText('1 workspace')).toBeVisible();
     await expect(mcWindow.getByText('Idle · 1')).toBeVisible();
     const idleRow = mcWindow.getByTestId('idle-workspace-row');
     await expect(idleRow).toBeVisible();
@@ -145,7 +145,7 @@ test.describe('Mission Control (offline repository, no live server)', () => {
     await mcWindow.getByRole('button', { name: 'Cancel' }).click();
     await expect(provisionDialog).not.toBeVisible();
     // Still just the anchor — cancelling never called the provision IPC.
-    await expect(mcWindow.getByText('1 workspace · this repo only')).toBeVisible();
+    await expect(mcWindow.getByText('1 workspace')).toBeVisible();
 
     await mcWindow.close();
     await electronApp.close();

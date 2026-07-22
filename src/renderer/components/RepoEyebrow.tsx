@@ -1,9 +1,11 @@
 import type { ReactElement } from 'react';
 import { Text, Tooltip } from '@mantine/core';
 import type { Repository } from '../../shared/types';
+import { repoEyebrowLabel } from '../utils/repository-name';
 
 interface RepoEyebrowProps {
   readonly repository: Repository | null;
+  readonly branchName: string;
   readonly fallbackLabel?: string;
 }
 
@@ -17,11 +19,17 @@ const eyebrowTextProps = {
   tt: 'uppercase',
 } as const;
 
-// The repo-name eyebrow: the selected repository's name, its tooltip carrying
-// the local checkout path so two clones of the same repo stay distinguishable.
-// With no repository it renders the static fallback label when given (card
+// The repo-name eyebrow: the repository's identity (repo name, plus the
+// workspace's own name when it isn't redundant with that repo or the
+// current branch — see `repoEyebrowLabel`), its tooltip carrying the local
+// checkout path so two clones of the same repo stay distinguishable. With
+// no repository it renders the static fallback label when given (card
 // header) or nothing at all (pill).
-export function RepoEyebrow({ repository, fallbackLabel }: RepoEyebrowProps): ReactElement | null {
+export function RepoEyebrow({
+  repository,
+  branchName,
+  fallbackLabel,
+}: RepoEyebrowProps): ReactElement | null {
   if (!repository) {
     if (fallbackLabel === undefined) {
       return null;
@@ -35,7 +43,7 @@ export function RepoEyebrow({ repository, fallbackLabel }: RepoEyebrowProps): Re
   return (
     <Tooltip label={repository.localPath}>
       <Text {...eyebrowTextProps} truncate style={{ letterSpacing: '0.08em', maxWidth: 180 }}>
-        {repository.name}
+        {repoEyebrowLabel(repository, branchName)}
       </Text>
     </Tooltip>
   );

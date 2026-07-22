@@ -18,7 +18,7 @@ import { MissionCard } from './MissionCard';
 import { IdleWorkspaceRow } from './IdleWorkspaceRow';
 import { TeardownConfirmModal } from './TeardownConfirmModal';
 import { ProvisionModal } from './ProvisionModal';
-import { deriveWorkspaceFlags } from './format';
+import { deriveWorkspaceFlags, groupRepositoriesByRepo, selectedRepositoryGroup } from './format';
 import type { OpenReviewIntent } from './reviewIntent';
 
 export interface MissionControlViewProps {
@@ -63,6 +63,11 @@ interface TeardownTarget {
 export function MissionControlView(props: MissionControlViewProps): ReactElement {
   const { repositories, selectedRepositoryId, baseBranch, cards } = props;
   const selectedRepository = repositories.find(repo => repo.id === selectedRepositoryId) ?? null;
+  // The switcher lists repos, not workspace registry entries — same-repo
+  // attached siblings (e.g. "adfa" alongside "demo-project") collapse into
+  // one option (see groupRepositoriesByRepo).
+  const repoGroups = groupRepositoriesByRepo(repositories);
+  const selectedRepoGroup = selectedRepositoryGroup(repoGroups, selectedRepositoryId);
 
   const [teardownTarget, setTeardownTarget] = useState<TeardownTarget | null>(null);
   const [isTearingDown, setIsTearingDown] = useState(false);
@@ -115,7 +120,7 @@ export function MissionControlView(props: MissionControlViewProps): ReactElement
 
   return (
     <Stack gap={0} h='100vh' style={{ background: 'var(--paper)' }}>
-      <TitleBar />
+      <TitleBar titleSuffix='Mission Control' />
       <Group px='md' pt='md' pb={4} gap='sm' align='flex-end'>
         <Menu position='bottom-start' withinPortal shadow='md'>
           <Menu.Target>
@@ -128,7 +133,7 @@ export function MissionControlView(props: MissionControlViewProps): ReactElement
                   c='var(--acc-deep)'
                   style={{ letterSpacing: '0.14em' }}
                 >
-                  {selectedRepository?.name ?? 'No repository'}
+                  {selectedRepoGroup?.name ?? 'No repository'}
                 </Text>
                 <IconChevronDown size={12} />
               </Group>
@@ -136,19 +141,19 @@ export function MissionControlView(props: MissionControlViewProps): ReactElement
           </Menu.Target>
           <Menu.Dropdown>
             <ScrollArea.Autosize mah={240}>
-              {repositories.map(repo => (
-                <Menu.Item key={repo.id} onClick={() => props.onSelectRepository(repo.id)}>
-                  {repo.name}
+              {repoGroups.map(group => (
+                <Menu.Item
+                  key={group.key}
+                  onClick={() => props.onSelectRepository(group.representativeId)}
+                >
+                  {group.name}
                 </Menu.Item>
               ))}
             </ScrollArea.Autosize>
           </Menu.Dropdown>
         </Menu>
-        <Text component='h1' ff='var(--font-disp)' fw={600} style={{ fontSize: 18, margin: 0 }}>
-          Mission Control
-        </Text>
         <Text size='xs' c='dimmed' ff='var(--font-mono)'>
-          {`${cards.length} ${cards.length === 1 ? 'workspace' : 'workspaces'} · this repo only`}
+          {`${cards.length} ${cards.length === 1 ? 'workspace' : 'workspaces'}`}
         </Text>
         <Tooltip label='Refresh workspaces'>
           <ActionIcon

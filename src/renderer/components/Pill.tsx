@@ -113,7 +113,7 @@ export function Pill({
       <Group gap={12} wrap='nowrap' align='center'>
         <LoreLogo variant='mark' height='28px' />
         <Stack gap={0}>
-          <RepoEyebrow repository={repository} />
+          <RepoEyebrow repository={repository} branchName={branchName} />
           <Text ff='var(--font-mono)' fw={600} size='md' truncate style={{ maxWidth: 180 }}>
             {branchName || 'main'}
           </Text>

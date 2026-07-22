@@ -58,9 +58,10 @@ export class RepositoryService {
     // Triggers migration from the two legacy files and seeds an empty v2 store
     // on first run; idempotent across restarts.
     await this.registry.all();
-    // Repair placeholder-url attach entries written by the pre-fix flow, so
-    // they group with their true Lore repo on next launch (non-fatal, logged).
-    await this.healPlaceholderUrls();
+    // Repair placeholder-url attach entries written by the pre-fix flow, and
+    // backfill any entry missing its loreRepositoryId, so they group with their
+    // true Lore repo on next launch (non-fatal per entry, logged).
+    await this.healRegistryIdentities();
   }
 
   // `includeProvisioned` surfaces every registry origin (U2: the card-view
@@ -187,35 +188,48 @@ export class RepositoryService {
     }
   }
 
-  // Heal attach entries still carrying the `local://existing` placeholder by
-  // resolving their true identity in place. Idempotent (a healed entry no
-  // longer matches the placeholder), non-fatal per entry (an unresolvable one
-  // is left unchanged and retried next launch).
-  private async healPlaceholderUrls(): Promise<void> {
+  // Heal registry identities on load, in place, for ALL origins:
+  //   - a `local://existing` placeholder url adopts its resolved true url; and
+  //   - any entry missing its `loreRepositoryId` gets it backfilled.
+  // Idempotent (a truthful url that already has its id is skipped, and a write
+  // only happens when something actually changed) and non-fatal per entry (an
+  // unresolvable one is left unchanged and retried next launch).
+  private async healRegistryIdentities(): Promise<void> {
     if (!this.identityResolver) {
       return;
     }
     const entries = await this.registry.all();
     for (const entry of entries) {
-      if (entry.url !== LOCAL_EXISTING_URL) {
+      const isPlaceholder = entry.url === LOCAL_EXISTING_URL;
+      const missingId = entry.loreRepositoryId === undefined;
+      // Nothing to do: a truthful url that already carries its id.
+      if (!isPlaceholder && !missingId) {
         continue;
       }
       const resolved = await this.tryResolveIdentity(entry.localPath);
       if (!resolved) {
         continue;
       }
+      // A placeholder adopts the resolved url; a truthful url is kept. A
+      // missing id is backfilled; an already-present id is never overwritten.
+      const nextUrl = isPlaceholder ? resolved.url : entry.url;
+      const nextId = entry.loreRepositoryId ?? resolved.loreRepositoryId;
+      // Skip a no-op write (e.g. a truthful entry whose id could not resolve).
+      if (nextUrl === entry.url && nextId === entry.loreRepositoryId) {
+        continue;
+      }
       const healed = RepositorySchema.parse({
         ...entry,
-        url: resolved.url,
-        ...(resolved.loreRepositoryId ? { loreRepositoryId: resolved.loreRepositoryId } : {}),
+        url: nextUrl,
+        ...(nextId ? { loreRepositoryId: nextId } : {}),
         updatedAt: new Date().toISOString(),
       });
       await this.registry.upsertById(healed);
-      this.log.info('Healed placeholder workspace url to its true Lore identity', {
-        operation: 'repository:heal-placeholder',
+      this.log.info('Healed workspace identity to its true Lore repository', {
+        operation: 'repository:heal-identity',
         localPath: entry.localPath,
-        url: resolved.url,
-        ...(resolved.loreRepositoryId ? { loreRepositoryId: resolved.loreRepositoryId } : {}),
+        url: nextUrl,
+        ...(nextId ? { loreRepositoryId: nextId } : {}),
       });
     }
   }

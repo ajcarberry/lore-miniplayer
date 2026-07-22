@@ -295,7 +295,7 @@ export function registerMissionControlWindow(
       width: MISSION_CONTROL_SIZE.width,
       height: MISSION_CONTROL_SIZE.height,
       frame: false,
-      title: 'Mission Control',
+      title: 'Lore MiniPlayer — Mission Control',
       backgroundColor: '#f7f2e7',
       webPreferences: {
         nodeIntegration: false,

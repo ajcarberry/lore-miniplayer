@@ -1,4 +1,5 @@
-import type { WorkspaceCard } from '../../../shared/types';
+import type { Repository, WorkspaceCard } from '../../../shared/types';
+import { groupWorkspacesByRepo, repoNameFromUrl } from '../../utils/repository-name';
 
 // Small display helpers + workspace-flag derivation shared by the Mission
 // Control card, idle row, and teardown/provision modals. Pure and unit-tested;
@@ -66,6 +67,45 @@ export function formatCommitAge(timestamp: number | undefined, now = Date.now())
     return `${diffHours}h`;
   }
   return `${Math.floor(diffHours / 24)}d`;
+}
+
+// A repo-switcher option (header repo switcher amendment): the registry lists
+// one entry per workspace, so an attached sibling of the same Lore repo (e.g.
+// "adfa" alongside "demo-project") otherwise shows up as its own bogus repo.
+// The same-repo grouping is the shared `groupWorkspacesByRepo` union-merge (so
+// an entry with only a url and its healed sibling carrying the same url + a
+// resolved id never split); this option adds representative selection on top.
+export interface RepositoryGroup {
+  readonly key: string;
+  readonly name: string;
+  // The member id passed to the existing watch/open API when this group is
+  // selected — prefers a real repository checkout (attached/cloned) over a
+  // provisioned worktree, falling back to any member.
+  readonly representativeId: string;
+  readonly memberIds: readonly string[];
+}
+
+export function groupRepositoriesByRepo(repositories: readonly Repository[]): RepositoryGroup[] {
+  return groupWorkspacesByRepo(repositories).map(group => {
+    const members = group.workspaces;
+    const representative =
+      members.find(m => m.origin === 'attached' || m.origin === 'cloned') ?? members[0]!;
+    return {
+      key: group.key,
+      name: repoNameFromUrl(representative.url),
+      representativeId: representative.id,
+      memberIds: members.map(m => m.id),
+    };
+  });
+}
+
+// The switcher's currently-selected group — whichever group has the selected
+// repository id as a member. `null` selection (no repo yet) never matches.
+export function selectedRepositoryGroup(
+  groups: readonly RepositoryGroup[],
+  selectedRepositoryId: string | null
+): RepositoryGroup | null {
+  return groups.find(group => group.memberIds.includes(selectedRepositoryId ?? '')) ?? null;
 }
 
 // Preview the worktree directory the provision flow will create, mirroring

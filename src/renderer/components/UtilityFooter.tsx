@@ -29,7 +29,7 @@ import type { Repository, ThemeMode } from '../../shared/types';
 import { loreAccent } from '../../shared/accent';
 import { useThemeMode } from '../hooks/useThemeMode';
 import { logError } from '../utils/logging';
-import { workspaceDisplayName } from '../utils/repository-name';
+import { groupWorkspacesByRepo, workspaceDisplayName } from '../utils/repository-name';
 import classes from './UtilityFooter.module.css';
 
 interface UtilityFooterProps {
@@ -80,7 +80,9 @@ function RepositoryRow({ repo, isSelected, onSelect, onEdit }: RepositoryRowProp
       justify='space-between'
       wrap='nowrap'
       gap={4}
-      p={4}
+      pl={16}
+      pr={4}
+      py={4}
       className={classes.repoRow}
       data-active={isSelected ? 'true' : undefined}
     >
@@ -108,10 +110,12 @@ function RepositoryRow({ repo, isSelected, onSelect, onEdit }: RepositoryRowProp
 }
 
 // The card's bottom utility strip: file explorer / terminal shortcuts for
-// the selected repository, a workspace picker popover (select, add, edit,
-// refresh — every unified-registry entry, provisioned worktrees included),
-// a server popover for the disconnect flow, and the theme mode menu.
-// Rendered only in the connected view.
+// the selected repository, a workspace picker menu (select, add, edit,
+// refresh — every unified-registry entry, provisioned worktrees included —
+// grouped per repo via `groupWorkspacesByRepo`, one `Menu.Label` per group
+// so a workspace's own row never has to repeat its repo's name), a server
+// popover for the disconnect flow, and the theme mode menu. Rendered only
+// in the connected view.
 export function UtilityFooter({
   selectedRepo,
   repositories,
@@ -199,26 +203,31 @@ export function UtilityFooter({
         </ActionIcon>
       </Tooltip>
 
-      <Popover position='top' withinPortal shadow='md' width={240}>
+      <Menu position='top' withinPortal shadow='md' width={240}>
         <Tooltip label='Workspaces'>
-          <Popover.Target>
+          <Menu.Target>
             <ActionIcon variant='subtle' size='lg' className={classes.icon} aria-label='Workspaces'>
               <IconFolders size={18} stroke={1.5} />
             </ActionIcon>
-          </Popover.Target>
+          </Menu.Target>
         </Tooltip>
-        <Popover.Dropdown p={4}>
+        <Menu.Dropdown p={4}>
           <Stack gap={2}>
             <ScrollArea.Autosize mah={200}>
               <Stack gap={2}>
-                {repositories.map(repo => (
-                  <RepositoryRow
-                    key={repo.id}
-                    repo={repo}
-                    isSelected={repo.id === selectedRepo?.id}
-                    onSelect={onSelectRepo}
-                    onEdit={onEditRepo}
-                  />
+                {groupWorkspacesByRepo(repositories).map(group => (
+                  <Stack key={group.key} gap={2}>
+                    <Menu.Label>{group.repoName}</Menu.Label>
+                    {group.workspaces.map(repo => (
+                      <RepositoryRow
+                        key={repo.id}
+                        repo={repo}
+                        isSelected={repo.id === selectedRepo?.id}
+                        onSelect={onSelectRepo}
+                        onEdit={onEditRepo}
+                      />
+                    ))}
+                  </Stack>
                 ))}
               </Stack>
             </ScrollArea.Autosize>
@@ -235,8 +244,8 @@ export function UtilityFooter({
               </Group>
             </UnstyledButton>
           </Stack>
-        </Popover.Dropdown>
-      </Popover>
+        </Menu.Dropdown>
+      </Menu>
 
       <Popover position='top' withinPortal shadow='md'>
         <Tooltip label='Server'>

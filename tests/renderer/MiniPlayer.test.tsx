@@ -148,12 +148,14 @@ describe('MiniPlayer', () => {
 
       // Then: the picker's dropdown lists it (scoped to the dropdown — the
       // name also appears in the header eyebrow, which must not satisfy this
-      // assertion). hidden:true keeps the role query from excluding the
-      // dropdown while floating-ui's positioning pass transitions it through
-      // display:none under parallel test load.
+      // assertion). The picker is now a Mantine Menu (role="menu"); the repo
+      // name shows both as the group's Menu.Label and as the workspace row, so
+      // findAllByText is used. hidden:true keeps the role query from excluding
+      // the dropdown while floating-ui's positioning pass transitions it
+      // through display:none under parallel test load.
       await user.click(screen.getByRole('button', { name: 'Workspaces' }));
-      const picker = await screen.findByRole('dialog', { hidden: true }, { timeout: 8000 });
-      expect(await within(picker).findByText('MyRepo')).toBeInTheDocument();
+      const picker = await screen.findByRole('menu', { hidden: true }, { timeout: 8000 });
+      expect((await within(picker).findAllByText('MyRepo')).length).toBeGreaterThan(0);
     });
 
     it('should list every registry origin, including provisioned worktrees, and select by localPath', async () => {
@@ -185,7 +187,12 @@ describe('MiniPlayer', () => {
       await screen.findByText('On branch');
       await waitFor(() => expect(api.repository.list).toHaveBeenCalledWith(true));
       await user.click(screen.getByRole('button', { name: 'Workspaces' }));
-      await user.click(await screen.findByText('demo-project · test/WT1', {}, { timeout: 8000 }));
+      // The picker groups per repo (Menu.Label) and each row shows only its
+      // own workspace identity — the provisioned row reads as its branch,
+      // scoped to the menu since that branch is also the header's current
+      // branch.
+      const picker = await screen.findByRole('menu', { hidden: true }, { timeout: 8000 });
+      await user.click(await within(picker).findByText('test/WT1'));
 
       // Then: branch/status hooks re-target the provisioned entry's localPath
       // — nothing downstream assumes the first (card-view) entry is "primary"
@@ -636,7 +643,7 @@ describe('MiniPlayer', () => {
       renderMiniPlayer();
       await screen.findByText('On branch');
       await user.click(screen.getByRole('button', { name: 'Workspaces' }));
-      const picker = await screen.findByRole('dialog', { hidden: true }, { timeout: 8000 });
+      const picker = await screen.findByRole('menu', { hidden: true }, { timeout: 8000 });
       await user.click(
         await within(picker).findByRole('button', { name: 'Edit MyRepo', hidden: true })
       );
@@ -666,7 +673,7 @@ describe('MiniPlayer', () => {
       renderMiniPlayer();
       await screen.findByText('On branch');
       await user.click(screen.getByRole('button', { name: 'Workspaces' }));
-      const picker = await screen.findByRole('dialog', { hidden: true }, { timeout: 8000 });
+      const picker = await screen.findByRole('menu', { hidden: true }, { timeout: 8000 });
       await user.click(
         await within(picker).findByRole('button', { name: 'Edit MyRepo', hidden: true })
       );

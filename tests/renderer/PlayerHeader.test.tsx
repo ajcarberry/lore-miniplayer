@@ -55,6 +55,22 @@ describe('PlayerHeader', () => {
     expect(screen.getByText('On branch')).toBeInTheDocument();
   });
 
+  it('combines the repo name with the workspace name when it differs meaningfully', () => {
+    // Given: an attached sibling workspace named "adfa" of repo
+    // "demo-project", on a branch that is neither "adfa" nor "demo-project"
+    const attachedSibling = makeRepository({
+      name: 'adfa',
+      url: 'lores://lore.example.com/demo-project',
+    });
+
+    // When: rendering the header for that workspace
+    renderHeader({ repository: attachedSibling, branchName: 'main' });
+
+    // Then: the eyebrow shows the repo name, not the bare workspace name
+    expect(screen.getByText('demo-project · adfa')).toBeInTheDocument();
+    expect(screen.queryByText('adfa')).not.toBeInTheDocument();
+  });
+
   it('reveals the repository local path in a tooltip on the repo name', async () => {
     // Given: a rendered header with a repository
     const user = userEvent.setup();

@@ -184,9 +184,12 @@ describe('UtilityFooter', () => {
       expect(onAddRepo).toHaveBeenCalled();
     });
 
-    it('should list a provisioned workspace with a repo-name-prefixed display name', async () => {
+    it('groups a provisioned workspace with its card-view sibling under one repo label', async () => {
       // Given: a card-view repo and a provisioned worktree of the same repo
-      const attached = makeRepository({ name: 'MyRepo' });
+      const attached = makeRepository({
+        name: 'MyRepo',
+        url: 'lores://lore.example.com/demo-project',
+      });
       const provisioned = makeRepository({
         id: '5a9d3c8f-6c2e-4d8f-8b2b-2d3e4f5a6b7c',
         origin: 'provisioned',
@@ -204,10 +207,33 @@ describe('UtilityFooter', () => {
       // When: opening the picker
       await user.click(screen.getByRole('button', { name: 'Workspaces' }));
 
-      // Then: the provisioned entry reads "<repo name> · <branch>", legible
-      // alongside its card-view sibling, and selecting it fires the callback
-      await user.click(await screen.findByText('demo-project · test/WT1', {}, { timeout: 8000 }));
+      // Then: one group label carries the shared repo name, and each row
+      // shows only its own workspace identity (no repeated repo prefix) —
+      // selecting the provisioned row fires the callback
+      expect(await screen.findByText('demo-project', {}, { timeout: 8000 })).toBeInTheDocument();
+      expect(screen.getByText('MyRepo')).toBeInTheDocument();
+      await user.click(await screen.findByText('test/WT1', {}, { timeout: 8000 }));
       expect(onSelectRepo).toHaveBeenCalledWith(provisioned);
+    });
+
+    it('shows a separate repo label for workspaces of a different repo', async () => {
+      // Given: two workspaces belonging to different repos
+      const first = makeRepository({ name: 'MyRepo', url: 'lores://lore.example.com/my-repo' });
+      const second = makeRepository({
+        id: '5a9d3c8f-6c2e-4d8f-8b2b-2d3e4f5a6b7c',
+        name: 'adfa',
+        url: 'lores://lore.example.com/demo-project',
+      });
+      const user = userEvent.setup();
+      renderFooter({ selectedRepo: first, repositories: [first, second] });
+
+      // When: opening the picker
+      await user.click(screen.getByRole('button', { name: 'Workspaces' }));
+
+      // Then: both repo labels appear
+      expect(await screen.findByText('my-repo', {}, { timeout: 8000 })).toBeInTheDocument();
+      expect(screen.getByText('demo-project')).toBeInTheDocument();
+      expect(screen.getByText('adfa')).toBeInTheDocument();
     });
 
     it('should open the edit flow for a repository row', async () => {
@@ -222,7 +248,11 @@ describe('UtilityFooter', () => {
       // queries — wait for row content by text first, then query the edit
       // button with hidden:true so it isn't excluded by that transient state)
       await user.click(screen.getByRole('button', { name: 'Workspaces' }));
-      await screen.findByText('MyRepo', {}, { timeout: 8000 });
+      // (findAllByText rather than findByText: the repo group's Menu.Label
+      // and this single workspace's row can legitimately show the same text
+      // when a workspace is named like its repo — see repoEyebrowLabel's
+      // redundancy rule applied to this fixture)
+      await screen.findAllByText('MyRepo', {}, { timeout: 8000 });
       await user.click(
         await screen.findByRole('button', { name: 'Edit MyRepo', hidden: true }, { timeout: 8000 })
       );

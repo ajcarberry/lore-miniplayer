@@ -58,7 +58,7 @@ interface FakeWindow {
   destroyed: boolean;
   webContents: { send: jest.Mock };
   emit: (event: string) => void;
-  opts: { webPreferences: { preload: string } };
+  opts: { title: string; webPreferences: { preload: string } };
 }
 
 interface Harness {
@@ -140,6 +140,7 @@ describe('registerMissionControlWindow — open', () => {
     expect(h.instances).toHaveLength(1);
     const win = h.instances[0]!;
     expect(win.opts.webPreferences.preload).toBe('/app/preload.js');
+    expect(win.opts.title).toBe('Lore MiniPlayer — Mission Control');
     expect(h.harden).toHaveBeenCalledWith(win);
     expect(win.loadURL).toHaveBeenCalledWith('http://localhost:5173/mission-control.html');
     expect(h.model.watch).toHaveBeenCalledWith(REPO_ID);

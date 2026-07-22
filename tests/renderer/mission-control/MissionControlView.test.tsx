@@ -50,7 +50,7 @@ describe('MissionControlView — banding', () => {
     expect(screen.getByText('Awaiting review · 1')).toBeInTheDocument();
     expect(screen.getByText('In progress · 1')).toBeInTheDocument();
     expect(screen.getByText('Idle · 1')).toBeInTheDocument();
-    expect(screen.getByText('3 workspaces · this repo only')).toBeInTheDocument();
+    expect(screen.getByText('3 workspaces')).toBeInTheDocument();
 
     // The idle workspace renders as a minimized row, not a full card.
     expect(screen.getByTestId('idle-workspace-row')).toBeInTheDocument();
@@ -60,7 +60,7 @@ describe('MissionControlView — banding', () => {
   it('shows an empty state when the repository has no workspaces', () => {
     renderWithMantine(<MissionControlView {...baseProps({ cards: [] })} />);
     expect(screen.getByText(/No workspaces in this repository/)).toBeInTheDocument();
-    expect(screen.getByText('0 workspaces · this repo only')).toBeInTheDocument();
+    expect(screen.getByText('0 workspaces')).toBeInTheDocument();
   });
 });
 
@@ -73,7 +73,11 @@ describe('MissionControlView — repo switcher', () => {
         {...baseProps({
           repositories: [
             makeRepository(),
-            makeRepository({ id: OTHER_REPO_ID, name: 'brackwater' }),
+            makeRepository({
+              id: OTHER_REPO_ID,
+              name: 'brackwater',
+              url: 'lore://host/brackwater',
+            }),
           ],
           onSelectRepository,
         })}
@@ -84,6 +88,31 @@ describe('MissionControlView — repo switcher', () => {
     await user.click(await screen.findByRole('menuitem', { name: 'brackwater' }));
 
     expect(onSelectRepository).toHaveBeenCalledWith(OTHER_REPO_ID);
+  });
+
+  it('lists repos, not workspace entries — an attached sibling of the same repo (e.g. "adfa") collapses into one option', async () => {
+    const user = userEvent.setup();
+    const anchor = makeRepository({ name: 'demo-project', url: 'lore://host/demo-project' });
+    const sibling = makeRepository({
+      id: OTHER_REPO_ID,
+      name: 'adfa',
+      url: 'lore://host/demo-project',
+    });
+    renderWithMantine(
+      <MissionControlView
+        {...baseProps({
+          repositories: [anchor, sibling],
+          selectedRepositoryId: anchor.id,
+        })}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Switch repository' }));
+
+    // One switcher option for the repo, named from the url — not two entries
+    // ("demo-project" and "adfa") for what is really one repo.
+    expect(await screen.findByRole('menuitem', { name: 'demo-project' })).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: 'adfa' })).not.toBeInTheDocument();
   });
 });
 

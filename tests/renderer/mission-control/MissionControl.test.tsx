@@ -182,7 +182,7 @@ describe('MissionControl container', () => {
     const user = userEvent.setup();
     const api = installApi([
       makeRepository(),
-      makeRepository({ id: OTHER_REPO_ID, name: 'brackwater' }),
+      makeRepository({ id: OTHER_REPO_ID, name: 'brackwater', url: 'lore://host/brackwater' }),
     ]);
     renderContainer();
     await waitFor(() => expect(api.watch).toHaveBeenCalledWith(REPO_ID));

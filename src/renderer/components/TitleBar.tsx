@@ -6,9 +6,12 @@ import { LoreLogo } from './LoreLogo';
 interface TitleBarProps {
   // When provided, a collapse-to-pill control is shown (connected view only).
   readonly onCollapse?: () => void;
+  // Appended as "Lore MiniPlayer — <titleSuffix>" (e.g. secondary windows like
+  // Mission Control). Omitted: unchanged plain "Lore MiniPlayer" (main window).
+  readonly titleSuffix?: string;
 }
 
-export function TitleBar({ onCollapse }: TitleBarProps): ReactElement {
+export function TitleBar({ onCollapse, titleSuffix }: TitleBarProps): ReactElement {
   return (
     <Group
       justify='space-between'
@@ -23,7 +26,7 @@ export function TitleBar({ onCollapse }: TitleBarProps): ReactElement {
       <Group gap={8} align='center'>
         <LoreLogo variant='mark' height='16px' />
         <Text size='xs' fw={600} c='dimmed'>
-          Lore MiniPlayer
+          {titleSuffix ? `Lore MiniPlayer — ${titleSuffix}` : 'Lore MiniPlayer'}
         </Text>
       </Group>
       <Group gap={8} style={{ WebkitAppRegion: 'no-drag' }}>

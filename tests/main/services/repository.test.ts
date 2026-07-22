@@ -68,6 +68,24 @@ async function seedPlaceholderAttached(localPath: string): Promise<string> {
   return id;
 }
 
+// Seed an attached entry with a truthful (non-placeholder) url but NO resolved
+// loreRepositoryId — the shape a real remote attach leaves before the id seam
+// existed. `id backfill on load` must resolve and stamp its id.
+async function seedIdlessAttached(id: string, localPath: string, url: string): Promise<void> {
+  await new WorkspaceRegistry(log as never).upsertById(
+    RepositorySchema.parse({
+      id,
+      name: 'demo-project',
+      url,
+      localPath,
+      accentHue: 74,
+      origin: 'attached',
+      createdAt: '2026-07-22T00:00:00.000Z',
+      updatedAt: '2026-07-22T00:00:00.000Z',
+    })
+  );
+}
+
 // A provisioned worktree seeded straight into the unified registry (as
 // WorkspaceService.provision would), to prove RepositoryService excludes it
 // from the card-view getAll but still forgets it via delete.
@@ -449,6 +467,67 @@ describe('RepositoryService', () => {
 
       // Then: no further resolution is attempted (url no longer matches the
       // placeholder)
+      expect(resolver.resolveRepositoryIdentity).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('id backfill on load (all origins)', () => {
+    const REAL_URL = 'lore://127.0.0.1/demo-project';
+
+    it('backfills loreRepositoryId for a truthful-url entry that lacks one', async () => {
+      // Given: an attached entry with a real url but no resolved id (pre-seam)
+      const id = 'a1111111-1111-4111-8111-111111111111';
+      await seedIdlessAttached(id, '/tmp/demo', REAL_URL);
+      const resolver = fakeResolver(async () => ({
+        url: REAL_URL,
+        loreRepositoryId: 'repo-backfilled',
+      }));
+
+      // When: the service loads (heal runs after migration)
+      const svc = new RepositoryService(log, resolver);
+      await svc.initialize();
+
+      // Then: the id is stamped in place; the already-truthful url is kept
+      const entry = await svc.getById(id);
+      expect(entry?.loreRepositoryId).toBe('repo-backfilled');
+      expect(entry?.url).toBe(REAL_URL);
+      expect(resolver.resolveRepositoryIdentity).toHaveBeenCalledWith('/tmp/demo');
+    });
+
+    it('leaves the entry unchanged when resolution fails (non-fatal per entry)', async () => {
+      // Given: an idless entry and a resolver that throws
+      const id = 'a2222222-2222-4222-8222-222222222222';
+      await seedIdlessAttached(id, '/tmp/orphan', REAL_URL);
+      const resolver = fakeResolver(async () => {
+        throw new Error('unreachable');
+      });
+
+      // When: initializing
+      const svc = new RepositoryService(log, resolver);
+      await svc.initialize();
+
+      // Then: still no id, url intact, init did not throw
+      const entry = await svc.getById(id);
+      expect(entry?.loreRepositoryId).toBeUndefined();
+      expect(entry?.url).toBe(REAL_URL);
+    });
+
+    it('is idempotent: an entry that already has an id is not re-resolved', async () => {
+      // Given: an idless entry backfilled on first load
+      await seedIdlessAttached('a3333333-3333-4333-8333-333333333333', '/tmp/stable', REAL_URL);
+      const resolver = fakeResolver(async () => ({
+        url: REAL_URL,
+        loreRepositoryId: 'repo-1',
+      }));
+      const first = new RepositoryService(log, resolver);
+      await first.initialize();
+      expect(resolver.resolveRepositoryIdentity).toHaveBeenCalledTimes(1);
+
+      // When: a second service loads the already-backfilled store
+      const second = new RepositoryService(log, resolver);
+      await second.initialize();
+
+      // Then: no further resolution (the id is already present)
       expect(resolver.resolveRepositoryIdentity).toHaveBeenCalledTimes(1);
     });
   });

@@ -46,7 +46,11 @@ export function PlayerHeader({
         <Group gap={8} wrap='nowrap'>
           <LoreLogo variant='mark' height='20px' />
           <Stack gap={0}>
-            <RepoEyebrow repository={repository} fallbackLabel='On branch' />
+            <RepoEyebrow
+              repository={repository}
+              branchName={branchName}
+              fallbackLabel='On branch'
+            />
             <Text ff='var(--font-mono)' fw={600} size='sm'>
               {branchName || (repository ? 'main' : '—')}
             </Text>

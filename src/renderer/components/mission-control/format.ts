@@ -88,8 +88,7 @@ export interface RepositoryGroup {
 export function groupRepositoriesByRepo(repositories: readonly Repository[]): RepositoryGroup[] {
   return groupWorkspacesByRepo(repositories).map(group => {
     const members = group.workspaces;
-    const representative =
-      members.find(m => m.origin === 'attached' || m.origin === 'cloned') ?? members[0]!;
+    const representative = pickRepresentative(members);
     return {
       key: group.key,
       name: repoNameFromUrl(representative.url),
@@ -97,6 +96,31 @@ export function groupRepositoriesByRepo(repositories: readonly Repository[]): Re
       memberIds: members.map(m => m.id),
     };
   });
+}
+
+// The group's representative: the member id the switcher watches when the group
+// is selected. Prefers a real repository checkout (attached/cloned) over a
+// provisioned worktree, then picks DETERMINISTICALLY among the preferred set —
+// by localPath, then id — so the watched id (and therefore the checkout the
+// model composes as the active anchor) never depends on registry ordering when
+// several same-repo candidates exist (two attached siblings sharing one repo).
+function pickRepresentative(members: readonly Repository[]): Repository {
+  const isCheckout = (m: Repository): boolean => m.origin === 'attached' || m.origin === 'cloned';
+  const preferred = members.filter(isCheckout);
+  const pool = preferred.length > 0 ? preferred : members;
+  return [...pool].sort(byPathThenId)[0]!;
+}
+
+function byPathThenId(a: Repository, b: Repository): number {
+  return a.localPath === b.localPath
+    ? a.id < b.id
+      ? -1
+      : a.id > b.id
+        ? 1
+        : 0
+    : a.localPath < b.localPath
+      ? -1
+      : 1;
 }
 
 // The switcher's currently-selected group — whichever group has the selected

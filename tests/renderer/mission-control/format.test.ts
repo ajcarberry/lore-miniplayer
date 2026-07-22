@@ -251,6 +251,37 @@ describe('groupRepositoriesByRepo', () => {
     expect(groups).toHaveLength(1);
     expect(groups[0]!.representativeId).toBe(anchor.id);
   });
+
+  it('picks the same representative among two attached siblings regardless of input order', () => {
+    // Two attached checkouts of one Lore repo: the primary and a worktree
+    // sibling. The representative (the watched id) must be deterministic — the
+    // model composes THAT checkout as the active anchor, so an order-dependent
+    // pick would swap which checkout anchors and could double-surface it.
+    const primary = makeRepository({
+      id: '33333333-3333-4333-8333-333333333333',
+      name: 'demo-project',
+      url: 'lore://host/team/demo-project',
+      loreRepositoryId: 'repo-1',
+      localPath: '/Users/rowan/work/demo-project',
+      origin: 'attached',
+    });
+    const worktree = makeRepository({
+      id: '11111111-1111-4111-8111-111111111111',
+      name: 'adfa',
+      url: 'lore://host/team/demo-project',
+      loreRepositoryId: 'repo-1',
+      localPath: '/Users/rowan/work/demo-project-wt/adfa',
+      origin: 'attached',
+    });
+
+    const forward = groupRepositoriesByRepo([primary, worktree]);
+    const reversed = groupRepositoriesByRepo([worktree, primary]);
+
+    expect(forward[0]!.representativeId).toBe(reversed[0]!.representativeId);
+    // Deterministic tie-break (localPath, then id) anchors on the primary
+    // checkout, not the worktree sibling.
+    expect(forward[0]!.representativeId).toBe(primary.id);
+  });
 });
 
 describe('selectedRepositoryGroup', () => {

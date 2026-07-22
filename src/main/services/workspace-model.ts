@@ -21,7 +21,7 @@ import type {
 } from '../../shared/types';
 import { WorkspaceModelSnapshotSchema } from '../../shared/schemas';
 import type { AgentSessionRecord } from './agent-observer';
-import { resolveAnchorWorkspace } from './workspace-anchor';
+import { composeMembers, resolveAnchorWorkspace } from './workspace-anchor';
 
 // Payload of the WorkspaceService 'lifecycle' event (a successful
 // provision/adoption or teardown), defined here as the model is its consumer.
@@ -254,7 +254,10 @@ export class WorkspaceModelService extends EventEmitter {
       this.deps.workspaces.list(repositoryId),
       resolveAnchorWorkspace(this.log, this.deps, repositoryId),
     ]);
-    const members = anchor ? [...workspaces, anchor] : workspaces;
+    // Sibling workspaces plus the anchor checkout, de-duplicated by resolved
+    // path so a second same-repo record pointing at the anchor's own checkout
+    // never surfaces it twice (see composeMembers).
+    const members = composeMembers(workspaces, anchor);
     for (const workspace of members) {
       this.knownWorkspaces.set(workspace.instanceId, workspace);
     }

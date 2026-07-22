@@ -1,3 +1,4 @@
+import * as path from 'node:path';
 import type { MainLogger } from '../ipc/logger';
 import { WorkspaceSchema } from '../../shared/schemas';
 import type { LoreBranch, Repository, Workspace } from '../../shared/types';
@@ -46,6 +47,24 @@ export async function resolveAnchorWorkspace(
     origin: repo.origin,
     ...(repo.provisionedAt ? { provisionedAt: repo.provisionedAt } : {}),
   });
+}
+
+// Compose the Mission Control member list: the repository's sibling workspaces
+// plus the anchor checkout. The sibling list excludes the anchor by registry id
+// (WorkspaceService.list), but a second same-repo registry record can resolve
+// to the anchor's OWN checkout path (e.g. a duplicate attached entry left by
+// migration/heal) which id-exclusion misses — surfacing the anchor's checkout
+// twice (a plain member AND the composed anchor). Drop any sibling sharing the
+// anchor's resolved path so that checkout is represented exactly once.
+export function composeMembers(
+  workspaces: Workspace[],
+  anchor: Workspace | undefined
+): Workspace[] {
+  if (!anchor) {
+    return workspaces;
+  }
+  const anchorPath = path.resolve(anchor.path);
+  return [...workspaces.filter(w => path.resolve(w.path) !== anchorPath), anchor];
 }
 
 async function safeCurrentBranch(

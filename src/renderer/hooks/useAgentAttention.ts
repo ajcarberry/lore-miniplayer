@@ -4,6 +4,7 @@ import { computeAgentAttention } from '../utils/agentAttention';
 import { formatAttributionMessage } from '../utils/attributionToast';
 import { useAttributionToasts } from './useAttributionToasts';
 import { useMissionControlSnapshot } from './useMissionControlSnapshot';
+import { useResolvedUserName } from './useResolvedUserName';
 
 // Field names deliberately mirror Pill/PlayerCard's own chip/toast/conflict
 // props (needsYouCount, activeCount, onOpenMissionControl, toast,
@@ -47,10 +48,22 @@ export function useAgentAttention(
   const toasts = useAttributionToasts();
   const conflictRevisionNumber = branchGraph.branch.revisions[0]?.revisionNumber;
 
+  // Resolve the queued toast's userId to a display name (P5's
+  // resolveUserName over IPC); null while unresolved or on a failed lookup,
+  // in which case formatAttributionMessage's own raw-userId fallback shows
+  // instead — never fabricated, per the spec.
+  const rawUserId = toasts.current?.notification.userId ?? null;
+  const resolvedName = useResolvedUserName(
+    toasts.current?.notification.repositoryPath ?? null,
+    rawUserId
+  );
+
   const toastMessage =
     toasts.current !== null
       ? formatAttributionMessage(
-          toasts.current.notification,
+          resolvedName
+            ? { ...toasts.current.notification, userId: resolvedName }
+            : toasts.current.notification,
           // Mirrors PlayerHeader/Pill's own branch-name fallback so the
           // toast never reads "pushed to " with a blank branch.
           branchName || 'main',

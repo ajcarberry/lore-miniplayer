@@ -35,6 +35,8 @@ import type {
   LockQueryResponse,
   LockReleaseRequest,
   LockReleaseResponse,
+  ResolveUserNameRequest,
+  ResolveUserNameResponse,
 } from '../shared/types';
 
 declare global {
@@ -151,6 +153,13 @@ declare global {
       locks: {
         query: (request: LockQueryRequest) => Promise<Result<LockQueryResponse>>;
         release: (request: LockReleaseRequest) => Promise<Result<LockReleaseResponse>>;
+      };
+      // Attribution name resolution (P5's resolveUserName), exposed for the
+      // P15 toast.
+      identity: {
+        resolveUserName: (
+          request: ResolveUserNameRequest
+        ) => Promise<Result<ResolveUserNameResponse>>;
       };
     };
   }

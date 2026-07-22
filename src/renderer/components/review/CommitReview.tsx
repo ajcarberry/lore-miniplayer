@@ -12,7 +12,7 @@ import type {
 import { ComparePicker } from './ComparePicker';
 import { FileList } from './FileList';
 import { DiffPane } from './DiffPane';
-import { RightPanel } from './RightPanel';
+import { IntentionPanel } from './IntentionPanel';
 import { CommitBar } from './CommitBar';
 import { composeReviewFiles, compareTargetLabel } from './reviewModel';
 
@@ -201,7 +201,10 @@ export function CommitReview(props: CommitReviewProps): ReactElement {
           <DiffPane file={selectedFile} compareLabel={compareLabel} />
         </Box>
         <Box w={280} style={{ minHeight: 0 }}>
-          <RightPanel />
+          <IntentionPanel
+            repositoryId={request.repositoryId}
+            workspacePath={request.workspacePath}
+          />
         </Box>
       </Group>
 

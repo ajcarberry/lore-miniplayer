@@ -98,6 +98,39 @@ describe('useAgentAttention', () => {
     expect(result.current.toast?.message).toBe('mara-voss pushed r128 to feature/act-two');
   });
 
+  it('switches the toast to the resolved display name once resolution completes', async () => {
+    // Given: a mounted hook, settled past its initial snapshot fetch, with a
+    // resolveUserName that resolves to a display name
+    install({ repositoryId: REPO_ID, cards: [] });
+    const api = window.electronAPI;
+    Object.assign(api, {
+      identity: {
+        resolveUserName: jest
+          .fn()
+          .mockResolvedValue({ success: true, data: { name: 'Mara Voss' } }),
+      },
+    });
+    const { result } = renderHook(() =>
+      useAgentAttention(REPO_ID, 'feature/act-two', graphWithTip(128))
+    );
+    await waitFor(() => expect(result.current.needsYouCount).toBe(0));
+
+    // When: pushing a branchPushed notification carrying a raw userId
+    act(() =>
+      result.current.pushToast({
+        repositoryPath: '/tmp/repo',
+        kind: 'branchPushed',
+        userId: 'mara-voss',
+      })
+    );
+
+    // Then: the toast shows the raw id first, then swaps to the resolved name
+    expect(result.current.toast?.message).toBe('mara-voss pushed r128 to feature/act-two');
+    await waitFor(() =>
+      expect(result.current.toast?.message).toBe('Mara Voss pushed r128 to feature/act-two')
+    );
+  });
+
   it('dismisses the current toast, clearing it', async () => {
     // Given: a toast pushed, hook settled past its initial snapshot fetch
     install({ repositoryId: REPO_ID, cards: [] });

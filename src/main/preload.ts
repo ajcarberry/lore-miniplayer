@@ -37,6 +37,8 @@ import type {
   LockQueryResponse,
   LockReleaseRequest,
   LockReleaseResponse,
+  ResolveUserNameRequest,
+  ResolveUserNameResponse,
 } from '../shared/types';
 
 // Expose window control APIs
@@ -367,6 +369,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     release: async (request: LockReleaseRequest): Promise<Result<LockReleaseResponse>> => {
       return ipcRenderer.invoke(IPC_CHANNELS.locks.release, request) as Promise<
         Result<LockReleaseResponse>
+      >;
+    },
+  },
+  // Attribution name resolution (P5's resolveUserName), exposed for the P15
+  // toast.
+  identity: {
+    resolveUserName: async (
+      request: ResolveUserNameRequest
+    ): Promise<Result<ResolveUserNameResponse>> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.identity.resolveUserName, request) as Promise<
+        Result<ResolveUserNameResponse>
       >;
     },
   },

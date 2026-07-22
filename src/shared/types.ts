@@ -63,6 +63,8 @@ import type {
   LockQueryResponseSchema,
   LockReleaseRequestSchema,
   LockReleaseResponseSchema,
+  ResolveUserNameRequestSchema,
+  ResolveUserNameResponseSchema,
 } from './schemas';
 
 export type ThemeMode = 'auto' | 'light' | 'dark';
@@ -273,3 +275,6 @@ export type LockQueryResponse = z.infer<typeof LockQueryResponseSchema>;
 
 export type LockReleaseRequest = z.infer<typeof LockReleaseRequestSchema>;
 export type LockReleaseResponse = z.infer<typeof LockReleaseResponseSchema>;
+
+export type ResolveUserNameRequest = z.infer<typeof ResolveUserNameRequestSchema>;
+export type ResolveUserNameResponse = z.infer<typeof ResolveUserNameResponseSchema>;

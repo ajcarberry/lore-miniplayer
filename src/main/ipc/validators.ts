@@ -16,6 +16,7 @@ import {
   MergeCompleteRequestSchema,
   LockQueryRequestSchema,
   LockReleaseRequestSchema,
+  ResolveUserNameRequestSchema,
 } from '../../shared/schemas';
 
 export const ThemeModeSchema = z.enum(['auto', 'light', 'dark']);
@@ -174,3 +175,7 @@ export const MergeCompleteArgsSchema = z.tuple([MergeCompleteRequestSchema]);
 // never enforce acquisition)
 export const LockQueryArgsSchema = z.tuple([LockQueryRequestSchema]);
 export const LockReleaseArgsSchema = z.tuple([LockReleaseRequestSchema]);
+
+// identity:resolveUserName — resolves a notification's userId to a display
+// name (P5's LoreRepositoryService.resolveUserName).
+export const ResolveUserNameArgsSchema = z.tuple([ResolveUserNameRequestSchema]);

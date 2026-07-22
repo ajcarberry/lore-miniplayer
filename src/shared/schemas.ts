@@ -416,6 +416,19 @@ export const LockReleaseResponseSchema = z.object({
   released: z.array(z.string().min(1)),
 });
 
+// Resolves a notification's raw `userId` to a display name (P5's
+// LoreRepositoryService.resolveUserName, exposed to the renderer so the
+// attribution toast can show a name instead of a raw id). Server-dependent
+// (P1c): offline/no-auth-endpoint requests are reported as a failure result,
+// never a fabricated name.
+export const ResolveUserNameRequestSchema = z.object({
+  repositoryPath: z.string().min(1),
+  userId: z.string().min(1),
+});
+export const ResolveUserNameResponseSchema = z.object({
+  name: z.string().min(1),
+});
+
 // IPC channel names, grouped by domain and colon-namespaced to match the
 // existing 'lore:...' channels declared at their call sites in preload.ts /
 // lore-handlers.ts. `agent.observability` is the one push channel
@@ -439,6 +452,11 @@ export const IPC_CHANNELS = {
   locks: {
     query: 'locks:query',
     release: 'locks:release',
+  },
+  // Attribution name resolution (P5's resolveUserName, exposed for the P15
+  // toast). One request/response invoke; no push involved.
+  identity: {
+    resolveUserName: 'identity:resolveUserName',
   },
   agent: {
     observability: 'agent:observability',

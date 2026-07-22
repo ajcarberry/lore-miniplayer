@@ -1,5 +1,6 @@
 import * as path from 'node:path';
 import type { LoreRepositoryService } from '../services/lore-repository';
+import { IPC_CHANNELS } from '../../shared/schemas';
 import { handleResult } from './result-helpers';
 import {
   LoreRepositoryPathArgsSchema,
@@ -11,6 +12,7 @@ import {
   LoreCommitArgsSchema,
   LoreBranchInfoArgsSchema,
   LoreBranchGraphArgsSchema,
+  ResolveUserNameArgsSchema,
 } from './validators';
 import type { MainLogger } from './logger';
 
@@ -120,5 +122,17 @@ export function registerLoreHandlers(
 
   handleResult(log, 'lore:branchGraph', LoreBranchGraphArgsSchema, ({ repositoryPath, branch }) =>
     loreRepositoryService.getBranchGraph(repositoryPath, branch)
+  );
+
+  // Attribution name resolution (P5's resolveUserName), exposed for the P15
+  // toast; falls through to the raw userId in the renderer when this fails
+  // (server-dependent — see resolveUserName's own doc).
+  handleResult(
+    log,
+    IPC_CHANNELS.identity.resolveUserName,
+    ResolveUserNameArgsSchema,
+    async ({ repositoryPath, userId }) => ({
+      name: await loreRepositoryService.resolveUserName(repositoryPath, userId),
+    })
   );
 }

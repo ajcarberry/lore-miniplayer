@@ -85,6 +85,12 @@ export function createMockElectronAPI(): ElectronAPI {
         data: p.split('/').pop() ?? p,
       })),
     },
+    identity: {
+      // Default: unresolved (mirrors the offline "no auth endpoint" P1c
+      // degrade) so tests that don't care about attribution names never hang;
+      // per-test overrides supply a real name where it matters.
+      resolveUserName: jest.fn().mockResolvedValue({ success: false, error: 'not resolved' }),
+    },
   } as unknown as ElectronAPI;
 }
 

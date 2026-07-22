@@ -127,10 +127,19 @@ class FakeLore extends EventEmitter {
   getBranchGraph = jest.fn(async (): Promise<BranchGraph> => emptyGraph());
 }
 
+class FakeWorkspaces extends EventEmitter {
+  list: jest.Mock<Promise<Workspace[]>, [string]>;
+  constructor(workspaces: Workspace[]) {
+    super();
+    this.list = jest.fn<Promise<Workspace[]>, [string]>(async () => workspaces);
+  }
+}
+
 interface Harness {
   model: WorkspaceModelService;
   observer: FakeObserver;
   lore: FakeLore;
+  workspaces: FakeWorkspaces;
   listWorkspaces: jest.Mock<Promise<Workspace[]>, [string]>;
   extract: jest.Mock<Promise<AgentIntention>, [string]>;
   branchVsParent: jest.Mock<Promise<FileDiffResult[]>, [string, string]>;
@@ -139,7 +148,7 @@ interface Harness {
 function makeHarness(workspaces: Workspace[], options: { refreshMs?: number } = {}): Harness {
   const observer = new FakeObserver();
   const lore = new FakeLore();
-  const listWorkspaces = jest.fn<Promise<Workspace[]>, [string]>(async () => workspaces);
+  const workspacesFake = new FakeWorkspaces(workspaces);
   const extract = jest.fn<Promise<AgentIntention>, [string]>(async () => ({
     tasks: [],
     commentary: [],
@@ -147,7 +156,7 @@ function makeHarness(workspaces: Workspace[], options: { refreshMs?: number } = 
   const branchVsParent = jest.fn<Promise<FileDiffResult[]>, [string, string]>(async () => []);
 
   const deps: WorkspaceModelDeps = {
-    workspaces: { list: listWorkspaces },
+    workspaces: workspacesFake as unknown as WorkspaceModelDeps['workspaces'],
     observer: observer as unknown as WorkspaceModelDeps['observer'],
     transcript: { extract },
     lore: lore as unknown as WorkspaceModelDeps['lore'],
@@ -157,7 +166,15 @@ function makeHarness(workspaces: Workspace[], options: { refreshMs?: number } = 
   const model = new WorkspaceModelService(asLogger, deps, {
     ...(options.refreshMs !== undefined ? { refreshMs: options.refreshMs } : {}),
   });
-  return { model, observer, lore, listWorkspaces, extract, branchVsParent };
+  return {
+    model,
+    observer,
+    lore,
+    workspaces: workspacesFake,
+    listWorkspaces: workspacesFake.list,
+    extract,
+    branchVsParent,
+  };
 }
 
 function onlyCard(snapshot: WorkspaceModelSnapshot): WorkspaceModelSnapshot['cards'][number] {
@@ -607,6 +624,48 @@ describe('WorkspaceModelService.watch — event-driven emission', () => {
     model.unwatch();
     observer.emit('push');
     await flush();
+    expect(emitted).toHaveLength(countAtUnwatch);
+  });
+});
+
+describe('WorkspaceModelService.watch — workspace lifecycle events', () => {
+  it('emits a fresh snapshot when the workspace service reports a lifecycle change (provision/teardown)', async () => {
+    // Given: the model is watching a repository
+    const { model, workspaces } = makeHarness([workspace()]);
+    const emitted: WorkspaceModelSnapshot[] = [];
+    model.on('snapshot', snapshot => emitted.push(snapshot));
+
+    model.watch(REPO_ID);
+    await flush();
+    expect(emitted).toHaveLength(1); // initial
+
+    // When: the workspace service reports a lifecycle change (e.g. a provision
+    // or teardown completed) instead of waiting for the 30s cadence
+    workspaces.emit('lifecycle', { repositoryId: REPO_ID, path: '/tmp/repo-wt/feature-b' });
+    await flush();
+
+    // Then: a fresh snapshot is emitted immediately
+    expect(emitted).toHaveLength(2);
+
+    model.unwatch();
+  });
+
+  it('stops reacting to lifecycle events after unwatch (listener released)', async () => {
+    // Given: a watched model is then unwatched
+    const { model, workspaces } = makeHarness([workspace()]);
+    const emitted: WorkspaceModelSnapshot[] = [];
+    model.on('snapshot', snapshot => emitted.push(snapshot));
+
+    model.watch(REPO_ID);
+    await flush();
+    const countAtUnwatch = emitted.length;
+    model.unwatch();
+
+    // When: a lifecycle event still arrives after unwatch
+    workspaces.emit('lifecycle', { repositoryId: REPO_ID, path: '/tmp/repo-wt/feature-b' });
+    await flush();
+
+    // Then: nothing is emitted — the listener was released
     expect(emitted).toHaveLength(countAtUnwatch);
   });
 });

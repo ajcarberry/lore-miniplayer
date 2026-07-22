@@ -20,6 +20,10 @@ import type {
 import { WorkspaceModelSnapshotSchema } from '../../shared/schemas';
 import type { AgentSessionRecord } from './agent-observer';
 
+// Payload of the WorkspaceService 'lifecycle' event (a successful
+// provision/adoption or teardown), defined here as the model is its consumer.
+export type WorkspaceLifecycleEvent = Readonly<{ repositoryId: string; path: string }>;
+
 // Low-frequency refresh cadence (ms) for the watched repository. Snapshots are
 // primarily event-driven (agent pushes, repository notifications); this timer
 // only catches Lore-side changes that arrive through neither — new commits, a
@@ -133,6 +137,8 @@ function deriveReasons(
 export interface WorkspaceModelDeps {
   readonly workspaces: {
     list(repositoryId: string): Promise<Workspace[]>;
+    on(event: 'lifecycle', listener: (event: WorkspaceLifecycleEvent) => void): unknown;
+    off(event: 'lifecycle', listener: (event: WorkspaceLifecycleEvent) => void): unknown;
   };
   readonly observer: {
     listSessions(): AgentSessionRecord[];
@@ -168,8 +174,9 @@ interface ActiveMark {
 // agent observability (session state + transcript intention) into a per-repo
 // Mission Control snapshot: each workspace banded (awaiting review / in
 // progress / idle) with attention reasons and card data. Emits a validated
-// 'snapshot' on agent pushes, repository notifications, and a low-frequency
-// refresh for the watched repository.
+// 'snapshot' on agent pushes, repository notifications, workspace lifecycle
+// changes (provision/teardown), and a low-frequency refresh for the watched
+// repository.
 export class WorkspaceModelService extends EventEmitter {
   private readonly refreshMs: number;
 
@@ -206,6 +213,7 @@ export class WorkspaceModelService extends EventEmitter {
     this.watchedRepositoryId = repositoryId;
     this.deps.observer.on('push', this.onEvent);
     this.deps.lore.on('notification', this.onEvent);
+    this.deps.workspaces.on('lifecycle', this.onEvent);
     this.refreshTimer = global.setInterval(this.onEvent, this.refreshMs);
     void this.refresh();
   }
@@ -219,6 +227,7 @@ export class WorkspaceModelService extends EventEmitter {
     if (this.watchedRepositoryId !== null) {
       this.deps.observer.off('push', this.onEvent);
       this.deps.lore.off('notification', this.onEvent);
+      this.deps.workspaces.off('lifecycle', this.onEvent);
       this.watchedRepositoryId = null;
     }
   }

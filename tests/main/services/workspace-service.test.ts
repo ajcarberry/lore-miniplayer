@@ -762,6 +762,108 @@ describe('WorkspaceService', () => {
     });
   });
 
+  describe('lifecycle events', () => {
+    it('emits a lifecycle event carrying repositoryId + path on successful provision', async () => {
+      // Given: a clone that joins a shared store self-reporting this workspace
+      stores.register('shared', {
+        instanceId: 'inst-1',
+        path: workspaceDir,
+        branchName: BRANCH,
+        revision: 'r1',
+      });
+      const listener = jest.fn();
+      service.on('lifecycle', listener);
+
+      // When: provisioning succeeds
+      await service.provision({ repositoryId: repo.id, branchName: BRANCH });
+
+      // Then: a lifecycle event fires with the repository id and workspace path
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(listener).toHaveBeenCalledWith({ repositoryId: repo.id, path: workspaceDir });
+    });
+
+    it('emits a lifecycle event when an existing workspace is adopted', async () => {
+      // Given: an orphaned workspace on disk that self-reports a matching branch
+      fs.mkdirSync(workspaceDir, { recursive: true });
+      stores.register('shared', {
+        instanceId: 'inst-orphan',
+        path: workspaceDir,
+        branchName: BRANCH,
+        revision: 'r9',
+      });
+      const listener = jest.fn();
+      service.on('lifecycle', listener);
+
+      // When: provisioning adopts the existing directory
+      await service.provision({ repositoryId: repo.id, branchName: BRANCH });
+
+      // Then: the lifecycle event still fires
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(listener).toHaveBeenCalledWith({ repositoryId: repo.id, path: workspaceDir });
+    });
+
+    it('does not emit a lifecycle event when provision fails', async () => {
+      // Given: the clone rejects mid-flight
+      mockLore.repositoryClone.mockReturnValue(
+        fluentMock({ error: loreError(10, 'server unreachable') }) as never
+      );
+      const listener = jest.fn();
+      service.on('lifecycle', listener);
+
+      // When: provisioning fails
+      await expect(
+        service.provision({ repositoryId: repo.id, branchName: BRANCH })
+      ).rejects.toThrow(WorkspaceOperationError);
+
+      // Then: no lifecycle event fires
+      expect(listener).not.toHaveBeenCalled();
+    });
+
+    it('emits a lifecycle event carrying repositoryId + path on successful teardown', async () => {
+      // Given: a clean, tracked workspace with a sibling in the shared store
+      fs.mkdirSync(workspaceDir, { recursive: true });
+      stores.register('shared', { instanceId: 'inst-1', path: workspaceDir, branchName: BRANCH });
+      const siblingDir = path.join(worktreeRoot, 'agent-y');
+      fs.mkdirSync(siblingDir, { recursive: true });
+      stores.register('shared', { instanceId: 'inst-2', path: siblingDir, branchName: 'agent-y' });
+      await seedRegistry([
+        { path: workspaceDir, branchName: BRANCH },
+        { path: siblingDir, branchName: 'agent-y' },
+      ]);
+      const listener = jest.fn();
+      service.on('lifecycle', listener);
+
+      // When: tearing it down
+      await service.teardown({ workspaceId: 'inst-1', force: false });
+
+      // Then: a lifecycle event fires with the repository id and workspace path
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(listener).toHaveBeenCalledWith({ repositoryId: repo.id, path: workspaceDir });
+    });
+
+    it('does not emit a lifecycle event when teardown fails (uncommitted changes)', async () => {
+      // Given: a tracked workspace with dirty files
+      fs.mkdirSync(workspaceDir, { recursive: true });
+      stores.register('shared', { instanceId: 'inst-1', path: workspaceDir, branchName: BRANCH });
+      await seedRegistry([{ path: workspaceDir, branchName: BRANCH }]);
+      loreRepositoryService.getFileStatus.mockResolvedValue({
+        untracked: [],
+        unstaged: [{ path: 'a.txt', isUntracked: false, isStaged: false, conflict: false }],
+        staged: [],
+      });
+      const listener = jest.fn();
+      service.on('lifecycle', listener);
+
+      // When/Then: teardown is refused
+      await expect(service.teardown({ workspaceId: 'inst-1', force: false })).rejects.toThrow(
+        'uncommitted'
+      );
+
+      // Then: no lifecycle event fires
+      expect(listener).not.toHaveBeenCalled();
+    });
+  });
+
   describe('edge cases', () => {
     it('setObserverConfig swaps the port and token used for hook URLs', async () => {
       // Given: a service whose observer config is replaced after construction

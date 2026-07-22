@@ -1,14 +1,14 @@
-import { lore, LoreError } from '@lore-vcs/sdk';
-import type { LoreFluentApi } from '@lore-vcs/sdk';
+import { lore } from '@lore-vcs/sdk';
 import { LoreEventTag } from '@lore-vcs/sdk/types/enums';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { EventEmitter } from 'node:events';
 import type { MainLogger } from '../ipc/logger';
 import type { RepositoryService } from './repository';
 import type { LoreRepositoryService } from './lore-repository';
-import { collectEvents } from './lore-events';
 import type { LoreEventDataOf } from './lore-events';
+import { run, collect, WorkspaceOperationError } from './workspace-lore-ops';
 import { WorkspaceStore } from './workspace-store';
 import type { WorkspaceRegistryEntry } from './workspace-store';
 import { writeObserverHooks } from './workspace-hooks';
@@ -38,16 +38,8 @@ const DEFAULT_OBSERVER_PORT = 41_500;
 
 // Re-exported so existing importers (agent-observer) keep their import site.
 export type { WorkspaceObserverConfig } from './workspace-hooks';
-
-export class WorkspaceOperationError extends Error {
-  constructor(
-    message: string,
-    public readonly errorType?: number
-  ) {
-    super(message);
-    this.name = 'WorkspaceOperationError';
-  }
-}
+// Re-exported so existing importers (e.g. tests) keep their import site.
+export { WorkspaceOperationError } from './workspace-lore-ops';
 
 interface RawInstance {
   instanceId: string;
@@ -65,7 +57,7 @@ interface RawInstance {
 // finding b: clone contacts the repo's real server); the shape here follows
 // the documented-best path and is exercised through mocks, with the
 // live-server flow integration-pending.
-export class WorkspaceService {
+export class WorkspaceService extends EventEmitter {
   private observerConfig: WorkspaceObserverConfig;
 
   // App-side persistent registry of provisioned workspaces (workspaces.json).
@@ -81,6 +73,7 @@ export class WorkspaceService {
     private readonly loreRepositoryService: LoreRepositoryService,
     observerConfig?: WorkspaceObserverConfig
   ) {
+    super();
     this.store = new WorkspaceStore(log);
     this.observerConfig = observerConfig ?? {
       port: DEFAULT_OBSERVER_PORT,
@@ -117,6 +110,7 @@ export class WorkspaceService {
       // the registry instead of failing outright.
       const adopted = await this.adoptExisting(workspacePath, branchName, repo.id);
       if (adopted) {
+        this.emit('lifecycle', { repositoryId: repo.id, path: workspacePath });
         return adopted;
       }
       throw new Error(`Workspace directory already exists: ${workspacePath}`);
@@ -125,14 +119,14 @@ export class WorkspaceService {
     await fs.mkdir(path.dirname(workspacePath), { recursive: true });
 
     try {
-      await this.run(
+      await run(
         lore.repositoryClone(
           { repositoryPath: workspacePath },
           { repositoryUrl: repo.url, useSharedStore: true, sharedStorePath: '' }
         ),
         `Failed to clone workspace for repository "${repo.name}"`
       );
-      await this.run(
+      await run(
         lore.branchCreate({ repositoryPath: workspacePath }, { branch: branchName }),
         `Failed to create branch "${branchName}"`
       );
@@ -163,6 +157,7 @@ export class WorkspaceService {
       branchName,
       provisionedAt,
     });
+    this.emit('lifecycle', { repositoryId: repo.id, path: workspacePath });
     return this.toWorkspace(match, repo.id, provisionedAt);
   }
 
@@ -234,7 +229,7 @@ export class WorkspaceService {
     let localBranchRemoved = false;
     if (sibling) {
       try {
-        await this.run(
+        await run(
           lore.repositoryInstancePrune({ repositoryPath: sibling }, {}),
           'Failed to prune workspace instance'
         );
@@ -246,7 +241,7 @@ export class WorkspaceService {
         });
       }
       try {
-        await this.run(
+        await run(
           lore.branchArchive({ repositoryPath: sibling }, { branch: branchName }),
           'Failed to archive local branch'
         );
@@ -265,6 +260,7 @@ export class WorkspaceService {
       );
     }
 
+    this.emit('lifecycle', { repositoryId: repo.id, path: workspacePath });
     return {
       workspaceId: instance?.instanceId ?? workspacePath,
       path: workspacePath,
@@ -432,7 +428,7 @@ export class WorkspaceService {
   }
 
   private async listInstances(repositoryPath: string): Promise<RawInstance[]> {
-    return this.collect(
+    return collect(
       lore.repositoryInstanceList({ repositoryPath }, {}),
       LoreEventTag.REPOSITORY_INSTANCE,
       (data: LoreEventDataOf<LoreEventTag.REPOSITORY_INSTANCE>) => ({
@@ -482,37 +478,5 @@ export class WorkspaceService {
         dir,
       });
     }
-  }
-
-  private async run(operation: LoreFluentApi, context: string): Promise<void> {
-    try {
-      await operation.waitAsync();
-    } catch (error) {
-      throw this.toOperationError(context, error);
-    }
-  }
-
-  private async collect<TTag extends LoreEventTag, T>(
-    operation: LoreFluentApi,
-    tag: TTag,
-    map: (data: LoreEventDataOf<TTag>) => T | undefined,
-    context: string
-  ): Promise<T[]> {
-    return collectEvents(operation, tag, map, error => this.toOperationError(context, error));
-  }
-
-  private toOperationError(context: string, error: unknown): WorkspaceOperationError {
-    if (error instanceof WorkspaceOperationError) {
-      return error;
-    }
-    if (error instanceof LoreError) {
-      const firstError = error.loreErrors?.[0];
-      return new WorkspaceOperationError(
-        `${context}: ${error.message}`,
-        firstError?.data.errorType
-      );
-    }
-    const message = error instanceof Error ? error.message : String(error);
-    return new WorkspaceOperationError(`${context}: ${message}`);
   }
 }

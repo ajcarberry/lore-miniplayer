@@ -23,7 +23,10 @@ jest.mock('electron-log/main.js', () => ({
 }));
 
 import log from 'electron-log/main.js';
-import { RepositoryService } from '../../../src/main/services/repository';
+import {
+  RepositoryService,
+  type RepositoryIdentityResolver,
+} from '../../../src/main/services/repository';
 import { WorkspaceRegistry } from '../../../src/main/services/workspace-store';
 import { RepositorySchema } from '../../../src/shared/schemas';
 
@@ -32,6 +35,38 @@ const createInput = {
   url: 'lore.example.com/MyRepo',
   localPath: '/tmp/repos/my-repo',
 };
+
+// The url the attach-existing-folder flow records before its true Lore
+// identity is resolved (see useRepositorySubmission.ts / repository.ts).
+const PLACEHOLDER_URL = 'local://existing';
+
+// A stand-in for LoreRepositoryService.resolveRepositoryIdentity whose result
+// (or failure) each test controls; the call is a jest.fn so counts assert
+// idempotency.
+function fakeResolver(
+  impl: (localPath: string) => Promise<{ url: string; loreRepositoryId?: string } | undefined>
+): RepositoryIdentityResolver & { resolveRepositoryIdentity: jest.Mock } {
+  return { resolveRepositoryIdentity: jest.fn(impl) };
+}
+
+// Seed an attached entry still carrying the placeholder url, as the pre-fix
+// attach flow would have persisted it.
+async function seedPlaceholderAttached(localPath: string): Promise<string> {
+  const id = '9f8f2c9e-4b1f-4b7e-9a1a-1c2d3e4f5aaa';
+  await new WorkspaceRegistry(log as never).upsertById(
+    RepositorySchema.parse({
+      id,
+      name: 'adfa',
+      url: PLACEHOLDER_URL,
+      localPath,
+      accentHue: 74,
+      origin: 'attached',
+      createdAt: '2026-07-22T00:00:00.000Z',
+      updatedAt: '2026-07-22T00:00:00.000Z',
+    })
+  );
+  return id;
+}
 
 // A provisioned worktree seeded straight into the unified registry (as
 // WorkspaceService.provision would), to prove RepositoryService excludes it
@@ -281,6 +316,140 @@ describe('RepositoryService', () => {
 
       // Then: it is gone from the registry (and getById no longer resolves it)
       await expect(service.getById(provisionedId)).resolves.toBeNull();
+    });
+  });
+
+  describe('attach identity resolution (placeholder url)', () => {
+    const attachInput = {
+      name: 'adfa',
+      url: PLACEHOLDER_URL,
+      localPath: '/Users/alex/Lore_Test/demo-project-wt/adfa',
+    };
+
+    it('resolves the true url and stamps loreRepositoryId on attach', async () => {
+      // Given: a checkout that self-reports its real Lore identity
+      const resolver = fakeResolver(async () => ({
+        url: 'lore://127.0.0.1/demo-project',
+        loreRepositoryId: '019f6e08-1234-4abc-8def-0123456789ab',
+      }));
+      const svc = new RepositoryService(log, resolver);
+      await svc.initialize();
+
+      // When: attaching an existing folder (placeholder url from the renderer)
+      const created = await svc.create(attachInput);
+
+      // Then: the entry records the true grouping url + stable id, not the
+      // placeholder
+      expect(resolver.resolveRepositoryIdentity).toHaveBeenCalledWith(attachInput.localPath);
+      expect(created.url).toBe('lore://127.0.0.1/demo-project');
+      expect(created.loreRepositoryId).toBe('019f6e08-1234-4abc-8def-0123456789ab');
+      expect(created.origin).toBe('attached');
+    });
+
+    it('keeps the placeholder and leaves loreRepositoryId unset when offline', async () => {
+      // Given: resolution fails (server unreachable / not a resolvable checkout)
+      const resolver = fakeResolver(async () => {
+        throw new Error('No auth endpoint available');
+      });
+      const svc = new RepositoryService(log, resolver);
+      await svc.initialize();
+
+      // When: attaching
+      const created = await svc.create(attachInput);
+
+      // Then: attach is not blocked; the truthful fallback keeps the placeholder
+      // and stamps no id (heal retries on a later launch)
+      expect(created.url).toBe(PLACEHOLDER_URL);
+      expect(created.loreRepositoryId).toBeUndefined();
+    });
+
+    it('keeps the placeholder when the checkout reports no usable identity', async () => {
+      // Given: resolution returns undefined (no usable url/name in the event)
+      const resolver = fakeResolver(async () => undefined);
+      const svc = new RepositoryService(log, resolver);
+      await svc.initialize();
+
+      // When: attaching
+      const created = await svc.create(attachInput);
+
+      // Then: the placeholder is retained
+      expect(created.url).toBe(PLACEHOLDER_URL);
+      expect(created.loreRepositoryId).toBeUndefined();
+    });
+
+    it('does not resolve when the url is already a real Lore url', async () => {
+      // Given: a create with a genuine url (the clone flow)
+      const resolver = fakeResolver(async () => ({ url: 'unused', loreRepositoryId: 'x' }));
+      const svc = new RepositoryService(log, resolver);
+      await svc.initialize();
+
+      // When: creating with a non-placeholder url
+      const created = await svc.create(createInput, 'cloned');
+
+      // Then: the url is preserved and no resolution is attempted
+      expect(resolver.resolveRepositoryIdentity).not.toHaveBeenCalled();
+      expect(created.url).toBe(createInput.url);
+    });
+  });
+
+  describe('placeholder heal on load', () => {
+    it('heals a placeholder entry in place on initialize', async () => {
+      // Given: a placeholder attach entry from the pre-fix flow
+      const id = await seedPlaceholderAttached('/Users/alex/Lore_Test/demo-project-wt/adfa');
+      const resolver = fakeResolver(async () => ({
+        url: 'lore://127.0.0.1/demo-project',
+        loreRepositoryId: '019f6e08-1234-4abc-8def-0123456789ab',
+      }));
+
+      // When: the service loads (heal runs after migration)
+      const svc = new RepositoryService(log, resolver);
+      await svc.initialize();
+
+      // Then: the entry now carries its true identity, persisted to disk
+      const healed = await svc.getById(id);
+      expect(healed?.url).toBe('lore://127.0.0.1/demo-project');
+      expect(healed?.loreRepositoryId).toBe('019f6e08-1234-4abc-8def-0123456789ab');
+
+      const reloaded = new RepositoryService(log, resolver);
+      await reloaded.initialize();
+      expect((await reloaded.getById(id))?.url).toBe('lore://127.0.0.1/demo-project');
+    });
+
+    it('leaves a placeholder entry unchanged when resolution fails (non-fatal)', async () => {
+      // Given: a placeholder entry and a resolver that throws
+      const id = await seedPlaceholderAttached('/tmp/orphan');
+      const resolver = fakeResolver(async () => {
+        throw new Error('unreachable');
+      });
+
+      // When: initializing
+      const svc = new RepositoryService(log, resolver);
+      await svc.initialize();
+
+      // Then: the entry is untouched (still a placeholder) — init did not throw
+      const entry = await svc.getById(id);
+      expect(entry?.url).toBe(PLACEHOLDER_URL);
+      expect(entry?.loreRepositoryId).toBeUndefined();
+    });
+
+    it('is idempotent: a healed entry is not re-resolved on the next load', async () => {
+      // Given: a placeholder entry healed on first load
+      await seedPlaceholderAttached('/tmp/adfa');
+      const resolver = fakeResolver(async () => ({
+        url: 'lore://127.0.0.1/demo-project',
+        loreRepositoryId: 'id-1',
+      }));
+      const first = new RepositoryService(log, resolver);
+      await first.initialize();
+      expect(resolver.resolveRepositoryIdentity).toHaveBeenCalledTimes(1);
+
+      // When: a second service loads the already-healed store
+      const second = new RepositoryService(log, resolver);
+      await second.initialize();
+
+      // Then: no further resolution is attempted (url no longer matches the
+      // placeholder)
+      expect(resolver.resolveRepositoryIdentity).toHaveBeenCalledTimes(1);
     });
   });
 

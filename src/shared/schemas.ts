@@ -50,6 +50,12 @@ export const RepositorySchema = z.object({
     }, 'Must be an absolute path'),
   accentHue: AccentHueSchema,
   origin: WorkspaceOriginSchema,
+  // The stable Lore repository id (from `repositoryInfo`), when it could be
+  // resolved. It is the preferred grouping key for "same Lore repo" — a repo's
+  // `url` can drift (e.g. an attached folder recorded a `local://existing`
+  // placeholder), but its Lore id does not. Optional: unresolvable offline and
+  // absent on entries created before resolution existed.
+  loreRepositoryId: z.string().min(1).optional(),
   // Provisioned worktrees only: the checked-out branch and when it was created.
   branchName: z.string().min(1).optional(),
   provisionedAt: z.string().datetime().optional(),

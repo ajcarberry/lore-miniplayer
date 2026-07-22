@@ -27,6 +27,7 @@ jest.mock('@lore-vcs/sdk', () => {
       revisionInfo: jest.fn(),
       repositoryClone: jest.fn(),
       repositoryList: jest.fn(),
+      repositoryInfo: jest.fn(),
       repositoryStatus: jest.fn(),
       fileStage: jest.fn(),
       fileUnstage: jest.fn(),
@@ -938,6 +939,96 @@ describe('LoreRepositoryService', () => {
       await expect(service.getBranchGraph('/path/to/repo', 'feature/x')).rejects.toThrow(
         'Failed to list branches for graph'
       );
+    });
+  });
+
+  describe('resolveRepositoryIdentity', () => {
+    // REPOSITORY_DATA shape mirrors the live probe (2026-07-22): a checkout at
+    // any path self-reports its server url, repo name, and stable repo id.
+    const repositoryDataEvent = (data: Record<string, unknown>): MockEvent => ({
+      tag: LoreEventTag.REPOSITORY_DATA,
+      data,
+    });
+
+    it('composes <remoteUrl>/<name> and returns the stable repository id', async () => {
+      // Given: repositoryInfo streams REPOSITORY_DATA for the checkout
+      mockLore.repositoryInfo.mockReturnValue(
+        fluentMock({
+          events: [
+            repositoryDataEvent({
+              remoteUrl: 'lore://127.0.0.1',
+              name: 'demo-project',
+              id: '019f6e08-1234-4abc-8def-0123456789ab',
+            }),
+          ],
+        }) as never
+      );
+
+      // When: resolving the identity at the checkout path
+      const identity = await service.resolveRepositoryIdentity('/Users/alex/Lore_Test/adfa');
+
+      // Then: url is the true composed grouping key and the id is carried
+      expect(mockLore.repositoryInfo).toHaveBeenCalledWith(
+        { repositoryPath: '/Users/alex/Lore_Test/adfa' },
+        {}
+      );
+      expect(identity).toEqual({
+        url: 'lore://127.0.0.1/demo-project',
+        loreRepositoryId: '019f6e08-1234-4abc-8def-0123456789ab',
+      });
+    });
+
+    it('collapses duplicate slashes between a trailing-slash remoteUrl and name', async () => {
+      // Given: the server url arrives with a trailing slash
+      mockLore.repositoryInfo.mockReturnValue(
+        fluentMock({
+          events: [repositoryDataEvent({ remoteUrl: 'lore://127.0.0.1/', name: 'demo', id: 'x' })],
+        }) as never
+      );
+
+      // When: resolving
+      const identity = await service.resolveRepositoryIdentity('/repo');
+
+      // Then: the composed url has exactly one separator
+      expect(identity?.url).toBe('lore://127.0.0.1/demo');
+    });
+
+    it('omits loreRepositoryId when the event carries no id', async () => {
+      // Given: REPOSITORY_DATA has a url and name but a blank id
+      mockLore.repositoryInfo.mockReturnValue(
+        fluentMock({
+          events: [repositoryDataEvent({ remoteUrl: 'lore://host', name: 'r', id: '' })],
+        }) as never
+      );
+
+      // When: resolving
+      const identity = await service.resolveRepositoryIdentity('/repo');
+
+      // Then: url resolves but no id field is present
+      expect(identity).toEqual({ url: 'lore://host/r' });
+    });
+
+    it('returns undefined when the event lacks a usable url or name', async () => {
+      // Given: REPOSITORY_DATA is missing remoteUrl
+      mockLore.repositoryInfo.mockReturnValue(
+        fluentMock({ events: [repositoryDataEvent({ remoteUrl: '', name: 'r', id: 'y' })] }) as never
+      );
+
+      // When: resolving
+      const identity = await service.resolveRepositoryIdentity('/repo');
+
+      // Then: there is nothing truthful to record
+      expect(identity).toBeUndefined();
+    });
+
+    it('throws LoreOperationError when the SDK fails (caller decides to degrade)', async () => {
+      // Given: the SDK rejects
+      mockLore.repositoryInfo.mockReturnValue(
+        fluentMock({ error: loreError(1, 'No repository at path') }) as never
+      );
+
+      // When/Then: resolution surfaces the failure for the caller to handle
+      await expect(service.resolveRepositoryIdentity('/repo')).rejects.toThrow(LoreOperationError);
     });
   });
 

@@ -8,8 +8,8 @@ import type { MainLogger } from '../ipc/logger';
 import type { RepositoryService } from './repository';
 import type { LoreRepositoryService } from './lore-repository';
 import type { LoreEventDataOf } from './lore-events';
-import { run, collect, WorkspaceOperationError } from './workspace-lore-ops';
-import { WorkspaceRegistry } from './workspace-store';
+import { run, collect, safeLoreRepositoryId, WorkspaceOperationError } from './workspace-lore-ops';
+import { WorkspaceRegistry, sameLoreRepo } from './workspace-store';
 import { writeObserverHooks } from './workspace-hooks';
 import type { WorkspaceObserverConfig } from './workspace-hooks';
 import type {
@@ -66,7 +66,8 @@ export class WorkspaceService extends EventEmitter {
   // the repository's primary checkout cannot see its shared-store worktrees
   // (P18 live finding). Provisioned worktrees are stored here as unified
   // entries (origin 'provisioned') alongside card-view repositories; grouping
-  // by a repo's `url` finds its worktrees. Live fields are enriched from each
+  // by a repo's Lore identity (loreRepositoryId, falling back to url — see
+  // sameLoreRepo) finds its worktrees. Live fields are enriched from each
   // workspace's OWN path at read time.
   private readonly store: WorkspaceRegistry;
 
@@ -170,11 +171,12 @@ export class WorkspaceService extends EventEmitter {
     if (!repo) {
       throw new Error(`Repository with id "${repositoryId}" not found`);
     }
-    // Workspaces sharing this repo's url are its worktrees (grouping key = url,
-    // packet U1). The anchor repo itself is a card-view entry, not a worktree,
-    // and is excluded here — surfacing it as a Mission Control member is U3's
-    // job (see the packet's list-by-url note).
-    const entries = await this.provisionedForUrl(repo.url);
+    // Workspaces belonging to the same Lore repo are its worktrees (grouping
+    // prefers loreRepositoryId, falling back to url — packet U1 + the attach
+    // unification amendment). The anchor repo itself is a card-view entry, not
+    // a worktree, and is excluded here — surfacing it as a Mission Control
+    // member is U3's job (see the packet's list-by-url note).
+    const entries = await this.provisionedForRepo(repo);
     const workspaces: Workspace[] = [];
     for (const entry of entries) {
       const instance = await this.enrichEntry(entry);
@@ -227,7 +229,7 @@ export class WorkspaceService extends EventEmitter {
     // shares the store, found by url). Tearing down the last one leaves a
     // harmless orphan record in the now-unreferenced store — skip with a log
     // line.
-    const sibling = await this.siblingWorkspacePath(entry.url, workspacePath);
+    const sibling = await this.siblingWorkspacePath(entry, workspacePath);
 
     let localBranchRemoved = false;
     if (sibling) {
@@ -352,7 +354,10 @@ export class WorkspaceService extends EventEmitter {
   // Write (or refresh) a provisioned worktree as a unified registry entry
   // (origin 'provisioned'), keyed by resolved localPath so re-provisioning or
   // adopting the same directory never duplicates it. `name` is the branch
-  // (name uniqueness is per-url), `url` links it to its parent repo.
+  // (name uniqueness is per-url), `url` links it to its parent repo, and the
+  // stable `loreRepositoryId` (resolved at the worktree's own path, non-fatal)
+  // is the preferred grouping key — falling back to a prior stamp so a
+  // transient resolution failure never drops a known id.
   private async upsertProvisioned(
     repo: Repository,
     workspacePath: string,
@@ -360,10 +365,14 @@ export class WorkspaceService extends EventEmitter {
     provisionedAt: string
   ): Promise<void> {
     const existing = await this.store.findByLocalPath(workspacePath);
+    const resolvedId =
+      (await safeLoreRepositoryId(this.loreRepositoryService, this.log, workspacePath)) ??
+      existing?.loreRepositoryId;
     const entry: Repository = {
       id: existing?.id ?? (randomUUID() as string),
       name: branchName,
       url: repo.url,
+      ...(resolvedId ? { loreRepositoryId: resolvedId } : {}),
       localPath: workspacePath,
       accentHue: existing?.accentHue ?? (await this.store.nextAccentHue()),
       origin: 'provisioned',
@@ -375,10 +384,11 @@ export class WorkspaceService extends EventEmitter {
     await this.store.upsertByLocalPath(entry);
   }
 
-  // Provisioned worktrees sharing a repo's url (its shared-store checkouts).
-  private async provisionedForUrl(url: string): Promise<Repository[]> {
-    const entries = await this.store.findByUrl(url);
-    return entries.filter(entry => entry.origin === 'provisioned');
+  // Provisioned worktrees belonging to the same Lore repo as `anchor` (its
+  // shared-store checkouts). Grouping prefers loreRepositoryId over url.
+  private async provisionedForRepo(anchor: Repository): Promise<Repository[]> {
+    const entries = await this.store.all();
+    return entries.filter(entry => entry.origin === 'provisioned' && sameLoreRepo(entry, anchor));
   }
 
   // Adopt an already-on-disk workspace into the registry when it self-reports a
@@ -416,7 +426,7 @@ export class WorkspaceService extends EventEmitter {
     const cardRepos = await this.repositoryService.getAll();
     const entries = (await this.store.all()).filter(entry => entry.origin === 'provisioned');
     for (const entry of entries) {
-      const repo = cardRepos.find(candidate => candidate.url === entry.url);
+      const repo = cardRepos.find(candidate => sameLoreRepo(candidate, entry));
       const instance = await this.enrichEntry(entry);
       const matches =
         'workspaceId' in parsed
@@ -454,13 +464,13 @@ export class WorkspaceService extends EventEmitter {
     }
   }
 
-  // Another registered worktree of the same repo (sharing the same Lore store
-  // by url), excluding the one being torn down. Prune/archive run against it.
+  // Another registered worktree of the same repo (sharing the same Lore store),
+  // excluding the one being torn down. Prune/archive run against it.
   private async siblingWorkspacePath(
-    url: string,
+    anchor: Repository,
     excludePath: string
   ): Promise<string | undefined> {
-    const entries = await this.provisionedForUrl(url);
+    const entries = await this.provisionedForRepo(anchor);
     const sibling = entries.find(entry => !this.samePath(entry.localPath, excludePath));
     return sibling?.localPath;
   }

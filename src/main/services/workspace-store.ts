@@ -395,6 +395,21 @@ export class WorkspaceRegistry {
   }
 }
 
+// Whether two registry entries belong to the same Lore repo (the grouping that
+// binds an anchor repo to its provisioned worktrees). Prefer the stable
+// `loreRepositoryId` when BOTH sides carry one — a repo's `url` can drift (an
+// attached folder may still hold a `local://existing` placeholder, or differ in
+// scheme) while its Lore id never does. Fall back to url equality otherwise.
+export function sameLoreRepo(
+  a: Pick<Repository, 'url' | 'loreRepositoryId'>,
+  b: Pick<Repository, 'url' | 'loreRepositoryId'>
+): boolean {
+  if (a.loreRepositoryId && b.loreRepositoryId) {
+    return a.loreRepositoryId === b.loreRepositoryId;
+  }
+  return a.url === b.url;
+}
+
 function samePath(a: string, b: string): boolean {
   return path.resolve(a) === path.resolve(b);
 }

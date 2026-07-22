@@ -11,7 +11,7 @@ jest.mock('electron', () => ({
   },
 }));
 
-import { WorkspaceRegistry } from '../../../src/main/services/workspace-store';
+import { WorkspaceRegistry, sameLoreRepo } from '../../../src/main/services/workspace-store';
 import { RepositorySchema } from '../../../src/shared/schemas';
 import type { Repository } from '../../../src/shared/types';
 
@@ -295,5 +295,35 @@ describe('WorkspaceRegistry', () => {
       expect(fs.existsSync(storePath('workspaces.json.bak'))).toBe(false);
       expect(fs.existsSync(storePath('repositories.json.bak'))).toBe(true);
     });
+  });
+});
+
+describe('sameLoreRepo', () => {
+  it('matches on loreRepositoryId when both sides carry one, ignoring url', () => {
+    // Given: two entries with different urls but the same stable Lore id
+    expect(
+      sameLoreRepo(
+        { url: 'lore://a/x', loreRepositoryId: 'id-1' },
+        { url: 'lore://b/y', loreRepositoryId: 'id-1' }
+      )
+    ).toBe(true);
+  });
+
+  it('rejects a match when both ids are present but differ (id beats url)', () => {
+    // Given: two entries sharing a url but reporting different Lore ids
+    expect(
+      sameLoreRepo(
+        { url: 'lore://a/x', loreRepositoryId: 'id-1' },
+        { url: 'lore://a/x', loreRepositoryId: 'id-2' }
+      )
+    ).toBe(false);
+  });
+
+  it('falls back to url equality when either side lacks an id', () => {
+    // Given: one side has no id — grouping degrades to url
+    expect(sameLoreRepo({ url: 'lore://a/x', loreRepositoryId: 'id-1' }, { url: 'lore://a/x' })).toBe(
+      true
+    );
+    expect(sameLoreRepo({ url: 'lore://a/x' }, { url: 'lore://b/y' })).toBe(false);
   });
 });

@@ -227,6 +227,9 @@ describe('WorkspaceService', () => {
         latest: 'a',
         latestRemote: 'a',
       })),
+      // Provision stamps the workspace's stable Lore id; default to none so
+      // grouping falls back to url unless a test opts in.
+      resolveRepositoryIdentity: jest.fn(async () => undefined),
     } as unknown as jest.Mocked<LoreRepositoryService>;
 
     stores = new FakeStores();
@@ -558,6 +561,103 @@ describe('WorkspaceService', () => {
 
       // When/Then: listing fails cleanly
       await expect(service.list(repo.id)).rejects.toThrow('not found');
+    });
+  });
+
+  describe('loreRepositoryId grouping', () => {
+    // Seed a provisioned entry with an explicit url + id, bypassing the
+    // url-only seedRegistry so the two grouping keys can diverge.
+    async function seedProvisioned(entry: {
+      path: string;
+      url: string;
+      loreRepositoryId?: string;
+      branchName: string;
+    }): Promise<void> {
+      const store = new WorkspaceRegistry(mockLog);
+      await store.upsertByLocalPath(
+        RepositorySchema.parse({
+          id: randomUUID(),
+          name: entry.branchName,
+          url: entry.url,
+          ...(entry.loreRepositoryId ? { loreRepositoryId: entry.loreRepositoryId } : {}),
+          localPath: entry.path,
+          accentHue: 74,
+          origin: 'provisioned',
+          branchName: entry.branchName,
+          provisionedAt: PROVISIONED_AT,
+          createdAt: PROVISIONED_AT,
+          updatedAt: PROVISIONED_AT,
+        })
+      );
+    }
+
+    it('groups a worktree by loreRepositoryId even when its url has drifted', async () => {
+      // Given: the anchor carries a stable id; its worktree shares that id but a
+      // DIFFERENT url (e.g. anchor healed to a composed url, worktree recorded a
+      // scheme variant)
+      repo.loreRepositoryId = '019f6e08-stable-id';
+      const matchDir = path.join(worktreeRoot, BRANCH);
+      fs.mkdirSync(matchDir, { recursive: true });
+      await seedProvisioned({
+        path: matchDir,
+        url: 'lore://drifted.example/other',
+        loreRepositoryId: '019f6e08-stable-id',
+        branchName: BRANCH,
+      });
+      stores.register('shared', {
+        instanceId: 'inst-match',
+        path: matchDir,
+        branchName: BRANCH,
+        revision: 'r1',
+      });
+
+      // When: listing the repo's workspaces
+      const workspaces = await service.list(repo.id);
+
+      // Then: the id-matched worktree is found despite the url mismatch
+      expect(workspaces.map(w => w.path)).toEqual([matchDir]);
+    });
+
+    it('excludes a url-sharing worktree whose loreRepositoryId differs (id beats url)', async () => {
+      // Given: the anchor has an id; a decoy worktree shares the anchor's url but
+      // reports a DIFFERENT id (a different Lore repo that happens to collide on url)
+      repo.loreRepositoryId = 'anchor-id';
+      const decoyDir = path.join(worktreeRoot, 'decoy');
+      fs.mkdirSync(decoyDir, { recursive: true });
+      await seedProvisioned({
+        path: decoyDir,
+        url: repo.url,
+        loreRepositoryId: 'other-id',
+        branchName: 'decoy',
+      });
+
+      // When: listing
+      const workspaces = await service.list(repo.id);
+
+      // Then: the decoy is excluded — matching id wins over matching url
+      expect(workspaces).toEqual([]);
+    });
+
+    it('stamps the workspace loreRepositoryId on provision', async () => {
+      // Given: the workspace checkout self-reports its stable Lore id
+      loreRepositoryService.resolveRepositoryIdentity.mockResolvedValue({
+        url: 'lores://lore.example.com/myrepo',
+        loreRepositoryId: '019f6e08-provisioned',
+      });
+      stores.register('shared', {
+        instanceId: 'inst-1',
+        path: workspaceDir,
+        branchName: BRANCH,
+        revision: 'r1',
+      });
+
+      // When: provisioning
+      await service.provision({ repositoryId: repo.id, branchName: BRANCH });
+
+      // Then: identity is resolved at the workspace's OWN path and persisted
+      expect(loreRepositoryService.resolveRepositoryIdentity).toHaveBeenCalledWith(workspaceDir);
+      const persisted = await new WorkspaceRegistry(mockLog).findByLocalPath(workspaceDir);
+      expect(persisted?.loreRepositoryId).toBe('019f6e08-provisioned');
     });
   });
 

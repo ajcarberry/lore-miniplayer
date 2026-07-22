@@ -199,6 +199,37 @@ describe('RepositorySchema', () => {
     // Then: parsing succeeds
     expect(result.success).toBe(true);
   });
+
+  it('should preserve a resolved loreRepositoryId', () => {
+    // When: parsing an entry carrying the stable Lore repository id
+    const result = RepositorySchema.safeParse({
+      ...validRepository,
+      loreRepositoryId: '019f6e08-1234-4abc-8def-0123456789ab',
+    });
+
+    // Then: parsing succeeds and keeps the id (grouping key survives url drift)
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.loreRepositoryId).toBe(
+      '019f6e08-1234-4abc-8def-0123456789ab'
+    );
+  });
+
+  it('should accept an entry without a loreRepositoryId (optional)', () => {
+    // When: parsing an entry that never resolved an id (offline attach)
+    const result = RepositorySchema.safeParse(validRepository);
+
+    // Then: parsing succeeds and the field is simply absent
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.loreRepositoryId).toBeUndefined();
+  });
+
+  it('should reject an empty loreRepositoryId', () => {
+    // When: parsing an entry with an empty-string id
+    const result = RepositorySchema.safeParse({ ...validRepository, loreRepositoryId: '' });
+
+    // Then: parsing fails (a stamped id is never blank)
+    expect(result.success).toBe(false);
+  });
 });
 
 describe('RepositoryCreateInputSchema', () => {

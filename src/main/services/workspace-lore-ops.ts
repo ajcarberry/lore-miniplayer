@@ -1,8 +1,37 @@
 import { LoreError } from '@lore-vcs/sdk';
 import type { LoreFluentApi } from '@lore-vcs/sdk';
 import type { LoreEventTag } from '@lore-vcs/sdk/types/enums';
+import type { MainLogger } from '../ipc/logger';
 import { collectEvents } from './lore-events';
 import type { LoreEventDataOf } from './lore-events';
+
+// The narrow slice of LoreRepositoryService the id-resolution helper needs.
+interface LoreIdentityResolver {
+  resolveRepositoryIdentity(
+    repositoryPath: string
+  ): Promise<{ loreRepositoryId?: string } | undefined>;
+}
+
+// Resolve a workspace checkout's stable Lore repository id (the grouping key),
+// swallowing every failure into `undefined` — non-fatal: grouping degrades to
+// url and provisioning is never blocked. Logged for diagnostics.
+export async function safeLoreRepositoryId(
+  resolver: LoreIdentityResolver,
+  log: MainLogger,
+  workspacePath: string
+): Promise<string | undefined> {
+  try {
+    const identity = await resolver.resolveRepositoryIdentity(workspacePath);
+    return identity?.loreRepositoryId;
+  } catch (error) {
+    log.warn('Failed to resolve workspace loreRepositoryId (continuing)', {
+      error,
+      operation: 'workspace:provision',
+      workspacePath,
+    });
+    return undefined;
+  }
+}
 
 // Generic Lore SDK execution + error-wrapping helpers shared by WorkspaceService
 // operations (extracted so workspace-service.ts stays under the project's

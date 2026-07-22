@@ -19,6 +19,23 @@ import { WorkspaceRegistry } from './workspace-store';
 // card view is U2/U3's job). `getById`/`delete` still reach every origin.
 const CARD_VIEW_ORIGINS: readonly WorkspaceOrigin[] = ['attached', 'cloned'];
 
+// The placeholder url the attach-existing-folder flow records before the true
+// Lore identity is resolved (the renderer has no SDK access). Post-unification
+// url is the grouping key for "same Lore repo", so this placeholder must be
+// replaced with the checkout's real identity — at create time, and (for entries
+// written by the pre-fix flow) by a heal pass on load. Kept in sync with the
+// renderer literal in useRepositorySubmission.ts.
+const LOCAL_EXISTING_URL = 'local://existing';
+
+// Resolves a checkout's true Lore identity from its on-disk `.lore/` config.
+// LoreRepositoryService satisfies this; injecting the narrow shape keeps the
+// registry service decoupled from the SDK surface (and optional in tests).
+export interface RepositoryIdentityResolver {
+  resolveRepositoryIdentity(
+    repositoryPath: string
+  ): Promise<{ url: string; loreRepositoryId?: string } | undefined>;
+}
+
 // Manages card-view repositories, persisted in the unified workspace registry
 // (`workspaces.json`, packet U1). The public API is unchanged from the legacy
 // repository store — create/update/delete/getAll/getById — but every entry now
@@ -28,7 +45,12 @@ const CARD_VIEW_ORIGINS: readonly WorkspaceOrigin[] = ['attached', 'cloned'];
 export class RepositoryService {
   private readonly registry: WorkspaceRegistry;
 
-  constructor(log: MainLogger) {
+  constructor(
+    private readonly log: MainLogger,
+    // Optional so tests (and any SDK-less bootstrap) construct without it; when
+    // absent, attach records the url as given and heal is skipped.
+    private readonly identityResolver?: RepositoryIdentityResolver
+  ) {
     this.registry = new WorkspaceRegistry(log);
   }
 
@@ -36,6 +58,9 @@ export class RepositoryService {
     // Triggers migration from the two legacy files and seeds an empty v2 store
     // on first run; idempotent across restarts.
     await this.registry.all();
+    // Repair placeholder-url attach entries written by the pre-fix flow, so
+    // they group with their true Lore repo on next launch (non-fatal, logged).
+    await this.healPlaceholderUrls();
   }
 
   // `includeProvisioned` surfaces every registry origin (U2: the card-view
@@ -59,15 +84,22 @@ export class RepositoryService {
   ): Promise<Repository> {
     const validatedInput = RepositoryCreateInputSchema.parse(input);
 
+    // The attach flow records a `local://existing` placeholder (the renderer
+    // cannot reach the SDK); resolve the checkout's true identity here so the
+    // url grouping key is correct from the start. Never blocks attach: an
+    // unresolvable checkout keeps the placeholder and heals on a later launch.
+    const resolved = await this.resolveIfPlaceholder(validatedInput.url, validatedInput.localPath);
+
     const entries = await this.registry.all();
     this.assertUniqueLocalPath(entries, validatedInput.localPath);
-    this.assertUniqueNameForUrl(entries, validatedInput.url, validatedInput.name);
+    this.assertUniqueNameForUrl(entries, resolved.url, validatedInput.name);
 
     const now = new Date().toISOString();
     const newRepository = RepositorySchema.parse({
       id: uuidv4() as string,
       name: validatedInput.name,
-      url: validatedInput.url,
+      url: resolved.url,
+      ...(resolved.loreRepositoryId ? { loreRepositoryId: resolved.loreRepositoryId } : {}),
       localPath: validatedInput.localPath,
       accentHue: await this.registry.nextAccentHue(),
       origin,
@@ -116,6 +148,75 @@ export class RepositoryService {
     const removed = await this.registry.removeById(id);
     if (!removed) {
       throw new Error(`Repository with id "${id}" not found`);
+    }
+  }
+
+  // --- identity resolution ---------------------------------------------------
+
+  // Resolve the true url + id for a placeholder-url attach; any other url is
+  // returned untouched (already truthful). Failure degrades to the input url
+  // with no id — attach must never be blocked on SDK reachability.
+  private async resolveIfPlaceholder(
+    url: string,
+    localPath: string
+  ): Promise<{ url: string; loreRepositoryId?: string }> {
+    if (url !== LOCAL_EXISTING_URL) {
+      return { url };
+    }
+    const resolved = await this.tryResolveIdentity(localPath);
+    return resolved ?? { url };
+  }
+
+  // Attempt identity resolution, swallowing every failure into `undefined` so
+  // callers (create + heal) degrade rather than throw. Logged for diagnostics.
+  private async tryResolveIdentity(
+    localPath: string
+  ): Promise<{ url: string; loreRepositoryId?: string } | undefined> {
+    if (!this.identityResolver) {
+      return undefined;
+    }
+    try {
+      return await this.identityResolver.resolveRepositoryIdentity(localPath);
+    } catch (error) {
+      this.log.warn('Failed to resolve Lore repository identity (keeping placeholder url)', {
+        error,
+        localPath,
+        operation: 'repository:resolve-identity',
+      });
+      return undefined;
+    }
+  }
+
+  // Heal attach entries still carrying the `local://existing` placeholder by
+  // resolving their true identity in place. Idempotent (a healed entry no
+  // longer matches the placeholder), non-fatal per entry (an unresolvable one
+  // is left unchanged and retried next launch).
+  private async healPlaceholderUrls(): Promise<void> {
+    if (!this.identityResolver) {
+      return;
+    }
+    const entries = await this.registry.all();
+    for (const entry of entries) {
+      if (entry.url !== LOCAL_EXISTING_URL) {
+        continue;
+      }
+      const resolved = await this.tryResolveIdentity(entry.localPath);
+      if (!resolved) {
+        continue;
+      }
+      const healed = RepositorySchema.parse({
+        ...entry,
+        url: resolved.url,
+        ...(resolved.loreRepositoryId ? { loreRepositoryId: resolved.loreRepositoryId } : {}),
+        updatedAt: new Date().toISOString(),
+      });
+      await this.registry.upsertById(healed);
+      this.log.info('Healed placeholder workspace url to its true Lore identity', {
+        operation: 'repository:heal-placeholder',
+        localPath: entry.localPath,
+        url: resolved.url,
+        ...(resolved.loreRepositoryId ? { loreRepositoryId: resolved.loreRepositoryId } : {}),
+      });
     }
   }
 

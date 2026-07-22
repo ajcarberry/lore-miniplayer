@@ -186,7 +186,10 @@ app.whenReady().then(async () => {
   await initializeLogging();
 
   // Register IPC handlers before any renderer loads
-  repositoryService = new RepositoryService(log);
+  // The LoreRepositoryService resolves an attached checkout's true Lore
+  // identity (url + stable id) so attach records the correct grouping key and
+  // placeholder entries heal on load.
+  repositoryService = new RepositoryService(log, loreRepositoryService);
   // Owns workspace provisioning/teardown; P7 later injects the observer hook
   // listener's port + token via workspaceService.setObserverConfig(...).
   const workspaceService = new WorkspaceService(log, repositoryService, loreRepositoryService);

@@ -23,6 +23,7 @@ import type {
 } from '../../shared/types';
 import type { LoreEventFFITyped } from '@lore-vcs/sdk/types/events';
 import { assembleBranchGraph, getCurrentRevision, isUnknownHash } from './branch-graph';
+import { resolveRepositoryIdentity, type RepositoryIdentity } from './lore-repository-info';
 import { collectEvents } from './lore-events';
 import type { LoreEventDataOf } from './lore-events';
 
@@ -263,6 +264,13 @@ export class LoreRepositoryService extends EventEmitter {
     }
     const message = error instanceof Error ? error.message : String(error);
     return new LoreOperationError(`${context}: ${message}`, undefined, message);
+  }
+
+  // Resolve a checkout's true Lore identity (composed url + stable id) from its
+  // `.lore/` config. Delegates to ./lore-repository-info (extracted for the
+  // max-lines limit); throws on SDK failure so callers can wrap + degrade.
+  async resolveRepositoryIdentity(repositoryPath: string): Promise<RepositoryIdentity | undefined> {
+    return resolveRepositoryIdentity(repositoryPath, this.toOperationError.bind(this));
   }
 
   async listBranches(repositoryPath: string): Promise<LoreBranch[]> {

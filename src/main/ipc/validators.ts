@@ -4,6 +4,9 @@ import {
   LoreSyncOptionsSchema,
   RepositoryCreateInputSchema,
   RepositoryUpdateInputSchema,
+  WorkspaceProvisionRequestSchema,
+  WorkspaceListRequestSchema,
+  WorkspaceTeardownRequestSchema,
 } from '../../shared/schemas';
 
 export const ThemeModeSchema = z.enum(['auto', 'light', 'dark']);
@@ -133,3 +136,9 @@ export const LoreBranchGraphArgsSchema = z.tuple([BranchGraphRequestSchema]);
 // path:*
 export const PathJoinArgsSchema = z.tuple([PathJoinInputSchema]);
 export const PathBasenameArgsSchema = z.tuple([PathBasenameInputSchema]);
+
+// workspace:* — each channel double-validates its request with the P2
+// contract schema (the renderer already validates before invoking).
+export const WorkspaceProvisionArgsSchema = z.tuple([WorkspaceProvisionRequestSchema]);
+export const WorkspaceListArgsSchema = z.tuple([WorkspaceListRequestSchema]);
+export const WorkspaceTeardownArgsSchema = z.tuple([WorkspaceTeardownRequestSchema]);

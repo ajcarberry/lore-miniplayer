@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import { IPC_CHANNELS } from '../shared/schemas';
 import type {
   Config,
   Repository,
@@ -12,6 +13,12 @@ import type {
   BranchGraph,
   Result,
   VoidResult,
+  WorkspaceProvisionRequest,
+  WorkspaceProvisionResponse,
+  WorkspaceListRequest,
+  WorkspaceListResponse,
+  WorkspaceTeardownRequest,
+  WorkspaceTeardownResponse,
 } from '../shared/types';
 
 // Expose window control APIs
@@ -198,6 +205,29 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     basename: async (path: string): Promise<Result<string>> => {
       return ipcRenderer.invoke('path:basename', { path }) as Promise<Result<string>>;
+    },
+  },
+  // Workspace lifecycle (Mission Control, design 2a). Teardown is destructive
+  // and double-guarded in the main process; the renderer confirms first.
+  workspace: {
+    provision: async (
+      request: WorkspaceProvisionRequest
+    ): Promise<Result<WorkspaceProvisionResponse>> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.workspace.provision, request) as Promise<
+        Result<WorkspaceProvisionResponse>
+      >;
+    },
+    list: async (request: WorkspaceListRequest): Promise<Result<WorkspaceListResponse>> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.workspace.list, request) as Promise<
+        Result<WorkspaceListResponse>
+      >;
+    },
+    teardown: async (
+      request: WorkspaceTeardownRequest
+    ): Promise<Result<WorkspaceTeardownResponse>> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.workspace.teardown, request) as Promise<
+        Result<WorkspaceTeardownResponse>
+      >;
     },
   },
 });

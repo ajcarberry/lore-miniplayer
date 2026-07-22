@@ -6,6 +6,7 @@ import { attachFocusDimming } from './ipc/window-handlers';
 import { RepositoryService } from './services/repository';
 import { initializeLoreSdk, shutdownLoreSdk } from './services/lore-sdk';
 import { LoreRepositoryService } from './services/lore-repository';
+import { WorkspaceService } from './services/workspace-service';
 import { loadWindowPosition, saveWindowPosition } from './ipc/config-handlers';
 import { hardenSession, hardenWebContents } from './security';
 import { COLLAPSED_WINDOW_SIZE, resolveRestorePosition } from '../shared/window-position';
@@ -170,7 +171,10 @@ app.whenReady().then(async () => {
 
   // Register IPC handlers before any renderer loads
   repositoryService = new RepositoryService(log);
-  registerIpcHandlers(log, repositoryService, loreRepositoryService);
+  // Owns workspace provisioning/teardown; P7 later injects the observer hook
+  // listener's port + token via workspaceService.setObserverConfig(...).
+  const workspaceService = new WorkspaceService(log, repositoryService, loreRepositoryService);
+  registerIpcHandlers(log, repositoryService, loreRepositoryService, workspaceService);
 
   // Then initialize the services
   await repositoryService.initialize();

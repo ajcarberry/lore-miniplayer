@@ -11,6 +11,12 @@ import type {
   BranchGraph,
   Result,
   VoidResult,
+  WorkspaceProvisionRequest,
+  WorkspaceProvisionResponse,
+  WorkspaceListRequest,
+  WorkspaceListResponse,
+  WorkspaceTeardownRequest,
+  WorkspaceTeardownResponse,
 } from '../shared/types';
 
 declare global {
@@ -78,6 +84,13 @@ declare global {
       path: {
         join: (segments: string[]) => Promise<Result<string>>;
         basename: (path: string) => Promise<Result<string>>;
+      };
+      workspace: {
+        provision: (
+          request: WorkspaceProvisionRequest
+        ) => Promise<Result<WorkspaceProvisionResponse>>;
+        list: (request: WorkspaceListRequest) => Promise<Result<WorkspaceListResponse>>;
+        teardown: (request: WorkspaceTeardownRequest) => Promise<Result<WorkspaceTeardownResponse>>;
       };
     };
   }

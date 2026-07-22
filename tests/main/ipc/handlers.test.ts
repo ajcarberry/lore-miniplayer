@@ -38,6 +38,7 @@ import log from 'electron-log/main.js';
 import { registerIpcHandlers } from '../../../src/main/ipc/handlers';
 import type { RepositoryService } from '../../../src/main/services/repository';
 import type { LoreRepositoryService } from '../../../src/main/services/lore-repository';
+import type { WorkspaceService } from '../../../src/main/services/workspace-service';
 
 const mockRepositoryService = {
   getAll: jest.fn(),
@@ -64,6 +65,12 @@ const mockLoreRepositoryService = {
   getCurrentRevision: jest.fn(),
 } as unknown as jest.Mocked<LoreRepositoryService>;
 
+const mockWorkspaceService = {
+  provision: jest.fn(),
+  list: jest.fn(),
+  teardown: jest.fn(),
+} as unknown as jest.Mocked<WorkspaceService>;
+
 function invoke(channel: string, ...args: unknown[]): unknown {
   const handler = registeredHandlers.get(channel);
   if (!handler) {
@@ -74,7 +81,7 @@ function invoke(channel: string, ...args: unknown[]): unknown {
 
 beforeAll(() => {
   mockUserData.dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lore-miniplayer-handlers-test-'));
-  registerIpcHandlers(log, mockRepositoryService, mockLoreRepositoryService);
+  registerIpcHandlers(log, mockRepositoryService, mockLoreRepositoryService, mockWorkspaceService);
 });
 
 afterAll(() => {

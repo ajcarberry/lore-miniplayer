@@ -25,6 +25,17 @@ export interface WorkingSetProps {
   readonly conflictRevisionNumber?: number;
 }
 
+// The dir span below renders with `truncate='start'` (Mantine sets CSS
+// `direction: rtl` on it, so a long prefix can ellipsize from the front
+// while the filename stays fully visible). A bare trailing "/" is a
+// bidi-neutral character: inside that RTL run it gets reordered to the
+// FRONT of the run by the Unicode Bidi Algorithm (rule L2) — "Config/"
+// paints as "/Config", "Docs/Features/" as "/Docs/Features" — the exact
+// leading-slash / dropped-separator symptom reported live. A trailing
+// Left-to-Right Mark pins the slash as strong-LTR so the reorder cancels
+// out; it renders as nothing.
+const DIRECTION_MARK = '\u200E'; // Left-to-Right Mark
+
 // Splits a relative path into its dimmed directory prefix (including the
 // trailing slash) and the filename that stays fully visible.
 function splitPath(path: string): { dir: string; filename: string } {
@@ -32,7 +43,10 @@ function splitPath(path: string): { dir: string; filename: string } {
   if (slashIndex === -1) {
     return { dir: '', filename: path };
   }
-  return { dir: path.slice(0, slashIndex + 1), filename: path.slice(slashIndex + 1) };
+  return {
+    dir: path.slice(0, slashIndex + 1) + DIRECTION_MARK,
+    filename: path.slice(slashIndex + 1),
+  };
 }
 
 interface FileRowProps {

@@ -143,7 +143,18 @@ function PlayerCard({
     >
       <TitleBar {...(server.isConnected ? { onCollapse } : {})} />
 
-      <Stack gap='md' p='xl' style={{ flex: 1, position: 'relative' }}>
+      {/* flex: 1 with minHeight: 0 lets this region shrink to whatever
+          space TitleBar/UtilityFooter leave within the card's (now capped,
+          see morph.css) height, instead of forcing the card to grow past
+          the window. overflowY: 'auto' turns any excess (e.g. an expanded
+          working set + history) into an internal scroll here, mirroring
+          how HistorySection's own ledger already scrolls internally —
+          rather than pushing TitleBar off the top of the card. */}
+      <Stack
+        gap='md'
+        p='xl'
+        style={{ flex: 1, minHeight: 0, overflowY: 'auto', position: 'relative' }}
+      >
         {/* Attribution toast (design 1c): overlays the card's top, above
             everything else, one at a time — see useAttributionToasts. */}
         {server.isConnected && toast !== null && (

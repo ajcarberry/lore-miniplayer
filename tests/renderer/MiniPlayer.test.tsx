@@ -728,6 +728,25 @@ describe('MiniPlayer', () => {
       await waitFor(() => expect(expanded()).toBe('false'));
     });
 
+    describe('card layout (bug 3 — TitleBar pinned while content scrolls)', () => {
+      it('bounds the content region below the TitleBar so it can shrink and scroll internally', async () => {
+        // Given: the connected view
+        const repo = makeRepository();
+        (api.repository.list as jest.Mock).mockResolvedValue({ success: true, data: [repo] });
+        const { container } = renderMiniPlayer();
+        await screen.findByText('On branch');
+
+        // Then: the region between TitleBar and UtilityFooter can shrink
+        // (min-height: 0) and scrolls its own overflow (overflow-y: auto).
+        // Without both, an expanded working set/history list grows the
+        // whole card past the (now max-height-capped, see morph.css)
+        // window instead of scrolling internally, pushing the TitleBar off
+        // the top of the card.
+        const scrollRegion = container.querySelector('[style*="overflow-y: auto"]');
+        expect(scrollRegion?.getAttribute('style')).toContain('min-height: 0');
+      });
+    });
+
     describe('sync-needed notice', () => {
       it('reports an active notice to main when the branch falls behind the remote', async () => {
         // Given: a checked-out repository whose branch is behind the remote

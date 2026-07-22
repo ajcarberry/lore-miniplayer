@@ -31,6 +31,15 @@
 }
 
 .morph-card {
+  /* Bounds the card to the window's own height. Without this, the
+     grid-template-rows 0fr->1fr trick below sizes the row to the content's
+     natural height with no ceiling — an expanded working set/history list
+     can grow the card taller than the (fixed-size) Electron window, and
+     since the card is anchored to one edge only, the excess pushes the
+     opposite edge (the TitleBar, at the top in the default bottom anchor)
+     off-window. PlayerCard's own scroll region (see MiniPlayer.tsx) is
+     what actually absorbs that excess height once it's capped here. */
+  max-height: 100%;
   position: absolute;
   left: 0;
   right: 0;

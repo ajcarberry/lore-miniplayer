@@ -122,6 +122,42 @@ describe('WorkingSet', () => {
     expect(onToggleFile).toHaveBeenCalledWith('src/deep/nested/dir/changed.ts');
   });
 
+  describe('directory prefix formatting (bug 2 — start-truncated bidi reorder)', () => {
+    // Mantine's truncate='start' sets CSS `direction: rtl` on the dir span
+    // (styles.css: `[data-truncate='start'] { direction: rtl; text-align:
+    // end; }`) so a long prefix can ellipsize from the front while the
+    // filename stays fully visible. Verified in a real Chromium render: a
+    // bare trailing "/" is a bidi-neutral character, and inside that RTL
+    // run the Unicode Bidi Algorithm (rule L2) reorders it to the FRONT of
+    // the run — "Config/" paints as "/Config", "Docs/Features/" as
+    // "/Docs/Features" — exactly the live "leading slash, dropped last
+    // separator" symptom. The fix pins the slash as strong-LTR with a
+    // trailing Left-to-Right Mark (U+200E) so the reorder cancels out.
+    it.each([
+      ['Config/DefaultEngine.ini', 'Config/'],
+      ['Docs/Features/GlowcapSporeBloom.md', 'Docs/Features/'],
+      ['src/deep/nested/dir/changed.ts', 'src/deep/nested/dir/'],
+    ])('appends a trailing LRM after the directory slash for %s', (path, expectedDir) => {
+      // When: rendering a row for a path with a directory prefix
+      renderWorkingSet(baseProps({ files: [{ path, kind: 'edit', staged: false }], open: true }));
+
+      // Then: the dir text node carries the visible prefix plus an
+      // invisible LRM right after the slash
+      expect(screen.getByText(`${expectedDir}\u200E`)).toBeInTheDocument();
+    });
+
+    it('renders a root-level file with no directory prefix and no leading slash', () => {
+      // When: rendering a file with no directory component
+      renderWorkingSet(
+        baseProps({ files: [{ path: 'new-file.txt', kind: 'add', staged: false }], open: true })
+      );
+
+      // Then: only the filename renders — no dir text, no leading slash
+      expect(screen.getByText('new-file.txt')).toBeInTheDocument();
+      expect(screen.queryByText(/^\//)).not.toBeInTheDocument();
+    });
+  });
+
   describe('conflict rows (design 1c)', () => {
     const conflictedFiles: WorkingSetFile[] = [
       {

@@ -2,7 +2,6 @@ import type { ReactElement } from 'react';
 import { ActionIcon, Badge, Box, Button, Group, Paper, Stack, Text } from '@mantine/core';
 import { IconEyeOff, IconX } from '@tabler/icons-react';
 import type { AgentTask, WorkspaceCard } from '../../../shared/types';
-import { distinctWorkspaceName } from '../../utils/repository-name';
 import type { OpenReviewIntent } from './reviewIntent';
 import {
   deriveWorkspaceFlags,
@@ -133,10 +132,6 @@ function CardHeader({
   const activeTitle = isActive
     ? 'This is the workspace you are currently in — close or forget another one instead'
     : undefined;
-  // Two registry entries can share a branch name while being distinct
-  // workspaces (e.g. two attached checkouts both on "adfa") — surface the
-  // registry name as a muted suffix whenever it isn't just the branch again.
-  const distinctName = distinctWorkspaceName(workspace.name, workspace.branchName);
 
   return (
     <Group gap={8} wrap='nowrap'>
@@ -151,7 +146,9 @@ function CardHeader({
           ...(inProgress ? { animation: 'pulseDot 2s infinite' } : {}),
         }}
       />
-      {/* Branch — hover reveals the worktree directory (design 2a). */}
+      {/* Mission Control is PRIMARILY keyed by workspace name — the
+          registry `name`, not the current branch — so the title is the
+          name; hover reveals the worktree directory (design 2a). */}
       <Text
         component='span'
         ff='var(--font-mono)'
@@ -160,13 +157,14 @@ function CardHeader({
         title={workspace.path}
         style={{ borderBottom: '1px dashed var(--hair)', cursor: 'help' }}
       >
-        {workspace.branchName}
+        {workspace.name}
       </Text>
-      {distinctName !== undefined && (
-        <Text component='span' ff='var(--font-mono)' size='sm' c='dimmed'>
-          {`· ${distinctName}`}
-        </Text>
-      )}
+      {/* Branch — a secondary identifier. Rendered unconditionally, even
+          when it reads the same as the name (e.g. a provisioned worktree),
+          for consistency. */}
+      <Text component='span' ff='var(--font-mono)' size='sm' c='dimmed'>
+        {`on ${workspace.branchName}`}
+      </Text>
       {isActive && (
         <Badge color='blue' variant='light' size='sm'>
           active

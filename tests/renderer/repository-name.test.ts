@@ -1,5 +1,4 @@
 import {
-  distinctWorkspaceName,
   groupWorkspacesByRepo,
   repoEyebrowLabel,
   repoNameFromUrl,
@@ -64,34 +63,23 @@ describe('repoEyebrowLabel', () => {
     });
 
     // Then: no combined label — the repo name alone is shown
-    expect(repoEyebrowLabel(primary, 'main')).toBe('demo-project');
+    expect(repoEyebrowLabel(primary)).toBe('demo-project');
   });
 
-  it('shows just the repo name when the workspace name is redundant with the current branch', () => {
-    // Given: a provisioned worktree whose sanitized name reads as its branch
-    // (slashes replaced with hyphens), and the live branch matches it
-    const provisioned = makeRepository({
-      origin: 'provisioned',
-      name: 'test-WT1',
-      url: 'lores://lore.example.com/demo-project',
-      branchName: 'test/WT1',
-    });
-
-    // Then: still just the repo name — the workspace name adds nothing over
-    // the branch line already shown below it
-    expect(repoEyebrowLabel(provisioned, 'test/WT1')).toBe('demo-project');
-  });
-
-  it('combines repo name and workspace name when the workspace name is meaningfully different', () => {
-    // Given: an attached sibling workspace named "adfa" of repo "demo-project",
-    // currently on a branch that is neither "adfa" nor "demo-project"
+  it('combines repo name and workspace name when the workspace name differs from the repo, even when it happens to match the current branch', () => {
+    // Given: a workspace named "adfa" of repo "demo-project", currently
+    // checked out to a branch ALSO named "adfa". The old rule compared the
+    // workspace name against both the repo name and the branch name, so a
+    // name/branch coincidence like this one wrongly suppressed the suffix
+    // (the whole point of the eyebrow — telling the workspace apart from its
+    // repo — was lost). Branch is no longer part of this decision at all.
     const attached = makeRepository({
       name: 'adfa',
       url: 'lores://lore.example.com/demo-project',
     });
 
-    // Then: both identities show, repo first
-    expect(repoEyebrowLabel(attached, 'main')).toBe('demo-project · adfa');
+    // Then: both identities show, repo first — regardless of branch
+    expect(repoEyebrowLabel(attached)).toBe('demo-project · adfa');
   });
 
   it('ignores case and punctuation differences when judging redundancy', () => {
@@ -103,25 +91,7 @@ describe('repoEyebrowLabel', () => {
     });
 
     // Then: still treated as redundant — no combined label
-    expect(repoEyebrowLabel(primary, 'main')).toBe('demo-project');
-  });
-});
-
-describe('distinctWorkspaceName', () => {
-  it('returns the name when it is meaningfully different from the branch', () => {
-    // Given: two attached workspaces of one repo both checked out to a
-    // branch named "adfa" but registered under distinct names
-    expect(distinctWorkspaceName('personal-test', 'adfa')).toBe('personal-test');
-  });
-
-  it('returns undefined when the name is redundant with the branch', () => {
-    // Given: a provisioned worktree's registry name is a sanitized version
-    // of its branch (slashes replaced with hyphens)
-    expect(distinctWorkspaceName('test-WT1', 'test/WT1')).toBeUndefined();
-  });
-
-  it('ignores case and punctuation differences when judging redundancy', () => {
-    expect(distinctWorkspaceName('Agent Act2 Balance', 'agent/act2-balance')).toBeUndefined();
+    expect(repoEyebrowLabel(primary)).toBe('demo-project');
   });
 });
 

@@ -35,7 +35,7 @@ describe('MissionCard — awaiting review (clean)', () => {
     expect(screen.getByText(/r130 Flatten pacing curve/)).toBeInTheDocument();
   });
 
-  it('exposes the worktree path as the branch hover title', () => {
+  it('exposes the worktree path as the name hover title', () => {
     renderWithMantine(<MissionCard {...baseProps()} />);
     expect(screen.getByText('agent/act2-balance')).toHaveAttribute(
       'title',
@@ -174,31 +174,34 @@ describe('MissionCard — active workspace (packet U3)', () => {
   });
 });
 
-describe('MissionCard — workspace name disambiguation', () => {
-  it('shows the registry name as a muted suffix when it differs from the branch', () => {
+describe('MissionCard — title is the workspace name, branch is secondary', () => {
+  it('titles the card by the workspace name and shows the branch as a muted secondary identifier', () => {
     // Given: two attached workspaces of one repo can share a branch name
-    // ("adfa") while being registered under distinct names — the card must
-    // surface both so the rows are tellable apart.
+    // ("adfa") while being registered under distinct names — Mission Control
+    // is PRIMARILY keyed by workspace name, so the title must be the name,
+    // not the branch, for the rows to be tellable apart.
     const card = makeCard('awaitingReview', {
       workspace: makeWorkspace({ branchName: 'adfa', name: 'personal-test' }),
     });
     renderWithMantine(<MissionCard {...baseProps({ card })} />);
 
-    expect(screen.getByText('adfa')).toBeInTheDocument();
-    expect(screen.getByText('· personal-test')).toBeInTheDocument();
+    expect(screen.getByText('personal-test')).toBeInTheDocument();
+    expect(screen.getByText('on adfa')).toBeInTheDocument();
   });
 
-  it('suppresses the suffix when the name is redundant with the branch', () => {
-    // Given: a provisioned worktree's registry name is a sanitized version of
-    // its branch (slashes replaced with hyphens) — the same idea, spelling
-    // aside, so no suffix should render.
+  it('still shows the branch secondary when the name and branch are the same string', () => {
+    // Given: a provisioned worktree whose registry name is a sanitized
+    // version of its branch (slashes replaced with hyphens) — name and
+    // branch read as "the same idea" here, but the branch secondary still
+    // renders unconditionally (consistency over cleverness: no collapsing
+    // logic to get wrong).
     const card = makeCard('awaitingReview', {
       workspace: makeWorkspace({ branchName: 'test/WT1', name: 'test-WT1' }),
     });
     renderWithMantine(<MissionCard {...baseProps({ card })} />);
 
-    expect(screen.getByText('test/WT1')).toBeInTheDocument();
-    expect(screen.queryByText('· test-WT1')).not.toBeInTheDocument();
+    expect(screen.getByText('test-WT1')).toBeInTheDocument();
+    expect(screen.getByText('on test/WT1')).toBeInTheDocument();
   });
 });
 

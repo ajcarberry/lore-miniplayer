@@ -4,7 +4,7 @@ import { IdleWorkspaceRow } from '../../../src/renderer/components/mission-contr
 import { makeWorkspace, renderWithMantine } from './fixtures';
 
 describe('IdleWorkspaceRow', () => {
-  it('reveals the worktree path on the branch and dispatches its four actions', async () => {
+  it('reveals the worktree path on the name and dispatches its four actions', async () => {
     const user = userEvent.setup();
     const workspace = makeWorkspace({ branchName: 'spike/old-fog', path: '/wt/old-fog' });
     const onOpenTerminal = jest.fn();
@@ -62,9 +62,11 @@ describe('IdleWorkspaceRow', () => {
     expect(forgetButton).toHaveAttribute('title', expect.stringContaining('currently in'));
   });
 
-  it('shows the registry name as a muted suffix when it differs from the branch', () => {
+  it('titles the row by the workspace name and shows the branch as a muted secondary identifier', () => {
     // Given: two attached workspaces of one repo can share a branch name
-    // ("adfa") while being registered under distinct names.
+    // ("adfa") while being registered under distinct names — the row must be
+    // titled by name (Mission Control's primary identifier) so the two rows
+    // are tellable apart.
     const workspace = makeWorkspace({ branchName: 'adfa', name: 'personal-test' });
 
     renderWithMantine(
@@ -78,14 +80,15 @@ describe('IdleWorkspaceRow', () => {
       />
     );
 
-    expect(screen.getByText('adfa')).toBeInTheDocument();
-    expect(screen.getByText('· personal-test')).toBeInTheDocument();
+    expect(screen.getByText('personal-test')).toBeInTheDocument();
+    expect(screen.getByText('on adfa')).toBeInTheDocument();
   });
 
-  it('suppresses the suffix when the name is redundant with the branch', () => {
+  it('still shows the branch secondary when the name and branch are the same string', () => {
     // Given: a provisioned worktree's registry name is a sanitized version of
-    // its branch (slashes replaced with hyphens) — the same idea, spelling
-    // aside, so no suffix should render.
+    // its branch (slashes replaced with hyphens) — name and branch read as
+    // "the same idea" here, but the branch secondary still renders
+    // unconditionally (consistency over cleverness).
     const workspace = makeWorkspace({ branchName: 'test/WT1', name: 'test-WT1' });
 
     renderWithMantine(
@@ -99,7 +102,7 @@ describe('IdleWorkspaceRow', () => {
       />
     );
 
-    expect(screen.getByText('test/WT1')).toBeInTheDocument();
-    expect(screen.queryByText('· test-WT1')).not.toBeInTheDocument();
+    expect(screen.getByText('test-WT1')).toBeInTheDocument();
+    expect(screen.getByText('on test/WT1')).toBeInTheDocument();
   });
 });

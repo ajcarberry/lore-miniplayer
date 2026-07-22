@@ -64,28 +64,13 @@ function sameIdentity(a: string, b: string): boolean {
 // the repo name derived from the workspace's `url`, since that's the
 // identity a human recognizes regardless of which local workspace they
 // picked. The workspace's own `name` is appended only when it carries new
-// information — skipped when it's redundant with the repo name (the common
-// case for a primary checkout) or with the live branch (a provisioned
-// worktree's name is usually its branch, spelling differences aside). The
-// branch itself keeps rendering on the line below unconditionally, so a
-// redundant name would otherwise just repeat what's already shown twice.
-export function repoEyebrowLabel(repository: Repository, branchName: string): string {
+// information over the repo name — the current branch plays no part in this
+// decision (a workspace can coincidentally be named after its own branch
+// while still being a distinctly-named sibling of the repo, and that
+// distinction is the whole point of the suffix).
+export function repoEyebrowLabel(repository: Repository): string {
   const repoName = repoNameFromUrl(repository.url);
-  const isRedundant =
-    sameIdentity(repository.name, repoName) || sameIdentity(repository.name, branchName);
-  return isRedundant ? repoName : `${repoName} · ${repository.name}`;
-}
-
-// Mission Control card/row disambiguation: whether a workspace's registry
-// `name` carries information beyond its own `branchName` — the same loose
-// comparison repoEyebrowLabel uses to judge redundancy. A provisioned
-// worktree is always named after its branch verbatim (workspace-service's
-// upsertProvisioned), so this is always undefined for one; a card-view
-// (attached/cloned) sibling can carry a genuinely distinct name — e.g. two
-// registry entries both checked out to a branch named "adfa" but registered
-// as "adfa" and "personal-test".
-export function distinctWorkspaceName(name: string, branchName: string): string | undefined {
-  return sameIdentity(name, branchName) ? undefined : name;
+  return sameIdentity(repository.name, repoName) ? repoName : `${repoName} · ${repository.name}`;
 }
 
 export interface RepoGroup {

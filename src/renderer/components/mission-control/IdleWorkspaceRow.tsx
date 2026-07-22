@@ -2,7 +2,6 @@ import type { ReactElement } from 'react';
 import { ActionIcon, Badge, Box, Button, Group, Text } from '@mantine/core';
 import { IconEyeOff, IconX } from '@tabler/icons-react';
 import type { Workspace } from '../../../shared/types';
-import { distinctWorkspaceName } from '../../utils/repository-name';
 
 export interface IdleWorkspaceRowProps {
   readonly workspace: Workspace;
@@ -17,10 +16,11 @@ export interface IdleWorkspaceRowProps {
   readonly onForget: (workspace: Workspace) => void;
 }
 
-// A minimized idle-band row (design 2a): branch (hover reveals the worktree
-// directory), Mark active (the manual idle → awaiting-review transition), Open
-// terminal, Forget, and ✕ close. New workspaces land here until an agent
-// session starts or the user marks them active.
+// A minimized idle-band row (design 2a): workspace name (Mission Control's
+// primary identifier — hover reveals the worktree directory) with the branch
+// as a muted secondary, Mark active (the manual idle → awaiting-review
+// transition), Open terminal, Forget, and ✕ close. New workspaces land here
+// until an agent session starts or the user marks them active.
 export function IdleWorkspaceRow({
   workspace,
   isActive,
@@ -32,10 +32,6 @@ export function IdleWorkspaceRow({
   const activeTitle = isActive
     ? 'This is the workspace you are currently in — close or forget another one instead'
     : undefined;
-  // Two registry entries can share a branch name while being distinct
-  // workspaces (e.g. two attached checkouts both on "adfa") — surface the
-  // registry name as a muted suffix whenever it isn't just the branch again.
-  const distinctName = distinctWorkspaceName(workspace.name, workspace.branchName);
 
   return (
     <Group
@@ -63,13 +59,11 @@ export function IdleWorkspaceRow({
         title={workspace.path}
         style={{ borderBottom: '1px dashed var(--hair)', cursor: 'help' }}
       >
-        {workspace.branchName}
+        {workspace.name}
       </Text>
-      {distinctName !== undefined && (
-        <Text component='span' ff='var(--font-mono)' size='sm' c='dimmed'>
-          {`· ${distinctName}`}
-        </Text>
-      )}
+      <Text component='span' ff='var(--font-mono)' size='sm' c='dimmed'>
+        {`on ${workspace.branchName}`}
+      </Text>
       {isActive && (
         <Badge color='blue' variant='light' size='sm'>
           active

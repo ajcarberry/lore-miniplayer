@@ -358,6 +358,34 @@ describe('WorkspaceService', () => {
       expect(reloaded).toMatchObject({ branchName: BRANCH, url: repo.url, origin: 'provisioned' });
     });
 
+    it('provisions a workspace whose branch name contains a slash (registry name schema regression)', async () => {
+      // Given: a "prefix/name" branch, as agent worktrees use (e.g. "test/WT1")
+      const slashedBranch = 'test/WT1';
+      const slashedDir = path.join(worktreeRoot, slashedBranch);
+      stores.register('shared', {
+        instanceId: 'inst-slash',
+        path: slashedDir,
+        branchName: slashedBranch,
+        revision: 'r1',
+      });
+
+      // When: provisioning with the slashed branch name
+      const workspace = await service.provision({
+        repositoryId: repo.id,
+        branchName: slashedBranch,
+      });
+
+      // Then: it succeeds, and the persisted registry entry (named for the
+      // branch, per upsertProvisioned) validates against RepositorySchema
+      expect(workspace.branchName).toBe(slashedBranch);
+      const reloaded = await new WorkspaceRegistry(mockLog).findByLocalPath(slashedDir);
+      expect(reloaded).toMatchObject({
+        name: slashedBranch,
+        branchName: slashedBranch,
+        origin: 'provisioned',
+      });
+    });
+
     it('refuses a branch name that escapes the worktree root', async () => {
       // When/Then: a traversal branch name is rejected before cloning
       await expect(

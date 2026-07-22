@@ -98,9 +98,21 @@ describe('RepositorySchema', () => {
     expect(result.success).toBe(false);
   });
 
+  it.each([
+    ['a slashed branch name (worktree)', 'test/WT1'],
+    ['a slashed branch name with a nested prefix', 'agent/act2-balance'],
+  ])('should accept %s', (_label, name) => {
+    // When: parsing with a name containing a slash (a provisioned worktree
+    // named for its branch)
+    const result = RepositorySchema.safeParse({ ...validRepository, name });
+
+    // Then: parsing succeeds
+    expect(result.success).toBe(true);
+  });
+
   it('should reject names with invalid characters', () => {
-    // When: parsing with a name containing a slash
-    const result = RepositorySchema.safeParse({ ...validRepository, name: 'bad/name' });
+    // When: parsing with a name containing a disallowed character
+    const result = RepositorySchema.safeParse({ ...validRepository, name: 'bad@name' });
 
     // Then: parsing fails
     expect(result.success).toBe(false);
@@ -109,6 +121,14 @@ describe('RepositorySchema', () => {
   it('should reject an empty name', () => {
     // When: parsing with an empty name
     const result = RepositorySchema.safeParse({ ...validRepository, name: '' });
+
+    // Then: parsing fails
+    expect(result.success).toBe(false);
+  });
+
+  it('should reject a name that is only separators', () => {
+    // When: parsing with a name made entirely of slashes
+    const result = RepositorySchema.safeParse({ ...validRepository, name: '///' });
 
     // Then: parsing fails
     expect(result.success).toBe(false);

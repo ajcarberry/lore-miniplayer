@@ -21,11 +21,17 @@ export const WorkspaceOriginSchema = z.enum(['attached', 'cloned', 'provisioned'
 // the alias.)
 export const RepositorySchema = z.object({
   id: z.string().uuid(),
+  // "/" is permitted so a provisioned worktree can take its branch name
+  // verbatim (e.g. "test/WT1", "agent/act2-balance") — this field is
+  // display-only, so allowing it here doesn't touch any filesystem path.
   name: z
     .string()
     .min(1, 'Repository name is required')
     .max(100, 'Repository name is too long')
-    .regex(/^[a-zA-Z0-9\s\-_.]+$/, 'Repository name contains invalid characters'),
+    .regex(/^[a-zA-Z0-9\s\-_./]+$/, 'Repository name contains invalid characters')
+    .refine(name => /[a-zA-Z0-9]/.test(name), {
+      message: 'Repository name must contain at least one letter or number',
+    }),
   url: z
     .string()
     .min(1, 'Repository URL is required')

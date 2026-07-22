@@ -98,6 +98,12 @@ declare global {
         list: (request: WorkspaceListRequest) => Promise<Result<WorkspaceListResponse>>;
         teardown: (request: WorkspaceTeardownRequest) => Promise<Result<WorkspaceTeardownResponse>>;
       };
+      agent: {
+        // Registers a listener for agent session-state updates pushed from
+        // main; returns the cleanup that removes it. Payloads are validated in
+        // the renderer.
+        onObservability: (callback: (push: unknown) => void) => () => void;
+      };
       diff: {
         compare: (request: DiffRequest) => Promise<Result<DiffResponse>>;
       };

@@ -244,6 +244,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
       >;
     },
   },
+  // Agent observability (research note): session-state updates pushed from the
+  // main-process hook listener.
+  agent: {
+    // One-way push channel from main; the payload crosses the bridge as
+    // unknown and is Zod-validated in the renderer before use.
+    onObservability: (callback: (push: unknown) => void): (() => void) => {
+      const listener = (_event: unknown, payload: unknown): void => {
+        callback(payload);
+      };
+      ipcRenderer.on(IPC_CHANNELS.agent.observability, listener);
+      return (): void => {
+        ipcRenderer.removeListener(IPC_CHANNELS.agent.observability, listener);
+      };
+    },
+  },
   // Lock visibility (spec "Supporting signals"): show + release, never
   // enforce acquisition.
   locks: {

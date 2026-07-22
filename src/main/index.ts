@@ -7,8 +7,10 @@ import { RepositoryService } from './services/repository';
 import { initializeLoreSdk, shutdownLoreSdk } from './services/lore-sdk';
 import { LoreRepositoryService } from './services/lore-repository';
 import { WorkspaceService } from './services/workspace-service';
+import { AgentObserverService } from './services/agent-observer';
 import { DiffService } from './services/diff-service';
 import { LockService } from './services/lock-service';
+import { IPC_CHANNELS } from '../shared/schemas';
 import { loadWindowPosition, saveWindowPosition } from './ipc/config-handlers';
 import { hardenSession, hardenWebContents } from './security';
 import { COLLAPSED_WINDOW_SIZE, resolveRestorePosition } from '../shared/window-position';
@@ -45,6 +47,10 @@ async function initializeLogging(): Promise<void> {
 
 // Global reference to main window
 let mainWindow: BrowserWindow | null = null;
+
+// The agent observability hook listener; constructed in whenReady and stopped
+// on quit. Module-scoped so the shutdown handler can reach it.
+let agentObserverService: AgentObserverService | null = null;
 
 // Constructed after logging is initialized (whenReady) so the logger can be
 // injected like every other service/handler group.
@@ -191,6 +197,19 @@ app.whenReady().then(async () => {
   await repositoryService.initialize();
   initializeLoreSdk();
 
+  // Agent observability: the localhost hook listener owns the port + a
+  // per-workspace token; provisioned workspaces POST Claude Code hook events
+  // to it. Start it and hand its config to WorkspaceService so injected hooks
+  // target the live listener. Session-state pushes are forwarded to the
+  // renderer over the P2 push channel (payloads are Zod-validated in the
+  // service before emit, mirroring the other push channels).
+  agentObserverService = new AgentObserverService(log);
+  agentObserverService.on('push', payload => {
+    mainWindow?.webContents.send(IPC_CHANNELS.agent.observability, payload);
+  });
+  await agentObserverService.start();
+  workspaceService.setObserverConfig(agentObserverService.getObserverConfig());
+
   // Deny-by-default browser permission requests
   hardenSession(session.defaultSession, log);
 
@@ -234,6 +253,11 @@ app.whenReady().then(async () => {
 });
 
 app.on('will-quit', () => {
+  // Stop the agent observability listener and free its sockets.
+  if (agentObserverService) {
+    void agentObserverService.stop();
+    agentObserverService = null;
+  }
   // Release the Lore SDK's native resources on exit
   try {
     shutdownLoreSdk();

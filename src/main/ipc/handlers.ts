@@ -1,6 +1,7 @@
 import { RepositoryService } from '../services/repository';
 import type { LoreRepositoryService } from '../services/lore-repository';
 import type { WorkspaceService } from '../services/workspace-service';
+import type { WorkspaceModelService } from '../services/workspace-model';
 import type { DiffService } from '../services/diff-service';
 import type { LockService } from '../services/lock-service';
 import { registerConfigHandlers } from './config-handlers';
@@ -19,13 +20,14 @@ export function registerIpcHandlers(
   repositoryService: RepositoryService,
   loreRepositoryService: LoreRepositoryService,
   workspaceService: WorkspaceService,
+  workspaceModel: WorkspaceModelService,
   diffService: DiffService,
   lockService: LockService
 ): void {
   registerConfigHandlers(log);
   registerRepositoryHandlers(log, repositoryService);
   registerLoreHandlers(log, loreRepositoryService);
-  registerWorkspaceHandlers(log, workspaceService);
+  registerWorkspaceHandlers(log, workspaceService, workspaceModel);
   registerDiffHandlers(log, diffService);
   registerLockHandlers(log, lockService);
   registerWindowHandlers(log);

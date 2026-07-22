@@ -7,6 +7,7 @@ import {
   WorkspaceProvisionRequestSchema,
   WorkspaceListRequestSchema,
   WorkspaceTeardownRequestSchema,
+  WorkspaceMarkActiveRequestSchema,
   DiffRequestSchema,
   LockQueryRequestSchema,
   LockReleaseRequestSchema,
@@ -145,6 +146,7 @@ export const PathBasenameArgsSchema = z.tuple([PathBasenameInputSchema]);
 export const WorkspaceProvisionArgsSchema = z.tuple([WorkspaceProvisionRequestSchema]);
 export const WorkspaceListArgsSchema = z.tuple([WorkspaceListRequestSchema]);
 export const WorkspaceTeardownArgsSchema = z.tuple([WorkspaceTeardownRequestSchema]);
+export const WorkspaceMarkActiveArgsSchema = z.tuple([WorkspaceMarkActiveRequestSchema]);
 
 // diff:* — the review window's compare picker
 export const DiffCompareArgsSchema = z.tuple([DiffRequestSchema]);

@@ -35,6 +35,8 @@ import type {
   MergeFileStateSchema,
   MergeStateSchema,
   ReviewWorkflowModeSchema,
+  WorkspaceCardSchema,
+  WorkspaceModelSnapshotSchema,
   WorkspaceProvisionRequestSchema,
   WorkspaceProvisionResponseSchema,
   WorkspaceListRequestSchema,
@@ -219,6 +221,12 @@ export type MergeState = z.infer<typeof MergeStateSchema>;
 
 // Which contextual primary action the review window's bottom bar shows.
 export type ReviewWorkflowMode = z.infer<typeof ReviewWorkflowModeSchema>;
+
+// Mission Control's per-workspace card and the per-repository snapshot the
+// workspace model (P9) composes from Lore signals + agent observability.
+export type WorkspaceCard = z.infer<typeof WorkspaceCardSchema>;
+
+export type WorkspaceModelSnapshot = z.infer<typeof WorkspaceModelSnapshotSchema>;
 
 // IPC request/response payload types (the `T` inside each channel's
 // `Result<T>`; see IPC_CHANNELS in schemas.ts for the channel names).

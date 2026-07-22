@@ -39,6 +39,7 @@ import { registerIpcHandlers } from '../../../src/main/ipc/handlers';
 import type { RepositoryService } from '../../../src/main/services/repository';
 import type { LoreRepositoryService } from '../../../src/main/services/lore-repository';
 import type { WorkspaceService } from '../../../src/main/services/workspace-service';
+import type { WorkspaceModelService } from '../../../src/main/services/workspace-model';
 import type { DiffService } from '../../../src/main/services/diff-service';
 import type { LockService } from '../../../src/main/services/lock-service';
 
@@ -73,6 +74,10 @@ const mockWorkspaceService = {
   teardown: jest.fn(),
 } as unknown as jest.Mocked<WorkspaceService>;
 
+const mockWorkspaceModel = {
+  markActive: jest.fn(),
+} as unknown as jest.Mocked<WorkspaceModelService>;
+
 const mockDiffService = {
   compare: jest.fn(),
   branchVsParent: jest.fn(),
@@ -98,6 +103,7 @@ beforeAll(() => {
     mockRepositoryService,
     mockLoreRepositoryService,
     mockWorkspaceService,
+    mockWorkspaceModel,
     mockDiffService,
     mockLockService
   );

@@ -278,6 +278,33 @@ export const MergeStateSchema = z.object({
 // Which contextual primary action the review window's bottom bar shows.
 export const ReviewWorkflowModeSchema = z.enum(['commit', 'merge']);
 
+// Mission Control's per-workspace card (design 2a): the workspace, its
+// derived attention (band + reasons), the live agent session (when observed),
+// the transcript-derived intention (when enriched), aggregate +/- line stats
+// and changed-file count against the branch's parent, and the session commits
+// on the branch since provisioning (the branch's own revisions, parent
+// lineage excluded). `lastEventAt` drives recent-ordering within a band.
+export const WorkspaceCardSchema = z.object({
+  workspace: WorkspaceSchema,
+  attention: WorkspaceAttentionSchema,
+  session: AgentSessionStateSchema.optional(),
+  intention: AgentIntentionSchema.optional(),
+  fileStats: LineStatsSchema,
+  changedFileCount: z.number().int().nonnegative(),
+  sessionCommits: z.array(RevisionSummarySchema),
+  lastEventAt: z.number().nonnegative(),
+});
+
+// A per-repository Mission Control snapshot: every workspace card for the
+// selected repo, pre-sorted (awaiting review, then in progress, then idle;
+// within a band, workspaces needing you first, then most-recent activity).
+// The workspace model emits it on agent/notification events and a
+// low-frequency refresh, Zod-validated before it leaves the main process.
+export const WorkspaceModelSnapshotSchema = z.object({
+  repositoryId: RepositorySchema.shape.id,
+  cards: z.array(WorkspaceCardSchema),
+});
+
 // --- IPC request/response payloads ------------------------------------------
 
 export const WorkspaceProvisionRequestSchema = z.object({

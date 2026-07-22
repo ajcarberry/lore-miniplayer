@@ -21,6 +21,8 @@ import {
   MergeFileStateSchema,
   MergeStateSchema,
   ReviewWorkflowModeSchema,
+  WorkspaceCardSchema,
+  WorkspaceModelSnapshotSchema,
   WorkspaceProvisionRequestSchema,
   WorkspaceListRequestSchema,
   WorkspaceTeardownRequestSchema,
@@ -1021,6 +1023,54 @@ describe('Workspace IPC request/response schemas', () => {
   it('rejects a markActive request with an empty workspaceId', () => {
     // When: parsing a mark-active request with a blank id
     const result = WorkspaceMarkActiveRequestSchema.safeParse({ workspaceId: '' });
+
+    // Then: parsing fails
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('WorkspaceModelSnapshotSchema', () => {
+  const validCard = {
+    workspace: {
+      instanceId: 'inst-1',
+      path: '/repos/myrepo-wt/agent-x',
+      branchName: 'agent-x',
+      revision: 'r1',
+      stale: false,
+      repositoryId: '4f8f2c9e-4b1f-4b7e-9a1a-1c2d3e4f5a6b',
+    },
+    attention: { band: 'awaitingReview', needsYou: true, reasons: ['reviewReady'] },
+    fileStats: { added: 5, removed: 2 },
+    changedFileCount: 3,
+    sessionCommits: [{ revision: 'c1', revisionNumber: 2 }],
+    lastEventAt: 1000,
+  };
+
+  it('accepts a card with the required derived fields (session/intention optional)', () => {
+    // When: parsing a minimal card
+    const result = WorkspaceCardSchema.safeParse(validCard);
+
+    // Then: parsing succeeds
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a per-repository snapshot of cards', () => {
+    // When: parsing a snapshot
+    const result = WorkspaceModelSnapshotSchema.safeParse({
+      repositoryId: '4f8f2c9e-4b1f-4b7e-9a1a-1c2d3e4f5a6b',
+      cards: [validCard],
+    });
+
+    // Then: parsing succeeds
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a card with negative line stats', () => {
+    // When: parsing a card whose stats are negative
+    const result = WorkspaceCardSchema.safeParse({
+      ...validCard,
+      fileStats: { added: -1, removed: 0 },
+    });
 
     // Then: parsing fails
     expect(result.success).toBe(false);

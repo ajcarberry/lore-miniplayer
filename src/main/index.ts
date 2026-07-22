@@ -8,6 +8,8 @@ import { initializeLoreSdk, shutdownLoreSdk } from './services/lore-sdk';
 import { LoreRepositoryService } from './services/lore-repository';
 import { WorkspaceService } from './services/workspace-service';
 import { AgentObserverService } from './services/agent-observer';
+import { AgentTranscriptService } from './services/agent-transcript';
+import { WorkspaceModelService } from './services/workspace-model';
 import { DiffService } from './services/diff-service';
 import { LockService } from './services/lock-service';
 import { IPC_CHANNELS } from '../shared/schemas';
@@ -184,11 +186,29 @@ app.whenReady().then(async () => {
   const workspaceService = new WorkspaceService(log, repositoryService, loreRepositoryService);
   const diffService = new DiffService();
   const lockService = new LockService();
+
+  // Agent observability (hook listener) + transcript enrichment feed the
+  // workspace model (P9), which composes Lore signals and agent state into
+  // per-repo Mission Control snapshots and owns the manual "mark active"
+  // transition. Constructed before handler registration so markActive is
+  // wired; the model's snapshot delivery to the renderer is wired by the
+  // Mission Control window (P10).
+  agentObserverService = new AgentObserverService(log);
+  const transcriptService = new AgentTranscriptService(log);
+  const workspaceModel = new WorkspaceModelService(log, {
+    workspaces: workspaceService,
+    observer: agentObserverService,
+    transcript: transcriptService,
+    lore: loreRepositoryService,
+    diff: diffService,
+  });
+
   registerIpcHandlers(
     log,
     repositoryService,
     loreRepositoryService,
     workspaceService,
+    workspaceModel,
     diffService,
     lockService
   );
@@ -197,13 +217,10 @@ app.whenReady().then(async () => {
   await repositoryService.initialize();
   initializeLoreSdk();
 
-  // Agent observability: the localhost hook listener owns the port + a
-  // per-workspace token; provisioned workspaces POST Claude Code hook events
-  // to it. Start it and hand its config to WorkspaceService so injected hooks
-  // target the live listener. Session-state pushes are forwarded to the
+  // Start the hook listener and hand its config to WorkspaceService so injected
+  // hooks target the live listener. Session-state pushes are forwarded to the
   // renderer over the P2 push channel (payloads are Zod-validated in the
   // service before emit, mirroring the other push channels).
-  agentObserverService = new AgentObserverService(log);
   agentObserverService.on('push', payload => {
     mainWindow?.webContents.send(IPC_CHANNELS.agent.observability, payload);
   });

@@ -19,6 +19,8 @@ import type {
   WorkspaceListResponse,
   WorkspaceTeardownRequest,
   WorkspaceTeardownResponse,
+  WorkspaceMarkActiveRequest,
+  WorkspaceMarkActiveResponse,
   DiffRequest,
   DiffResponse,
   LockQueryRequest,
@@ -233,6 +235,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ): Promise<Result<WorkspaceTeardownResponse>> => {
       return ipcRenderer.invoke(IPC_CHANNELS.workspace.teardown, request) as Promise<
         Result<WorkspaceTeardownResponse>
+      >;
+    },
+    // Manual idle → awaiting-review transition (design 2a "mark active");
+    // owned by the workspace model in the main process.
+    markActive: async (
+      request: WorkspaceMarkActiveRequest
+    ): Promise<Result<WorkspaceMarkActiveResponse>> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.workspace.markActive, request) as Promise<
+        Result<WorkspaceMarkActiveResponse>
       >;
     },
   },

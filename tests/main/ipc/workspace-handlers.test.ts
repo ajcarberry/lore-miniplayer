@@ -20,12 +20,17 @@ import log from 'electron-log/main.js';
 import { registerWorkspaceHandlers } from '../../../src/main/ipc/workspace-handlers';
 import { IPC_CHANNELS } from '../../../src/shared/schemas';
 import type { WorkspaceService } from '../../../src/main/services/workspace-service';
+import type { WorkspaceModelService } from '../../../src/main/services/workspace-model';
 
 const mockWorkspaceService = {
   provision: jest.fn(),
   list: jest.fn(),
   teardown: jest.fn(),
 } as unknown as jest.Mocked<WorkspaceService>;
+
+const mockWorkspaceModel = {
+  markActive: jest.fn(),
+} as unknown as jest.Mocked<WorkspaceModelService>;
 
 function invoke(channel: string, ...args: unknown[]): unknown {
   const handler = registeredHandlers.get(channel);
@@ -38,7 +43,7 @@ function invoke(channel: string, ...args: unknown[]): unknown {
 const REPO_ID = '3b2f6f2e-4f9b-4a57-9d5c-2f6f2e4f9b4a';
 
 beforeAll(() => {
-  registerWorkspaceHandlers(log, mockWorkspaceService);
+  registerWorkspaceHandlers(log, mockWorkspaceService, mockWorkspaceModel);
 });
 
 beforeEach(() => {
@@ -46,11 +51,61 @@ beforeEach(() => {
 });
 
 describe('workspace handler registration', () => {
-  it('registers the three workspace channels', () => {
-    // Then: provision, list, and teardown are reachable
+  it('registers the four workspace channels', () => {
+    // Then: provision, list, teardown, and markActive are reachable
     expect(registeredHandlers.has(IPC_CHANNELS.workspace.provision)).toBe(true);
     expect(registeredHandlers.has(IPC_CHANNELS.workspace.list)).toBe(true);
     expect(registeredHandlers.has(IPC_CHANNELS.workspace.teardown)).toBe(true);
+    expect(registeredHandlers.has(IPC_CHANNELS.workspace.markActive)).toBe(true);
+  });
+});
+
+describe('workspace:markActive', () => {
+  const MARK_REPO_ID = '3b2f6f2e-4f9b-4a57-9d5c-2f6f2e4f9b4a';
+
+  it('forwards the workspace id to the model and wraps the workspace', async () => {
+    // Given: the model returns the updated workspace
+    const workspace = {
+      instanceId: 'inst-1',
+      path: '/repos/myrepo-wt/agent-x',
+      branchName: 'agent-x',
+      revision: 'r1',
+      stale: false,
+      repositoryId: MARK_REPO_ID,
+    };
+    mockWorkspaceModel.markActive.mockResolvedValue(workspace);
+
+    // When: marking active with a valid id
+    const result = await invoke(IPC_CHANNELS.workspace.markActive, { workspaceId: 'inst-1' });
+
+    // Then: the model is called and the workspace comes back wrapped
+    expect(mockWorkspaceModel.markActive).toHaveBeenCalledWith('inst-1');
+    expect(result).toEqual({ success: true, data: workspace });
+  });
+
+  it('rejects an empty workspace id without touching the model', async () => {
+    // When: marking active with an empty id
+    const result = (await invoke(IPC_CHANNELS.workspace.markActive, { workspaceId: '' })) as {
+      success: boolean;
+    };
+
+    // Then: validation fails before the model is reached
+    expect(result.success).toBe(false);
+    expect(mockWorkspaceModel.markActive).not.toHaveBeenCalled();
+  });
+
+  it('converts model failures into failure results', async () => {
+    // Given: the model throws for an unknown workspace
+    mockWorkspaceModel.markActive.mockRejectedValue(new Error('Unknown workspace: nope'));
+
+    // When: marking active
+    const result = (await invoke(IPC_CHANNELS.workspace.markActive, {
+      workspaceId: 'nope',
+    })) as { success: boolean; error?: string };
+
+    // Then: the error surfaces as a failure result
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Unknown workspace');
   });
 });
 

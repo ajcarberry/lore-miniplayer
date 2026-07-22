@@ -17,6 +17,8 @@ import type {
   WorkspaceListResponse,
   WorkspaceTeardownRequest,
   WorkspaceTeardownResponse,
+  WorkspaceMarkActiveRequest,
+  WorkspaceMarkActiveResponse,
   DiffRequest,
   DiffResponse,
   LockQueryRequest,
@@ -97,6 +99,9 @@ declare global {
         ) => Promise<Result<WorkspaceProvisionResponse>>;
         list: (request: WorkspaceListRequest) => Promise<Result<WorkspaceListResponse>>;
         teardown: (request: WorkspaceTeardownRequest) => Promise<Result<WorkspaceTeardownResponse>>;
+        markActive: (
+          request: WorkspaceMarkActiveRequest
+        ) => Promise<Result<WorkspaceMarkActiveResponse>>;
       };
       agent: {
         // Registers a listener for agent session-state updates pushed from

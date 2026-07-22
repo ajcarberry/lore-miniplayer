@@ -36,8 +36,8 @@ test.describe('Card anatomy', () => {
     await expect(window.getByText('Working Set')).toBeVisible();
     await expect(window.getByText('History', { exact: true })).toBeVisible();
 
-    // And: the footer's repositories/server/theme icons are visible
-    await expect(window.getByLabel('Repositories')).toBeVisible();
+    // And: the footer's workspaces/server/theme icons are visible
+    await expect(window.getByLabel('Workspaces')).toBeVisible();
     await expect(window.getByLabel('Server')).toBeVisible();
     await expect(window.getByLabel('Theme')).toBeVisible();
 
@@ -45,24 +45,24 @@ test.describe('Card anatomy', () => {
     removeTempUserDataDir(userDataDir);
   });
 
-  test('repository picker opens the Add modal, which closes on cancel', async () => {
+  test('workspace picker opens the Add modal, which closes on cancel', async () => {
     const { app: electronApp, userDataDir } = await launchApp();
     const window = await electronApp.firstWindow();
     await connectAndExpand(window);
 
-    // When: the footer's Repositories icon is clicked
-    await window.getByLabel('Repositories').click();
+    // When: the footer's Workspaces icon is clicked
+    await window.getByLabel('Workspaces').click();
 
-    // Then: the popover shows "Add repository…" and "Refresh" rows
-    const addRow = window.getByText('Add repository…');
+    // Then: the popover shows "Add workspace…" and "Refresh" rows
+    const addRow = window.getByText('Add workspace…');
     await expect(addRow).toBeVisible();
     await expect(window.getByText('Refresh', { exact: true })).toBeVisible();
 
-    // When: "Add repository…" is clicked
+    // When: "Add workspace…" is clicked
     await addRow.click();
 
-    // Then: the Add Repository modal opens
-    const modalTitle = window.getByText('Define Repository');
+    // Then: the Add Workspace modal opens
+    const modalTitle = window.getByText('Define Workspace');
     await expect(modalTitle).toBeVisible();
 
     // When: the modal is cancelled (Escape)

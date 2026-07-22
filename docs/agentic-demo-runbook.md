@@ -34,8 +34,8 @@ document is self-contained — no other doc is needed to run it.
    degradation instead (diff-only review, no intention panel), set it to
    `0` before launching and skip straight to the review step.
 
-Add the repository to the MiniPlayer first (footer's Repositories icon →
-"Add repository…") if it isn't there already — either clone-and-add or point
+Add the repository to the MiniPlayer first (footer's Workspaces icon →
+"Add workspace…") if it isn't there already — either clone-and-add or point
 at an existing local checkout. Confirm the card shows "On branch" before
 continuing.
 
@@ -48,15 +48,21 @@ mission's OBJ-2..5 evidence.
 ### 1. Provision two workspaces
 
 From the card's footer, click the target-shaped **Mission Control** icon (or
-the pill/card's attention chip, once one exists). In Mission Control, click
-**+ Provision workspace** twice, giving each a distinct branch name (e.g.
-`agent/changelog-summary`, `agent/util-refactor`). Confirm each.
+the pill/card's attention chip, once one exists). Mission Control already
+shows one **Idle** row — the anchor workspace, i.e. the checkout the card
+itself is on, marked **active** (since the workspace unification, Mission
+Control composes the anchor as a listed member, not just provisioned
+worktrees). Click **+ Provision workspace** twice, giving each a distinct
+branch name (e.g. `agent/changelog-summary`, `agent/util-refactor`). Confirm
+each.
 
 - **Observable:** each provision streams clone progress, then lands a new row
-  in the **Idle** band. Hovering a card's branch name reveals the worktree
-  path (a sibling `<repo>-wt/<branch>` directory). Check disk: each path
-  exists and contains a real Lore checkout plus `.claude/settings.local.json`
-  with an injected `http` hook pointing at `127.0.0.1:<observer port>`.
+  in the **Idle** band — three idle rows total once both land (the anchor,
+  still marked active, plus the two new workspaces). Hovering a card's
+  branch name reveals the worktree path (a sibling `<repo>-wt/<branch>`
+  directory). Check disk: each new path exists and contains a real Lore
+  checkout plus `.claude/settings.local.json` with an injected `http` hook
+  pointing at `127.0.0.1:<observer port>`.
 - **Evidences:** OBJ-2 (workspace lifecycle — provisioning, hooks installed).
 
 ### 2. Dispatch
@@ -158,7 +164,10 @@ checkbox and refuses to be staged until the conflict clears.
 ### 9. Close the workspace
 
 Back in Mission Control, click **✕** on workspace B's card (now idle again
-post-merge, or wherever it landed).
+post-merge, or wherever it landed). This is teardown — the destructive,
+guarded removal; **Forget** (the untrack-only alternative next to it) would
+instead stop tracking the workspace without touching its files, and needs no
+confirmation since nothing is destroyed.
 
 - **Observable:** a confirm modal states exactly what will be removed — the
   worktree directory and the local branch (archived) — and that the remote
@@ -166,7 +175,8 @@ post-merge, or wherever it landed).
   uncommitted/unpushed work, a red alert requires an explicit "force close"
   checkbox before the confirm button enables. Confirm.
 - **Observable (result):** the worktree directory is gone from disk; Mission
-  Control drops to one card (workspace A, if not also closed).
+  Control drops to two members (the anchor, always present, plus workspace A,
+  if not also closed).
 - **Evidences:** OBJ-2 (workspace lifecycle close), the destructive-operation
   confirmation gate (mission stakes rule — teardown deletes a directory and
   a branch).

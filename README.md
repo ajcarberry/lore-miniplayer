@@ -2,7 +2,7 @@
 
 **An unofficial desktop client for the Lore revision control system** ([disclaimer](#disclaimer))
 
-This is a minimal visual interface for managing Lore repositories. It provides basic repository management capabilities with a simple, user-friendly interface for teams adopting Lore.
+This is a minimal visual interface for managing Lore workspaces. It provides basic workspace management capabilities with a simple, user-friendly interface for teams adopting Lore.
 
 ## Quick Start
 
@@ -26,7 +26,7 @@ pnpm dist
 
 **Getting Started**
 - 🔌 **Connect** to any Lore server by entering its address
-- 📁 **Add repositories** by cloning from remote repos (with live clone progress) OR connecting to existing local folders
+- 📁 **Add workspaces** by cloning from remote repos (with live clone progress) OR connecting to existing local folders
 - 📂 **Manage multiple projects** in one interface
 
 **Daily Workflow**
@@ -51,17 +51,19 @@ pnpm dist
 - 🌈 **Per-repository accent colors** — each repository gets its own accent so you always know which one you're on
 
 **Agentic Development**
-- 🛰️ **Mission Control** — one window showing every workspace of the selected repository in attention order: awaiting review first, in progress with live agent task lists, idle minimized
+- 🛰️ **Mission Control** — one window showing every workspace of the selected repository, including the one currently open in the card, in attention order: awaiting review first, in progress with live agent task lists, idle minimized
+- 🔗 **Unified workspace registry** — the card's footer selector and Mission Control draw from the same registry, so a provisioned workspace is fully selectable from either surface
 - 🏗️ **Provision workspaces** — one click creates a branch in a fresh shared-store checkout, installs Claude Code observer hooks, and opens a terminal for the agent
 - 👁️ **Agent awareness** — the pill grows an attention chip that pulses with a count when agents are blocked or work awaits review, and stays quietly informative while they work
 - 🔍 **Review window** — three-pane review of any workspace: per-file diffs against any revision, the agent's prompt/task list/account beside them, stage/commit/push in place
 - 🔀 **Merge with conflict resolution** — merge a workspace branch into main with per-file accept-mine/accept-theirs, landing the result on the target branch
 - 🏷️ **Attributed collaboration** — pushes and file locks announce who did them by name; conflicted files are flagged directly in the working set
-- 🧹 **Close workspaces cleanly** — guarded teardown removes the directory and archives the branch, refusing when uncommitted or unpushed work would be lost
+- 🧹 **Close workspaces cleanly** — guarded teardown removes the directory and archives the branch, refusing when uncommitted or unpushed work would be lost; **forget** instead to stop tracking without touching any files
+- 🔄 **Manual refresh** — Mission Control's header refresh button re-syncs the workspace snapshot on demand, alongside its automatic triggers (agent pushes, notifications, provision/teardown, a 30s cadence)
 
 **Convenience Features**
-- 📂 **Open in file explorer** - quickly browse local repository files
-- 💻 **Open terminal** - start command line at repository location
+- 📂 **Open in file explorer** - quickly browse local workspace files
+- 💻 **Open terminal** - start command line at workspace location
 
 ## For Developers
 

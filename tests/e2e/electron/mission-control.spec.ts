@@ -22,6 +22,12 @@ import type { LaunchedApp } from './launch';
 // live server (P1 finding b — offline clone is blocked), so submitting the
 // provision form is out of reach in this environment. This suite instead
 // covers the cancel path, matching the packet's brief.
+//
+// Since the U3 unification, Mission Control composes the anchor workspace
+// (the card-view checkout itself) as a listed member alongside any
+// provisioned worktrees, so a repository with zero provisioned worktrees is
+// NOT the empty "no workspaces" state — it shows the anchor as the sole idle
+// member, marked active.
 
 async function connectAndExpand(window: Page): Promise<void> {
   await window.getByPlaceholder('lores://lore.example.com').fill('lore.example.com');
@@ -44,9 +50,9 @@ async function addExistingRepository(
     })) as typeof dialog.showOpenDialog;
   }, repoDir);
 
-  await window.getByLabel('Repositories').click();
-  await window.getByText('Add repository…').click();
-  await expect(window.getByText('Define Repository')).toBeVisible();
+  await window.getByLabel('Workspaces').click();
+  await window.getByText('Add workspace…').click();
+  await expect(window.getByText('Define Workspace')).toBeVisible();
 
   await window.getByLabel('Select base directory').click();
   // Recognized as an existing Lore repo (the `.lore/` marker P1 bootstrapped),
@@ -54,8 +60,8 @@ async function addExistingRepository(
   // skipped entirely.
   await expect(window.getByText('Selected directory contains a Lore repository')).toBeVisible();
 
-  await window.getByRole('button', { name: 'Add Existing Repository' }).click();
-  await expect(window.getByText('Define Repository')).not.toBeVisible();
+  await window.getByRole('button', { name: 'Add Existing Workspace' }).click();
+  await expect(window.getByText('Define Workspace')).not.toBeVisible();
 }
 
 test.describe('Mission Control (offline repository, no live server)', () => {
@@ -75,7 +81,7 @@ test.describe('Mission Control (offline repository, no live server)', () => {
     removeTempUserDataDir(userDataDir);
   });
 
-  test('opens from the card footer icon with empty bands, and the provision modal validates input on the cancel path', async () => {
+  test('opens from the card footer icon showing the anchor as the sole idle member, and the provision modal validates input on the cancel path', async () => {
     const repoDir = createOfflineLoreRepo();
     const { app: electronApp, userDataDir } = await launchApp();
     const window = await electronApp.firstWindow();
@@ -94,9 +100,23 @@ test.describe('Mission Control (offline repository, no live server)', () => {
     ]);
 
     await expect(mcWindow.getByText('Mission Control')).toBeVisible();
-    // No workspaces were ever provisioned against this repo (provisioning
-    // needs a live server, P1 finding b), so all three bands are empty.
-    await expect(mcWindow.getByText('No workspaces in this repository yet.')).toBeVisible();
+    // No workspace was ever provisioned against this repo (provisioning needs
+    // a live server, P1 finding b) — but since the U3 unification, Mission
+    // Control composes the anchor (the card-view checkout itself) as a listed
+    // member alongside any provisioned worktrees. With zero provisioned
+    // worktrees, the anchor is the sole member: one idle row, marked active,
+    // not the old "no workspaces" empty state (that copy is now only reached
+    // when the anchor itself fails to resolve, e.g. a deleted repository).
+    await expect(mcWindow.getByText('1 workspace · this repo only')).toBeVisible();
+    await expect(mcWindow.getByText('Idle · 1')).toBeVisible();
+    const idleRow = mcWindow.getByTestId('idle-workspace-row');
+    await expect(idleRow).toBeVisible();
+    await expect(idleRow.getByText('active', { exact: true })).toBeVisible();
+    // The anchor's ✕ and Forget are disabled in place (design amendment) —
+    // it is the workspace currently open in the card, so neither teardown nor
+    // forget applies to it from Mission Control.
+    await expect(idleRow.getByLabel(/^Forget workspace /)).toBeDisabled();
+    await expect(idleRow.getByLabel(/^Close workspace /)).toBeDisabled();
 
     // Provision modal: validates the branch name field and offers a cancel
     // path — no real clone is attempted (P1 finding b: shared-store clone
@@ -124,8 +144,8 @@ test.describe('Mission Control (offline repository, no live server)', () => {
     // Cancel path: closes without provisioning.
     await mcWindow.getByRole('button', { name: 'Cancel' }).click();
     await expect(provisionDialog).not.toBeVisible();
-    // Still no workspaces — cancelling never called the provision IPC.
-    await expect(mcWindow.getByText('No workspaces in this repository yet.')).toBeVisible();
+    // Still just the anchor — cancelling never called the provision IPC.
+    await expect(mcWindow.getByText('1 workspace · this repo only')).toBeVisible();
 
     await mcWindow.close();
     await electronApp.close();

@@ -89,7 +89,7 @@ describe('WorkspaceModelService freshness against an external process (B2)', () 
     await setupRepo(repo);
 
     const loreSvc = new LoreRepositoryService();
-    const diff = new DiffService();
+    const diff = new DiffService(loreSvc);
     // The anchor (card-view repo) is resolved live from the SDK via
     // resolveAnchorWorkspace (listBranches / getCurrentRevision); only the
     // registry record it hangs off is stubbed (registry identity is not the

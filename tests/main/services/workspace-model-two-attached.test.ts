@@ -207,7 +207,7 @@ describe('WorkspaceModel with two attached siblings of one Lore repo', () => {
       }) as unknown as WorkspaceModelDeps['observer'],
       transcript: { extract: jest.fn(async () => ({ tasks: [], commentary: [] })) },
       lore: modelLore as unknown as WorkspaceModelDeps['lore'],
-      diff: { branchVsParent: jest.fn(async () => []) },
+      diff: { workspaceDirtyStats: jest.fn(async () => []) },
       repository: repositoryService,
     };
     model = new WorkspaceModelService(mockLog, deps);

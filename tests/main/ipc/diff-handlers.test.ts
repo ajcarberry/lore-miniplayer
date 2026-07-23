@@ -23,7 +23,7 @@ import type { DiffService } from '../../../src/main/services/diff-service';
 
 const mockDiffService = {
   compare: jest.fn(),
-  branchVsParent: jest.fn(),
+  workspaceDirtyStats: jest.fn(),
 } as unknown as jest.Mocked<DiffService>;
 
 function invoke(channel: string, ...args: unknown[]): unknown {

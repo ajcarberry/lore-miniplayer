@@ -163,7 +163,7 @@ export interface WorkspaceModelDeps {
     off(event: 'notification', listener: () => void): unknown;
   };
   readonly diff: {
-    branchVsParent(repositoryPath: string, branchName: string): Promise<FileDiffResult[]>;
+    workspaceDirtyStats(repositoryPath: string): Promise<FileDiffResult[]>;
   };
   // Resolves the anchor workspace's registry record (packet U3): the
   // card-view repo the pill/card currently displays, surfaced as a member.
@@ -329,11 +329,11 @@ export class WorkspaceModelService extends EventEmitter {
     const record = this.sessionFor(workspace.path, sessions);
     const markedActive = this.resolveMark(workspace, record);
 
-    const [status, divergence, sessionCommits, fileDiffs, intention] = await Promise.all([
+    const [status, divergence, sessionCommits, dirtyStats, intention] = await Promise.all([
       this.safeStatus(workspace.path),
       this.safeDivergence(workspace.path, workspace.branchName),
       this.safeSessionCommits(workspace.path, workspace.branchName),
-      this.safeBranchDiff(workspace.path, workspace.branchName),
+      this.safeDirtyStats(workspace.path),
       this.safeIntention(record),
     ]);
 
@@ -354,8 +354,8 @@ export class WorkspaceModelService extends EventEmitter {
       workspace,
       attention,
       isActive,
-      fileStats: aggregateStats(fileDiffs),
-      changedFileCount: fileDiffs.length,
+      fileStats: aggregateStats(dirtyStats),
+      changedFileCount: dirtyStats.length,
       sessionCommits,
       lastEventAt,
       ...(session ? { session } : {}),
@@ -443,14 +443,11 @@ export class WorkspaceModelService extends EventEmitter {
     }
   }
 
-  private async safeBranchDiff(
-    workspacePath: string,
-    branchName: string
-  ): Promise<FileDiffResult[]> {
+  private async safeDirtyStats(workspacePath: string): Promise<FileDiffResult[]> {
     try {
-      return await this.deps.diff.branchVsParent(workspacePath, branchName);
+      return await this.deps.diff.workspaceDirtyStats(workspacePath);
     } catch (error) {
-      this.logDegrade('branchDiff', workspacePath, error);
+      this.logDegrade('dirtyStats', workspacePath, error);
       return [];
     }
   }

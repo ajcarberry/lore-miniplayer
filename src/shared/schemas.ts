@@ -353,8 +353,10 @@ export const ReviewOpenRequestSchema = z.object({
 // Mission Control's per-workspace card (design 2a): the workspace, its
 // derived attention (band + reasons), the live agent session (when observed),
 // the transcript-derived intention (when enriched), aggregate +/- line stats
-// and changed-file count against the branch's parent, and the session commits
-// on the branch since provisioning (the branch's own revisions, parent
+// and changed-file count over the workspace's DIRTY files (what
+// `lore status --scan` identifies — uncommitted working-set changes; committed
+// work is represented separately by the session commits), and the session
+// commits on the branch since provisioning (the branch's own revisions, parent
 // lineage excluded). `lastEventAt` drives recent-ordering within a band.
 // `isActive` marks the one card (at most) that is the anchor workspace — the
 // card-view repository currently open in the pill/card, surfaced as a Mission

@@ -9,6 +9,7 @@ import type {
   FileDiffAction,
   FileDiffResult,
   LineStats,
+  LoreFileStatusGroup,
 } from '../../shared/types';
 import { DiffRequestSchema } from '../../shared/schemas';
 import { isUnknownHash } from './branch-graph';
@@ -73,14 +74,16 @@ export function computeLineStats(patch: string): LineStats {
   return { added, removed };
 }
 
-// No SDK primitive flags binary content directly (unverified against a live
-// binary file — P1 did not probe this). `fileDiff` is documented to return
-// unified-diff text (P1 finding a); a real content change always produces
-// non-empty patch text, so an empty patch on a change that isn't a pure
-// rename (MOVE with unchanged content, which legitimately diffs to nothing)
-// is treated as binary content that couldn't be diffed as text.
+// The SDK emits a literal `Binary files differ` sentinel as the patch for a
+// binary content change (probed against a live binary file — P1 Findings (i)),
+// NOT unified-diff text and NOT an empty patch. That sentinel is the primary
+// binary signal. The empty-patch guard is retained as a secondary heuristic
+// for a non-move change that diffs to nothing (a pure rename, MOVE with
+// unchanged content, legitimately diffs to empty and is NOT binary).
+const BINARY_DIFF_SENTINEL = 'Binary files differ';
+
 function isBinaryChange(action: FileDiffAction, patch: string): boolean {
-  return patch.length === 0 && action !== 'moved';
+  return patch.startsWith(BINARY_DIFF_SENTINEL) || (patch.length === 0 && action !== 'moved');
 }
 
 // Truncates a patch over the line cap, keeping only its head.
@@ -106,9 +109,20 @@ function toFileDiffResult(data: {
   return { path: data.path, action, patch, binary: false, truncated, lineStats };
 }
 
+// The status + revision surface `workspaceDirtyStats` reuses (LoreRepository
+// service provides both). Kept a narrow structural interface so tests inject a
+// lightweight fake and the workspace-dirty path never re-parses repository
+// status itself.
+export interface DiffRepositorySource {
+  getFileStatus(repositoryPath: string): Promise<LoreFileStatusGroup>;
+  getCurrentRevision(repositoryPath: string): Promise<string>;
+}
+
 // Diffs a repository. Follows the fluent call + event.clone() + LoreError
 // wrapping pattern established by lore-repository.ts and branch-graph.ts.
 export class DiffService {
+  constructor(private readonly repository: DiffRepositorySource) {}
+
   private toOperationError(context: string, error: unknown): DiffOperationError {
     if (error instanceof DiffOperationError) {
       return error;
@@ -209,52 +223,68 @@ export class DiffService {
     return this.diffRevisions(repositoryPath, sourceRevision, targetRevision, paths);
   }
 
-  // Workspace change overview (Mission Control card file stats, P9): the files
-  // this workspace has changed relative to where its branch forked from its
-  // parent, INCLUDING uncommitted working-tree edits. Diffs the fork point
-  // (branchInfo.branchPoint) against the WORKING TREE (empty target — P1
-  // finding a/h) with no path filter, so both committed branch commits and
-  // uncommitted edits count, and parent commits made AFTER the fork never leak
-  // in as reversed deletions (the earlier parent-tip -> branch-tip approach
-  // both zeroed uncommitted-only workspaces and mis-signed post-fork parent
-  // changes — P1 finding h). A root branch (no fork point, e.g. main) falls
-  // back to its own tip, surfacing working-tree-only changes. Returns [] when
-  // no base resolves or nothing has changed.
-  async branchVsParent(repositoryPath: string, branchName: string): Promise<FileDiffResult[]> {
-    const base = await this.resolveWorkspaceBase(repositoryPath, branchName);
-    if (!base) {
+  // Workspace change overview (Mission Control card file stats, P9): exactly the
+  // DIRTY files — what `lore status --scan` identifies (untracked / unstaged /
+  // staged), with committed-since-fork work deliberately EXCLUDED (that is
+  // represented separately by the card's "Session commits"). The file LIST is
+  // the status scan's dirty set (authoritative for the count — one entry per
+  // dirty file, so changedFileCount equals the scan's dirty count exactly); each
+  // file's lineStats come from a fileDiff of the current revision against the
+  // WORKING TREE (empty target — P1 Findings (a)/(i)) filtered to the dirty
+  // paths. Edge cases (P1 Findings (i)): an untracked add yields an all-plus
+  // patch (action ADD), a delete yields an all-minus patch (action DELETE, no
+  // error), a binary change yields the `Binary files differ` sentinel (flagged
+  // binary, excluded from line counts but still one file). A dirty file the
+  // diff does not enumerate (e.g. staged but the working tree matches the
+  // current revision) still counts, with zero line stats. Returns [] when the
+  // working tree is clean.
+  async workspaceDirtyStats(repositoryPath: string): Promise<FileDiffResult[]> {
+    const status = await this.repository.getFileStatus(repositoryPath);
+    const dirtyPaths = dedupePaths([...status.untracked, ...status.unstaged, ...status.staged]);
+    if (dirtyPaths.length === 0) {
       return [];
     }
-    return this.diffRevisions(repositoryPath, base, '');
-  }
-
-  // The revision the card diff is measured FROM: the branch's fork point
-  // (branchInfo.branchPoint) when it has a parent, else the branch's own local
-  // tip for a root branch (yielding working-tree-only changes). Null when
-  // neither is a known (non-zero) revision.
-  private async resolveWorkspaceBase(
-    repositoryPath: string,
-    branchName: string
-  ): Promise<string | null> {
-    const infos = await this.collect(
-      lore.branchInfo({ repositoryPath }, { branch: branchName }),
-      LoreEventTag.BRANCH_INFO,
-      (data: LoreEventDataOf<LoreEventTag.BRANCH_INFO>) => ({
-        branchPoint: data.branchPoint,
-        latest: data.latest,
-      }),
-      `Failed to resolve the base of branch '${branchName}'`
+    const currentRevision = await this.repository.getCurrentRevision(repositoryPath);
+    const byPath = new Map<string, FileDiffResult>();
+    if (currentRevision && !isUnknownHash(currentRevision)) {
+      const diffs = await this.diffRevisions(repositoryPath, currentRevision, '', dirtyPaths);
+      for (const diff of diffs) {
+        byPath.set(diff.path, diff);
+      }
+    }
+    const untracked = new Set(status.untracked.map(file => file.path));
+    return dirtyPaths.map(
+      dirtyPath =>
+        byPath.get(dirtyPath) ?? cleanWorkingTreeEntry(dirtyPath, untracked.has(dirtyPath))
     );
-    const info = infos[infos.length - 1];
-    if (!info) {
-      return null;
-    }
-    if (!isUnknownHash(info.branchPoint)) {
-      return info.branchPoint;
-    }
-    if (!isUnknownHash(info.latest)) {
-      return info.latest;
-    }
-    return null;
   }
+}
+
+// De-duplicates status entries to distinct paths (a path can carry both a
+// staged and a dirty flag — count it once, P1 Findings (i) edge (c)), keeping
+// first-seen order.
+function dedupePaths(files: ReadonlyArray<{ path: string }>): string[] {
+  const seen = new Set<string>();
+  const paths: string[] = [];
+  for (const file of files) {
+    if (!seen.has(file.path)) {
+      seen.add(file.path);
+      paths.push(file.path);
+    }
+  }
+  return paths;
+}
+
+// A dirty file the current-revision -> working-tree diff did not enumerate
+// (its working tree matches the current revision, e.g. a staged change later
+// reverted on disk): still counted as a changed file, with no line delta in
+// this diff direction.
+function cleanWorkingTreeEntry(path: string, isUntracked: boolean): FileDiffResult {
+  return {
+    path,
+    action: isUntracked ? 'added' : 'modified',
+    binary: false,
+    truncated: false,
+    lineStats: { added: 0, removed: 0 },
+  };
 }

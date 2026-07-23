@@ -193,7 +193,7 @@ app.whenReady().then(async () => {
   // Owns workspace provisioning/teardown; P7 later injects the observer hook
   // listener's port + token via workspaceService.setObserverConfig(...).
   const workspaceService = new WorkspaceService(log, repositoryService, loreRepositoryService);
-  const diffService = new DiffService();
+  const diffService = new DiffService(loreRepositoryService);
   // Owns the review window's merge workflow (design 2c): start/resolve/abort/
   // complete a branch→main merge, one in flight per repository.
   const mergeService = new MergeService(log, loreRepositoryService);

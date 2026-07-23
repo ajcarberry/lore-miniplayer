@@ -151,7 +151,7 @@ interface Harness {
   repository: { getById: jest.Mock<Promise<Repository | null>, [string]> };
   listWorkspaces: jest.Mock<Promise<Workspace[]>, [string]>;
   extract: jest.Mock<Promise<AgentIntention>, [string]>;
-  branchVsParent: jest.Mock<Promise<FileDiffResult[]>, [string, string]>;
+  workspaceDirtyStats: jest.Mock<Promise<FileDiffResult[]>, [string]>;
 }
 
 function makeHarness(workspaces: Workspace[], options: { refreshMs?: number } = {}): Harness {
@@ -162,7 +162,7 @@ function makeHarness(workspaces: Workspace[], options: { refreshMs?: number } = 
     tasks: [],
     commentary: [],
   }));
-  const branchVsParent = jest.fn<Promise<FileDiffResult[]>, [string, string]>(async () => []);
+  const workspaceDirtyStats = jest.fn<Promise<FileDiffResult[]>, [string]>(async () => []);
   // Defaults to "no anchor record" — every existing snapshot test stays
   // exactly as it was (no anchor member) unless a test configures it.
   const repository = {
@@ -174,7 +174,7 @@ function makeHarness(workspaces: Workspace[], options: { refreshMs?: number } = 
     observer: observer as unknown as WorkspaceModelDeps['observer'],
     transcript: { extract },
     lore: lore as unknown as WorkspaceModelDeps['lore'],
-    diff: { branchVsParent },
+    diff: { workspaceDirtyStats },
     repository,
   };
 
@@ -189,7 +189,7 @@ function makeHarness(workspaces: Workspace[], options: { refreshMs?: number } = 
     repository,
     listWorkspaces: workspacesFake.list,
     extract,
-    branchVsParent,
+    workspaceDirtyStats,
   };
 }
 
@@ -336,9 +336,9 @@ describe('WorkspaceModelService.snapshot — card data', () => {
     expect(card.intention?.prompt).toBe('do the thing');
   });
 
-  it('aggregates +/- line stats and counts changed files from the branch diff', async () => {
-    const { model, branchVsParent } = makeHarness([workspace()]);
-    branchVsParent.mockResolvedValueOnce([
+  it('aggregates +/- line stats and counts changed files from the dirty-file stats', async () => {
+    const { model, workspaceDirtyStats } = makeHarness([workspace()]);
+    workspaceDirtyStats.mockResolvedValueOnce([
       {
         path: 'a.ts',
         action: 'modified',
@@ -453,9 +453,9 @@ describe('WorkspaceModelService.snapshot — card data', () => {
   });
 
   it('degrades a failing branch diff and transcript to empty card data', async () => {
-    const { model, observer, branchVsParent, extract } = makeHarness([workspace()]);
+    const { model, observer, workspaceDirtyStats, extract } = makeHarness([workspace()]);
     observer.sessions = [sessionRecord({ status: 'stopped', transcriptPath: '/t/s.jsonl' })];
-    branchVsParent.mockRejectedValueOnce(new Error('diff failed'));
+    workspaceDirtyStats.mockRejectedValueOnce(new Error('diff failed'));
     extract.mockRejectedValueOnce(new Error('transcript unreadable'));
 
     const card = onlyCard(await model.snapshot(REPO_ID));

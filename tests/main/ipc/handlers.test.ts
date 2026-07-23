@@ -81,7 +81,7 @@ const mockWorkspaceModel = {
 
 const mockDiffService = {
   compare: jest.fn(),
-  branchVsParent: jest.fn(),
+  workspaceDirtyStats: jest.fn(),
 } as unknown as jest.Mocked<DiffService>;
 
 const mockMergeService = {

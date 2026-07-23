@@ -33,8 +33,15 @@ import {
   PATCH_TRUNCATION_LINE_CAP,
   computeLineStats,
 } from '../../../src/main/services/diff-service';
+import type { DiffRepositorySource } from '../../../src/main/services/diff-service';
+import type { LoreFileStatus, LoreFileStatusGroup } from '../../../src/shared/types';
 
 const mockLore = lore as jest.Mocked<typeof lore>;
+
+// A status entry as the LoreRepository surface produces it (repo-relative path).
+function statusFile(path: string, overrides: Partial<LoreFileStatus> = {}): LoreFileStatus {
+  return { path, isUntracked: false, isStaged: false, conflict: false, ...overrides };
+}
 
 interface MockEvent {
   tag: number;
@@ -76,10 +83,19 @@ function fileDiffEvent(data: { path: string; patch: string; action: LoreFileActi
 
 describe('DiffService', () => {
   let service: DiffService;
+  let repository: jest.Mocked<DiffRepositorySource>;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new DiffService();
+    repository = {
+      getFileStatus: jest.fn<Promise<LoreFileStatusGroup>, [string]>(async () => ({
+        untracked: [],
+        unstaged: [],
+        staged: [],
+      })),
+      getCurrentRevision: jest.fn<Promise<string>, [string]>(async () => 'cur-rev'),
+    };
+    service = new DiffService(repository);
   });
 
   describe('compare — CompareTarget resolution', () => {
@@ -315,6 +331,34 @@ describe('DiffService', () => {
       ]);
     });
 
+    it('flags the SDK `Binary files differ` sentinel patch as binary (P1 Findings i)', async () => {
+      // Given: fileDiff emits the literal binary sentinel (probed against a
+      // live binary file — NOT empty patch, NOT unified-diff text)
+      mockLore.fileDiff.mockReturnValue(
+        fluentMock({
+          events: [
+            fileDiffEvent({
+              path: 'logo.png',
+              patch: 'Binary files differ\n',
+              action: LoreFileAction.KEEP,
+            }),
+          ],
+        }) as never
+      );
+
+      // When: comparing
+      const result = await service.compare({
+        repositoryPath: '/repo',
+        source: { kind: 'revision', revision: 'r1' },
+        target: { kind: 'workingTree' },
+      });
+
+      // Then: the file is flagged binary with no patch or lineStats
+      expect(result).toEqual([
+        { path: 'logo.png', action: 'modified', binary: true, truncated: false },
+      ]);
+    });
+
     it('does not flag a pure rename (no content change) as binary', async () => {
       // Given: a moved file with an empty patch (path changed, content did not)
       mockLore.fileDiff.mockReturnValue(
@@ -467,210 +511,226 @@ describe('DiffService', () => {
     });
   });
 
-  describe('branchVsParent', () => {
-    // Given: 'feature/x' forked from its parent at 'fork-rev' and carries a
-    // local tip 'feature-tip'. (P1 Findings (h): branchInfo.branchPoint is the
-    // fork point — the revision on the parent where the branch was created.)
-    function forkedBranchInfo(): void {
-      mockLore.branchInfo.mockReturnValue(
-        fluentMock({
-          events: [
-            {
-              tag: LoreEventTag.BRANCH_INFO,
-              data: { parent: 'main-id', branchPoint: 'fork-rev', latest: 'feature-tip' },
-            },
-          ],
-        }) as never
-      );
+  describe('workspaceDirtyStats', () => {
+    // The dirty set the card stats measure: exactly what `lore status --scan`
+    // reports (untracked / unstaged / staged), with per-file line stats from a
+    // current-revision -> working-tree fileDiff (P1 Findings (i)).
+    function dirtyStatus(): LoreFileStatusGroup {
+      return {
+        untracked: [statusFile('add.txt', { isUntracked: true, isStaged: true })],
+        unstaged: [statusFile('mod.txt'), statusFile('del.txt'), statusFile('bin.png')],
+        staged: [statusFile('staged.txt', { isStaged: true })],
+      };
     }
 
-    it('diffs the fork point against the WORKING TREE, counting committed + uncommitted changes (P1 h)', async () => {
-      // Given: a forked branch, and fileDiff (fork point -> working tree, no
-      // path filter) streams every changed file — a committed+uncommitted
-      // modify (a.txt), a committed delete (b.txt), a committed add (c.txt),
-      // and an UNCOMMITTED-only add (d.txt). Mirrors the probe PROPOSED truth.
-      forkedBranchInfo();
+    it('builds one entry per dirty file, line stats from the current-revision -> working-tree diff (P1 i a/b/c/d)', async () => {
+      // Given: the status scan reports five dirty files (an untracked add, a
+      // modify, a delete, a binary change, and a staged modify), and fileDiff
+      // (current revision -> working tree) streams the probe-verified patches:
+      // an add is all-plus (action ADD), a delete is all-minus (action DELETE,
+      // no error), a binary change is the `Binary files differ` sentinel.
+      repository.getFileStatus.mockResolvedValueOnce(dirtyStatus());
       mockLore.fileDiff.mockReturnValue(
         fluentMock({
           events: [
             fileDiffEvent({
-              path: 'a.txt',
-              patch: '--- a.txt@1\n+++ a.txt\n@@ -3,0 +4,2 @@\n+delta\n+echo\n',
+              path: 'add.txt',
+              patch: '--- /dev/null\n+++ add.txt\n@@ -0,0 +1,3 @@\n+new-1\n+new-2\n+new-3\n',
+              action: LoreFileAction.ADD,
+            }),
+            fileDiffEvent({
+              path: 'mod.txt',
+              patch: '--- mod.txt@1\n+++ mod.txt\n@@ -2 +2 @@\n-bravo\n+BRAVO-EDIT\n@@ -3,0 +4 @@\n+DELTA\n',
               action: LoreFileAction.KEEP,
             }),
             fileDiffEvent({
-              path: 'b.txt',
-              patch: '--- b.txt@1\n+++ /dev/null\n@@ -1 +0,0 @@\n-to-be-deleted\n',
+              path: 'del.txt',
+              patch: '--- del.txt@1\n+++ /dev/null\n@@ -1,3 +0,0 @@\n-one\n-two\n-three\n',
               action: LoreFileAction.DELETE,
             }),
+            fileDiffEvent({ path: 'bin.png', patch: 'Binary files differ\n', action: LoreFileAction.KEEP }),
             fileDiffEvent({
-              path: 'c.txt',
-              patch: '--- /dev/null\n+++ c.txt\n@@ -0,0 +1,2 @@\n+new1\n+new2\n',
-              action: LoreFileAction.ADD,
-            }),
-            fileDiffEvent({
-              path: 'd.txt',
-              patch: '--- /dev/null\n+++ d.txt\n@@ -0,0 +1 @@\n+uncommitted\n',
-              action: LoreFileAction.ADD,
+              path: 'staged.txt',
+              patch: '--- staged.txt@1\n+++ staged.txt\n@@ -1,0 +2 @@\n+STAGED-EDIT\n',
+              action: LoreFileAction.KEEP,
             }),
           ],
         }) as never
       );
 
-      // When: computing the workspace's change overview
-      const result = await service.branchVsParent('/repo', 'feature/x');
+      // When: computing the workspace's dirty-file stats
+      const result = await service.workspaceDirtyStats('/repo');
 
-      // Then: fileDiff is called fork-point -> working tree (empty target),
-      // with NO paths filter (every changed file, incl. uncommitted-only ones)
-      expect(mockLore.branchInfo).toHaveBeenCalledWith(
-        { repositoryPath: '/repo' },
-        { branch: 'feature/x' }
-      );
+      // Then: the status scan drove the file list, and the diff was taken from
+      // the current revision to the working tree (empty target), filtered to
+      // the dirty paths (absolutized against the repo — B1).
+      expect(repository.getFileStatus).toHaveBeenCalledWith('/repo');
+      expect(repository.getCurrentRevision).toHaveBeenCalledWith('/repo');
       const [, args] = mockLore.fileDiff.mock.calls[0] as [unknown, Record<string, unknown>];
-      expect(args).toEqual({ sourceRevision: 'fork-rev', targetRevision: '' });
-      expect('paths' in args).toBe(false);
-      // branchDiff is no longer part of the card-stats path
+      expect(args).toEqual({
+        sourceRevision: 'cur-rev',
+        targetRevision: '',
+        paths: ['/repo/add.txt', '/repo/mod.txt', '/repo/del.txt', '/repo/bin.png', '/repo/staged.txt'],
+      });
+      // branchInfo/branchDiff are no longer part of the card-stats path.
+      expect(mockLore.branchInfo).not.toHaveBeenCalled();
       expect(mockLore.branchDiff).not.toHaveBeenCalled();
 
-      // Each file's action + signed lineStats match a source->target
-      // (fork-point -> working-tree) diff: adds are '+', deletes are '-'.
+      // Exactly one entry per dirty file (count == status scan's dirty count),
+      // with signed line stats; the binary change is flagged and carries no
+      // line stats (excluded from counts, still a file).
       expect(result).toEqual([
         {
-          path: 'a.txt',
+          path: 'add.txt',
+          action: 'added',
+          patch: '--- /dev/null\n+++ add.txt\n@@ -0,0 +1,3 @@\n+new-1\n+new-2\n+new-3\n',
+          binary: false,
+          truncated: false,
+          lineStats: { added: 3, removed: 0 },
+        },
+        {
+          path: 'mod.txt',
           action: 'modified',
-          patch: '--- a.txt@1\n+++ a.txt\n@@ -3,0 +4,2 @@\n+delta\n+echo\n',
+          patch: '--- mod.txt@1\n+++ mod.txt\n@@ -2 +2 @@\n-bravo\n+BRAVO-EDIT\n@@ -3,0 +4 @@\n+DELTA\n',
           binary: false,
           truncated: false,
-          lineStats: { added: 2, removed: 0 },
+          lineStats: { added: 2, removed: 1 },
         },
         {
-          path: 'b.txt',
+          path: 'del.txt',
           action: 'deleted',
-          patch: '--- b.txt@1\n+++ /dev/null\n@@ -1 +0,0 @@\n-to-be-deleted\n',
+          patch: '--- del.txt@1\n+++ /dev/null\n@@ -1,3 +0,0 @@\n-one\n-two\n-three\n',
           binary: false,
           truncated: false,
-          lineStats: { added: 0, removed: 1 },
+          lineStats: { added: 0, removed: 3 },
         },
+        { path: 'bin.png', action: 'modified', binary: true, truncated: false },
         {
-          path: 'c.txt',
-          action: 'added',
-          patch: '--- /dev/null\n+++ c.txt\n@@ -0,0 +1,2 @@\n+new1\n+new2\n',
-          binary: false,
-          truncated: false,
-          lineStats: { added: 2, removed: 0 },
-        },
-        {
-          path: 'd.txt',
-          action: 'added',
-          patch: '--- /dev/null\n+++ d.txt\n@@ -0,0 +1 @@\n+uncommitted\n',
+          path: 'staged.txt',
+          action: 'modified',
+          patch: '--- staged.txt@1\n+++ staged.txt\n@@ -1,0 +2 @@\n+STAGED-EDIT\n',
           binary: false,
           truncated: false,
           lineStats: { added: 1, removed: 0 },
         },
       ]);
+      expect(result).toHaveLength(5);
     });
 
-    it('surfaces an uncommitted-only workspace as non-zero (no committed commits beyond the fork)', async () => {
-      // Given: a forked branch with nothing committed beyond the fork, but an
-      // uncommitted new file in the working tree
-      forkedBranchInfo();
+    it('returns [] without resolving a revision or diffing when the working tree is clean', async () => {
+      // Given: the status scan reports nothing dirty (the beforeEach default)
+      // When: computing the stats
+      const result = await service.workspaceDirtyStats('/repo');
+
+      // Then: no revision lookup, no diff, empty result
+      expect(result).toEqual([]);
+      expect(repository.getCurrentRevision).not.toHaveBeenCalled();
+      expect(mockLore.fileDiff).not.toHaveBeenCalled();
+    });
+
+    it('de-duplicates a path carrying both staged and unstaged flags, counting it once (P1 i c)', async () => {
+      // Given: the same path appears in more than one status group
+      repository.getFileStatus.mockResolvedValueOnce({
+        untracked: [],
+        unstaged: [statusFile('dup.txt')],
+        staged: [statusFile('dup.txt', { isStaged: true })],
+      });
       mockLore.fileDiff.mockReturnValue(
         fluentMock({
           events: [
             fileDiffEvent({
-              path: 'wip.txt',
-              patch: '--- /dev/null\n+++ wip.txt\n@@ -0,0 +1 @@\n+draft\n',
-              action: LoreFileAction.ADD,
-            }),
-          ],
-        }) as never
-      );
-
-      // When: computing the overview
-      const result = await service.branchVsParent('/repo', 'feature/x');
-
-      // Then: the uncommitted add is counted (not an all-zero card)
-      expect(result).toHaveLength(1);
-      expect(result[0]).toMatchObject({ path: 'wip.txt', action: 'added' });
-      expect(result[0]?.lineStats).toEqual({ added: 1, removed: 0 });
-    });
-
-    it('falls back to the branch own tip for a root branch, showing working-tree-only changes', async () => {
-      // Given: main is a root branch — no fork point (all-zero branchPoint) —
-      // but has an uncommitted working-tree edit; its own tip is the base
-      mockLore.branchInfo.mockReturnValue(
-        fluentMock({
-          events: [
-            {
-              tag: LoreEventTag.BRANCH_INFO,
-              data: {
-                parent: '0000000000000000000000000000000000000000',
-                branchPoint: '0000000000000000000000000000000000000000',
-                latest: 'main-tip',
-              },
-            },
-          ],
-        }) as never
-      );
-      mockLore.fileDiff.mockReturnValue(
-        fluentMock({
-          events: [
-            fileDiffEvent({
-              path: 'a.txt',
-              patch: '--- a.txt@2\n+++ a.txt\n@@ -4,0 +5 @@\n+echo\n',
+              path: 'dup.txt',
+              patch: '--- dup.txt@1\n+++ dup.txt\n@@ -1 +1 @@\n-a\n+b\n',
               action: LoreFileAction.KEEP,
             }),
           ],
         }) as never
       );
 
-      // When: computing the overview for the attached-on-main workspace
-      const result = await service.branchVsParent('/repo', 'main');
+      // When: computing the stats
+      const result = await service.workspaceDirtyStats('/repo');
 
-      // Then: the base is main's own tip, diffed against the working tree
+      // Then: the path is diffed once and counted once
       const [, args] = mockLore.fileDiff.mock.calls[0] as [unknown, Record<string, unknown>];
-      expect(args).toEqual({ sourceRevision: 'main-tip', targetRevision: '' });
-      expect(result[0]).toMatchObject({ path: 'a.txt', action: 'modified' });
-      expect(result[0]?.lineStats).toEqual({ added: 1, removed: 0 });
+      expect(args['paths']).toEqual(['/repo/dup.txt']);
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({ path: 'dup.txt', action: 'modified' });
     });
 
-    it('returns an empty array without calling fileDiff when no base resolves', async () => {
-      // Given: a branch with neither a fork point nor a known local tip
-      mockLore.branchInfo.mockReturnValue(
-        fluentMock({
-          events: [
-            {
-              tag: LoreEventTag.BRANCH_INFO,
-              data: {
-                parent: '0000000000000000000000000000000000000000',
-                branchPoint: '0000000000000000000000000000000000000000',
-                latest: '',
-              },
-            },
-          ],
-        }) as never
-      );
+    it('still counts a dirty file the diff does not enumerate (staged change reverted on disk), zero line stats', async () => {
+      // Given: a dirty staged file whose working tree matches the current
+      // revision, so the current-revision -> working-tree diff yields nothing
+      repository.getFileStatus.mockResolvedValueOnce({
+        untracked: [],
+        unstaged: [],
+        staged: [statusFile('held.txt', { isStaged: true })],
+      });
+      mockLore.fileDiff.mockReturnValue(fluentMock() as never);
 
-      // When: computing the overview
-      const result = await service.branchVsParent('/repo', 'ghost');
+      // When: computing the stats
+      const result = await service.workspaceDirtyStats('/repo');
 
-      // Then: nothing to diff, and fileDiff was never called
-      expect(result).toEqual([]);
+      // Then: the file is still counted (count == dirty count) with no line delta
+      expect(result).toEqual([
+        {
+          path: 'held.txt',
+          action: 'modified',
+          binary: false,
+          truncated: false,
+          lineStats: { added: 0, removed: 0 },
+        },
+      ]);
+    });
+
+    it('counts dirty files without diffing when no current revision resolves', async () => {
+      // Given: dirty files but the current revision degrades to '' (a failed
+      // local read) — no revision to diff from
+      repository.getFileStatus.mockResolvedValueOnce({
+        untracked: [statusFile('fresh.txt', { isUntracked: true })],
+        unstaged: [statusFile('edit.txt')],
+        staged: [],
+      });
+      repository.getCurrentRevision.mockResolvedValueOnce('');
+
+      // When: computing the stats
+      const result = await service.workspaceDirtyStats('/repo');
+
+      // Then: fileDiff is skipped, but the dirty files are still counted with
+      // their status-derived action and zero line stats
       expect(mockLore.fileDiff).not.toHaveBeenCalled();
+      expect(result).toEqual([
+        {
+          path: 'fresh.txt',
+          action: 'added',
+          binary: false,
+          truncated: false,
+          lineStats: { added: 0, removed: 0 },
+        },
+        {
+          path: 'edit.txt',
+          action: 'modified',
+          binary: false,
+          truncated: false,
+          lineStats: { added: 0, removed: 0 },
+        },
+      ]);
     });
 
-    it('wraps a branchInfo LoreError as a DiffOperationError', async () => {
-      // Given: resolving the branch base itself fails
-      mockLore.branchInfo.mockReturnValue(
-        fluentMock({ error: loreError(9, 'info failed') }) as never
-      );
+    it('wraps a fileDiff LoreError as a DiffOperationError', async () => {
+      // Given: dirty files, but the diff itself fails
+      repository.getFileStatus.mockResolvedValueOnce({
+        untracked: [],
+        unstaged: [statusFile('mod.txt')],
+        staged: [],
+      });
+      mockLore.fileDiff.mockReturnValue(fluentMock({ error: loreError(6, 'diff failed') }) as never);
 
-      // When: computing the overview
-      const promise = service.branchVsParent('/repo', 'feature/x');
+      // When: computing the stats
+      const promise = service.workspaceDirtyStats('/repo');
 
-      // Then: the failure is wrapped with context
+      // Then: the failure surfaces wrapped with context
       await expect(promise).rejects.toThrow(DiffOperationError);
-      await expect(promise).rejects.toThrow("Failed to resolve the base of branch 'feature/x'");
+      await expect(promise).rejects.toThrow('Failed to diff files');
     });
   });
 });

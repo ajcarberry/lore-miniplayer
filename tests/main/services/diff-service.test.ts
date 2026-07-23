@@ -275,6 +275,149 @@ describe('DiffService', () => {
     });
   });
 
+  describe('compare — working-tree list is a superset of the dirty set', () => {
+    // Regression guard (mission 2026-07-23): the Mission Control card counts the
+    // status-scan dirty set exactly, but the review window's list comes from
+    // `fileDiff(source -> working tree)`, which OMITS a dirty file whose working
+    // tree matches the source revision (a change staged, then reverted on disk).
+    // A working-tree compare must still list every such file so the card count
+    // and the review list agree and nothing is un-committable.
+    it('backfills a dirty file the working-tree diff omits (staged then reverted on disk)', async () => {
+      // Given: the scan reports 'f.txt' dirty (staged), but fileDiff enumerates
+      // nothing for it — the working tree was reverted to match the revision.
+      repository.getFileStatus.mockResolvedValueOnce({
+        untracked: [],
+        unstaged: [],
+        staged: [statusFile('f.txt', { isStaged: true })],
+      });
+      mockLore.fileDiff.mockReturnValue(fluentMock() as never);
+
+      // When: comparing the current revision against the working tree
+      const result = await service.compare({
+        repositoryPath: '/repo',
+        source: { kind: 'revision', revision: 'r1' },
+        target: { kind: 'workingTree' },
+      });
+
+      // Then: 'f.txt' is still listed as a zero-delta modified entry, not dropped
+      expect(result).toEqual([
+        {
+          path: 'f.txt',
+          action: 'modified',
+          binary: false,
+          truncated: false,
+          lineStats: { added: 0, removed: 0 },
+        },
+      ]);
+    });
+
+    it('lists at least every file the status scan reports dirty (superset guard)', async () => {
+      // Given: fileDiff enumerates an add and a modify, but the scan also reports
+      // a third dirty file the working-tree diff omits.
+      repository.getFileStatus.mockResolvedValueOnce({
+        untracked: [statusFile('added.txt', { isUntracked: true })],
+        unstaged: [statusFile('mod.txt')],
+        staged: [statusFile('staged-reverted.txt', { isStaged: true })],
+      });
+      mockLore.fileDiff.mockReturnValue(
+        fluentMock({
+          events: [
+            fileDiffEvent({
+              path: 'added.txt',
+              patch: '--- /dev/null\n+++ added.txt\n@@ -0,0 +1 @@\n+x\n',
+              action: LoreFileAction.ADD,
+            }),
+            fileDiffEvent({
+              path: 'mod.txt',
+              patch: '--- mod.txt@1\n+++ mod.txt\n@@ -1 +1 @@\n-a\n+b\n',
+              action: LoreFileAction.KEEP,
+            }),
+          ],
+        }) as never
+      );
+
+      // When: comparing the current revision against the working tree
+      const result = await service.compare({
+        repositoryPath: '/repo',
+        source: { kind: 'revision', revision: 'r1' },
+        target: { kind: 'workingTree' },
+      });
+
+      // Then: every dirty path the scan reported is present (backfill preserves
+      // the enumerated diffs and appends the omitted one)
+      const paths = result.map(file => file.path);
+      for (const dirty of ['added.txt', 'mod.txt', 'staged-reverted.txt']) {
+        expect(paths).toContain(dirty);
+      }
+      expect(result.find(file => file.path === 'staged-reverted.txt')).toEqual({
+        path: 'staged-reverted.txt',
+        action: 'modified',
+        binary: false,
+        truncated: false,
+        lineStats: { added: 0, removed: 0 },
+      });
+    });
+
+    it('backfills an omitted untracked file as an added entry', async () => {
+      // Given: the scan reports an untracked file, but fileDiff omits it.
+      repository.getFileStatus.mockResolvedValueOnce({
+        untracked: [statusFile('new.txt', { isUntracked: true })],
+        unstaged: [],
+        staged: [],
+      });
+      mockLore.fileDiff.mockReturnValue(fluentMock() as never);
+
+      // When: comparing against the working tree
+      const result = await service.compare({
+        repositoryPath: '/repo',
+        source: { kind: 'revision', revision: 'r1' },
+        target: { kind: 'workingTree' },
+      });
+
+      // Then: the untracked file is backfilled with the 'added' action
+      expect(result).toEqual([
+        {
+          path: 'new.txt',
+          action: 'added',
+          binary: false,
+          truncated: false,
+          lineStats: { added: 0, removed: 0 },
+        },
+      ]);
+    });
+
+    it('does not consult the status scan for a revision-to-revision compare', async () => {
+      // Given: a two-revision compare has no working tree, so no dirty set applies
+      mockLore.fileDiff.mockReturnValue(fluentMock() as never);
+
+      // When: comparing two explicit revisions
+      await service.compare({
+        repositoryPath: '/repo',
+        source: { kind: 'revision', revision: 'r1' },
+        target: { kind: 'revision', revision: 'r2' },
+      });
+
+      // Then: the status scan is never queried (no working-tree backfill)
+      expect(repository.getFileStatus).not.toHaveBeenCalled();
+    });
+
+    it('does not backfill when a path filter is active (caller asked for a subset)', async () => {
+      // Given: a working-tree compare scoped to a specific path
+      mockLore.fileDiff.mockReturnValue(fluentMock() as never);
+
+      // When: comparing with a paths filter
+      await service.compare({
+        repositoryPath: '/repo',
+        source: { kind: 'revision', revision: 'r1' },
+        target: { kind: 'workingTree' },
+        paths: ['a.txt'],
+      });
+
+      // Then: the dirty-set backfill is skipped (the caller requested a subset)
+      expect(repository.getFileStatus).not.toHaveBeenCalled();
+    });
+  });
+
   describe('compare — file action mapping', () => {
     it.each([
       [LoreFileAction.ADD, 'added'],

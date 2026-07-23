@@ -220,7 +220,38 @@ export class DiffService {
       this.resolveRevision(repositoryPath, source),
       this.resolveRevision(repositoryPath, target),
     ]);
-    return this.diffRevisions(repositoryPath, sourceRevision, targetRevision, paths);
+    const diffs = await this.diffRevisions(repositoryPath, sourceRevision, targetRevision, paths);
+    // An unfiltered compare against the WORKING TREE (the review window's commit
+    // workflow) must list every file the status scan reports dirty, so the
+    // reviewer can stage/commit it and the list matches the scan-driven Mission
+    // Control card exactly. `fileDiff(source -> working tree)` OMITS a dirty file
+    // whose working tree matches the source revision — e.g. a change staged, then
+    // reverted on disk: the scan still flags it dirty (staged), but there is no
+    // working-tree delta to enumerate. Backfill those as zero-delta entries so
+    // the list is a superset of (in the common case, equal to) the dirty set.
+    // Skipped for a non-working-tree target (revision->revision has no dirty set)
+    // and for a path-filtered compare (the caller asked for a specific subset).
+    if (target.kind === 'workingTree' && !paths) {
+      return this.backfillDirtySet(repositoryPath, diffs);
+    }
+    return diffs;
+  }
+
+  // Appends any status-scan dirty file the working-tree diff did not enumerate
+  // (see `compare`), as a zero-delta entry — mirrors `workspaceDirtyStats`'
+  // scan-driven list so the review window and the card never disagree.
+  private async backfillDirtySet(
+    repositoryPath: string,
+    diffs: FileDiffResult[]
+  ): Promise<FileDiffResult[]> {
+    const status = await this.repository.getFileStatus(repositoryPath);
+    const dirtyPaths = dedupePaths([...status.untracked, ...status.unstaged, ...status.staged]);
+    const enumerated = new Set(diffs.map(diff => diff.path));
+    const untracked = new Set(status.untracked.map(file => file.path));
+    const missing = dirtyPaths
+      .filter(dirtyPath => !enumerated.has(dirtyPath))
+      .map(dirtyPath => cleanWorkingTreeEntry(dirtyPath, untracked.has(dirtyPath)));
+    return missing.length > 0 ? [...diffs, ...missing] : diffs;
   }
 
   // Workspace change overview (Mission Control card file stats, P9): exactly the

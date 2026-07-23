@@ -468,117 +468,145 @@ describe('DiffService', () => {
   });
 
   describe('branchVsParent', () => {
-    function branchListEvent(id: string, name: string, latest: string): MockEvent {
-      return { tag: LoreEventTag.BRANCH_LIST_ENTRY, data: { id, name, latest } };
-    }
-
-    it('diffs a branch against its resolved parent using branchDiff to enumerate changed paths', async () => {
-      // Given: 'feature/x' has parent id 'main-id'; branchInfo (the same
-      // real event in production) also carries each branch's own tip;
-      // branchDiff reports one changed file, and fileDiff then supplies its
-      // patch between the two tips
-      mockLore.branchInfo.mockImplementation(((_globals: unknown, args: { branch: string }) => {
-        if (args.branch === 'feature/x') {
-          return fluentMock({
-            events: [
-              { tag: LoreEventTag.BRANCH_INFO, data: { parent: 'main-id', latest: 'feature-tip' } },
-            ],
-          });
-        }
-        if (args.branch === 'main') {
-          return fluentMock({
-            events: [{ tag: LoreEventTag.BRANCH_INFO, data: { parent: '', latest: 'main-tip' } }],
-          });
-        }
-        return fluentMock();
-      }) as never);
-      mockLore.branchList.mockReturnValue(
-        fluentMock({
-          events: [
-            branchListEvent('main-id', 'main', 'main-tip'),
-            branchListEvent('feature-id', 'feature/x', 'feature-tip'),
-          ],
-        }) as never
-      );
-      mockLore.branchDiff.mockReturnValue(
+    // Given: 'feature/x' forked from its parent at 'fork-rev' and carries a
+    // local tip 'feature-tip'. (P1 Findings (h): branchInfo.branchPoint is the
+    // fork point — the revision on the parent where the branch was created.)
+    function forkedBranchInfo(): void {
+      mockLore.branchInfo.mockReturnValue(
         fluentMock({
           events: [
             {
-              tag: LoreEventTag.BRANCH_DIFF_CHANGE,
-              data: { change: { path: 'a.txt', action: LoreFileAction.KEEP, automerged: false } },
+              tag: LoreEventTag.BRANCH_INFO,
+              data: { parent: 'main-id', branchPoint: 'fork-rev', latest: 'feature-tip' },
             },
           ],
         }) as never
       );
+    }
+
+    it('diffs the fork point against the WORKING TREE, counting committed + uncommitted changes (P1 h)', async () => {
+      // Given: a forked branch, and fileDiff (fork point -> working tree, no
+      // path filter) streams every changed file — a committed+uncommitted
+      // modify (a.txt), a committed delete (b.txt), a committed add (c.txt),
+      // and an UNCOMMITTED-only add (d.txt). Mirrors the probe PROPOSED truth.
+      forkedBranchInfo();
       mockLore.fileDiff.mockReturnValue(
         fluentMock({
           events: [
             fileDiffEvent({
               path: 'a.txt',
-              patch: '--- a.txt@1\n+++ a.txt\n@@ -1 +1 @@\n-x\n+y\n',
+              patch: '--- a.txt@1\n+++ a.txt\n@@ -3,0 +4,2 @@\n+delta\n+echo\n',
               action: LoreFileAction.KEEP,
+            }),
+            fileDiffEvent({
+              path: 'b.txt',
+              patch: '--- b.txt@1\n+++ /dev/null\n@@ -1 +0,0 @@\n-to-be-deleted\n',
+              action: LoreFileAction.DELETE,
+            }),
+            fileDiffEvent({
+              path: 'c.txt',
+              patch: '--- /dev/null\n+++ c.txt\n@@ -0,0 +1,2 @@\n+new1\n+new2\n',
+              action: LoreFileAction.ADD,
+            }),
+            fileDiffEvent({
+              path: 'd.txt',
+              patch: '--- /dev/null\n+++ d.txt\n@@ -0,0 +1 @@\n+uncommitted\n',
+              action: LoreFileAction.ADD,
             }),
           ],
         }) as never
       );
 
-      // When: diffing the branch against its parent
+      // When: computing the workspace's change overview
       const result = await service.branchVsParent('/repo', 'feature/x');
 
-      // Then: branchDiff enumerated the change against the resolved parent
-      // name, and fileDiff was scoped to just that path between the tips
-      expect(mockLore.branchDiff).toHaveBeenCalledWith(
+      // Then: fileDiff is called fork-point -> working tree (empty target),
+      // with NO paths filter (every changed file, incl. uncommitted-only ones)
+      expect(mockLore.branchInfo).toHaveBeenCalledWith(
         { repositoryPath: '/repo' },
-        { source: 'main', target: 'feature/x' }
+        { branch: 'feature/x' }
       );
-      // fileDiff is scoped to the changed path, absolutized against the repo
-      // (branchDiff reports repo-relative paths; the SDK needs them absolute)
-      expect(mockLore.fileDiff).toHaveBeenCalledWith(
-        { repositoryPath: '/repo' },
-        { sourceRevision: 'main-tip', targetRevision: 'feature-tip', paths: ['/repo/a.txt'] }
-      );
+      const [, args] = mockLore.fileDiff.mock.calls[0] as [unknown, Record<string, unknown>];
+      expect(args).toEqual({ sourceRevision: 'fork-rev', targetRevision: '' });
+      expect('paths' in args).toBe(false);
+      // branchDiff is no longer part of the card-stats path
+      expect(mockLore.branchDiff).not.toHaveBeenCalled();
+
+      // Each file's action + signed lineStats match a source->target
+      // (fork-point -> working-tree) diff: adds are '+', deletes are '-'.
       expect(result).toEqual([
         {
           path: 'a.txt',
           action: 'modified',
-          patch: '--- a.txt@1\n+++ a.txt\n@@ -1 +1 @@\n-x\n+y\n',
+          patch: '--- a.txt@1\n+++ a.txt\n@@ -3,0 +4,2 @@\n+delta\n+echo\n',
           binary: false,
           truncated: false,
-          lineStats: { added: 1, removed: 1 },
+          lineStats: { added: 2, removed: 0 },
+        },
+        {
+          path: 'b.txt',
+          action: 'deleted',
+          patch: '--- b.txt@1\n+++ /dev/null\n@@ -1 +0,0 @@\n-to-be-deleted\n',
+          binary: false,
+          truncated: false,
+          lineStats: { added: 0, removed: 1 },
+        },
+        {
+          path: 'c.txt',
+          action: 'added',
+          patch: '--- /dev/null\n+++ c.txt\n@@ -0,0 +1,2 @@\n+new1\n+new2\n',
+          binary: false,
+          truncated: false,
+          lineStats: { added: 2, removed: 0 },
+        },
+        {
+          path: 'd.txt',
+          action: 'added',
+          patch: '--- /dev/null\n+++ d.txt\n@@ -0,0 +1 @@\n+uncommitted\n',
+          binary: false,
+          truncated: false,
+          lineStats: { added: 1, removed: 0 },
         },
       ]);
     });
 
-    it('absolutizes a nested repo-relative changed path before fileDiff (branchDiff regression)', async () => {
-      // Given: branchDiff reports a nested repo-relative path — the exact
-      // live-failure case where the SDK prepended the process CWD to
-      // 'Content/Caves/pass_1.txt' and rejected it as an invalid path
-      mockLore.branchInfo.mockImplementation(((_globals: unknown, args: { branch: string }) => {
-        if (args.branch === 'feature/x') {
-          return fluentMock({
-            events: [
-              { tag: LoreEventTag.BRANCH_INFO, data: { parent: 'main-id', latest: 'feature-tip' } },
-            ],
-          });
-        }
-        return fluentMock({
-          events: [{ tag: LoreEventTag.BRANCH_INFO, data: { parent: '', latest: 'main-tip' } }],
-        });
-      }) as never);
-      mockLore.branchList.mockReturnValue(
-        fluentMock({ events: [branchListEvent('main-id', 'main', 'main-tip')] }) as never
+    it('surfaces an uncommitted-only workspace as non-zero (no committed commits beyond the fork)', async () => {
+      // Given: a forked branch with nothing committed beyond the fork, but an
+      // uncommitted new file in the working tree
+      forkedBranchInfo();
+      mockLore.fileDiff.mockReturnValue(
+        fluentMock({
+          events: [
+            fileDiffEvent({
+              path: 'wip.txt',
+              patch: '--- /dev/null\n+++ wip.txt\n@@ -0,0 +1 @@\n+draft\n',
+              action: LoreFileAction.ADD,
+            }),
+          ],
+        }) as never
       );
-      mockLore.branchDiff.mockReturnValue(
+
+      // When: computing the overview
+      const result = await service.branchVsParent('/repo', 'feature/x');
+
+      // Then: the uncommitted add is counted (not an all-zero card)
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({ path: 'wip.txt', action: 'added' });
+      expect(result[0]?.lineStats).toEqual({ added: 1, removed: 0 });
+    });
+
+    it('falls back to the branch own tip for a root branch, showing working-tree-only changes', async () => {
+      // Given: main is a root branch — no fork point (all-zero branchPoint) —
+      // but has an uncommitted working-tree edit; its own tip is the base
+      mockLore.branchInfo.mockReturnValue(
         fluentMock({
           events: [
             {
-              tag: LoreEventTag.BRANCH_DIFF_CHANGE,
+              tag: LoreEventTag.BRANCH_INFO,
               data: {
-                change: {
-                  path: 'Content/Caves/pass_1.txt',
-                  action: LoreFileAction.KEEP,
-                  automerged: false,
-                },
+                parent: '0000000000000000000000000000000000000000',
+                branchPoint: '0000000000000000000000000000000000000000',
+                latest: 'main-tip',
               },
             },
           ],
@@ -588,96 +616,61 @@ describe('DiffService', () => {
         fluentMock({
           events: [
             fileDiffEvent({
-              path: '/repo/Content/Caves/pass_1.txt',
-              patch: '--- x@1\n+++ x\n@@ -1 +1 @@\n-a\n+b\n',
+              path: 'a.txt',
+              patch: '--- a.txt@2\n+++ a.txt\n@@ -4,0 +5 @@\n+echo\n',
               action: LoreFileAction.KEEP,
             }),
           ],
         }) as never
       );
 
-      // When: diffing the branch against its parent
-      const result = await service.branchVsParent('/repo', 'feature/x');
+      // When: computing the overview for the attached-on-main workspace
+      const result = await service.branchVsParent('/repo', 'main');
 
-      // Then: fileDiff receives the repo-ABSOLUTE path, and the result path
-      // is mapped back to repo-relative for the app/UI
-      expect(mockLore.fileDiff).toHaveBeenCalledWith(
-        { repositoryPath: '/repo' },
-        {
-          sourceRevision: 'main-tip',
-          targetRevision: 'feature-tip',
-          paths: ['/repo/Content/Caves/pass_1.txt'],
-        }
-      );
-      expect(result[0]?.path).toBe('Content/Caves/pass_1.txt');
-      expect(result[0]?.lineStats).toEqual({ added: 1, removed: 1 });
+      // Then: the base is main's own tip, diffed against the working tree
+      const [, args] = mockLore.fileDiff.mock.calls[0] as [unknown, Record<string, unknown>];
+      expect(args).toEqual({ sourceRevision: 'main-tip', targetRevision: '' });
+      expect(result[0]).toMatchObject({ path: 'a.txt', action: 'modified' });
+      expect(result[0]?.lineStats).toEqual({ added: 1, removed: 0 });
     });
 
-    it('returns an empty array without calling branchDiff when the branch has no parent', async () => {
-      // Given: branchInfo reports an unknown (all-zero) parent id, as main does
+    it('returns an empty array without calling fileDiff when no base resolves', async () => {
+      // Given: a branch with neither a fork point nor a known local tip
       mockLore.branchInfo.mockReturnValue(
         fluentMock({
           events: [
             {
               tag: LoreEventTag.BRANCH_INFO,
-              data: { parent: '0000000000000000000000000000000000000000' },
+              data: {
+                parent: '0000000000000000000000000000000000000000',
+                branchPoint: '0000000000000000000000000000000000000000',
+                latest: '',
+              },
             },
           ],
         }) as never
       );
 
-      // When: diffing main (a root branch) against its parent
-      const result = await service.branchVsParent('/repo', 'main');
+      // When: computing the overview
+      const result = await service.branchVsParent('/repo', 'ghost');
 
-      // Then: nothing to diff, and branchDiff was never called
-      expect(result).toEqual([]);
-      expect(mockLore.branchDiff).not.toHaveBeenCalled();
-    });
-
-    it('returns an empty array without calling fileDiff when branchDiff reports no changes', async () => {
-      // Given: a resolvable parent, but branchDiff streams no changes
-      mockLore.branchInfo.mockReturnValue(
-        fluentMock({
-          events: [{ tag: LoreEventTag.BRANCH_INFO, data: { parent: 'main-id' } }],
-        }) as never
-      );
-      mockLore.branchList.mockReturnValue(
-        fluentMock({
-          events: [branchListEvent('main-id', 'main', 'main-tip')],
-        }) as never
-      );
-      mockLore.branchDiff.mockReturnValue(fluentMock() as never);
-
-      // When: diffing
-      const result = await service.branchVsParent('/repo', 'feature/x');
-
-      // Then: no changes means no fileDiff call
+      // Then: nothing to diff, and fileDiff was never called
       expect(result).toEqual([]);
       expect(mockLore.fileDiff).not.toHaveBeenCalled();
     });
 
-    it('wraps a branchDiff LoreError as a DiffOperationError', async () => {
-      // Given: the parent resolves, but branchDiff itself fails
+    it('wraps a branchInfo LoreError as a DiffOperationError', async () => {
+      // Given: resolving the branch base itself fails
       mockLore.branchInfo.mockReturnValue(
-        fluentMock({
-          events: [{ tag: LoreEventTag.BRANCH_INFO, data: { parent: 'main-id' } }],
-        }) as never
-      );
-      mockLore.branchList.mockReturnValue(
-        fluentMock({
-          events: [branchListEvent('main-id', 'main', 'main-tip')],
-        }) as never
-      );
-      mockLore.branchDiff.mockReturnValue(
-        fluentMock({ error: loreError(9, 'diff failed') }) as never
+        fluentMock({ error: loreError(9, 'info failed') }) as never
       );
 
-      // When: diffing
+      // When: computing the overview
       const promise = service.branchVsParent('/repo', 'feature/x');
 
       // Then: the failure is wrapped with context
       await expect(promise).rejects.toThrow(DiffOperationError);
-      await expect(promise).rejects.toThrow("Failed to diff branch 'feature/x' against its parent");
+      await expect(promise).rejects.toThrow("Failed to resolve the base of branch 'feature/x'");
     });
   });
 });

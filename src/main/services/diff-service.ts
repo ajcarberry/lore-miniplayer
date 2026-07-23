@@ -209,60 +209,52 @@ export class DiffService {
     return this.diffRevisions(repositoryPath, sourceRevision, targetRevision, paths);
   }
 
-  // Branch-vs-parent overview (Mission Control card file stats, P9): uses
-  // the dedicated branchDiff op to enumerate the files that actually
-  // changed on `branchName` since it diverged from its parent, then fetches
-  // each file's patch via fileDiff scoped to just those paths between the
-  // two branches' tips. Returns [] for a root branch (no parent, e.g. main)
-  // or when nothing has changed, without calling branchDiff/fileDiff.
+  // Workspace change overview (Mission Control card file stats, P9): the files
+  // this workspace has changed relative to where its branch forked from its
+  // parent, INCLUDING uncommitted working-tree edits. Diffs the fork point
+  // (branchInfo.branchPoint) against the WORKING TREE (empty target — P1
+  // finding a/h) with no path filter, so both committed branch commits and
+  // uncommitted edits count, and parent commits made AFTER the fork never leak
+  // in as reversed deletions (the earlier parent-tip -> branch-tip approach
+  // both zeroed uncommitted-only workspaces and mis-signed post-fork parent
+  // changes — P1 finding h). A root branch (no fork point, e.g. main) falls
+  // back to its own tip, surfacing working-tree-only changes. Returns [] when
+  // no base resolves or nothing has changed.
   async branchVsParent(repositoryPath: string, branchName: string): Promise<FileDiffResult[]> {
-    const parentName = await this.resolveParentBranchName(repositoryPath, branchName);
-    if (!parentName) {
+    const base = await this.resolveWorkspaceBase(repositoryPath, branchName);
+    if (!base) {
       return [];
     }
-
-    const changedPaths = await this.collect(
-      lore.branchDiff({ repositoryPath }, { source: parentName, target: branchName }),
-      LoreEventTag.BRANCH_DIFF_CHANGE,
-      (data: LoreEventDataOf<LoreEventTag.BRANCH_DIFF_CHANGE>) => data.change.path,
-      `Failed to diff branch '${branchName}' against its parent`
-    );
-    if (changedPaths.length === 0) {
-      return [];
-    }
-
-    const [sourceRevision, targetRevision] = await Promise.all([
-      this.resolveRevision(repositoryPath, { kind: 'branchHead', branch: parentName }),
-      this.resolveRevision(repositoryPath, { kind: 'branchHead', branch: branchName }),
-    ]);
-    return this.diffRevisions(repositoryPath, sourceRevision, targetRevision, changedPaths);
+    return this.diffRevisions(repositoryPath, base, '');
   }
 
-  // Resolves a branch's parent BRANCH NAME (branchDiff's args take names,
-  // not ids) via branchInfo's parent id + a branchList id->name lookup,
-  // mirroring branch-graph.ts's parent resolution. Returns null for a
-  // branch with no parent (an all-zero/empty id, e.g. main).
-  private async resolveParentBranchName(
+  // The revision the card diff is measured FROM: the branch's fork point
+  // (branchInfo.branchPoint) when it has a parent, else the branch's own local
+  // tip for a root branch (yielding working-tree-only changes). Null when
+  // neither is a known (non-zero) revision.
+  private async resolveWorkspaceBase(
     repositoryPath: string,
     branchName: string
   ): Promise<string | null> {
     const infos = await this.collect(
       lore.branchInfo({ repositoryPath }, { branch: branchName }),
       LoreEventTag.BRANCH_INFO,
-      (data: LoreEventDataOf<LoreEventTag.BRANCH_INFO>) => data.parent,
-      `Failed to resolve the parent of branch '${branchName}'`
+      (data: LoreEventDataOf<LoreEventTag.BRANCH_INFO>) => ({
+        branchPoint: data.branchPoint,
+        latest: data.latest,
+      }),
+      `Failed to resolve the base of branch '${branchName}'`
     );
-    const parentId = infos[infos.length - 1];
-    if (!parentId || isUnknownHash(parentId)) {
+    const info = infos[infos.length - 1];
+    if (!info) {
       return null;
     }
-
-    const entries = await this.collect(
-      lore.branchList({ repositoryPath }, {}),
-      LoreEventTag.BRANCH_LIST_ENTRY,
-      (data: LoreEventDataOf<LoreEventTag.BRANCH_LIST_ENTRY>) => ({ id: data.id, name: data.name }),
-      'Failed to list branches'
-    );
-    return entries.find(entry => entry.id === parentId)?.name ?? null;
+    if (!isUnknownHash(info.branchPoint)) {
+      return info.branchPoint;
+    }
+    if (!isUnknownHash(info.latest)) {
+      return info.latest;
+    }
+    return null;
   }
 }

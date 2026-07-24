@@ -249,6 +249,32 @@ describe('MergeService', () => {
       expect(mockLore.branchMergeStart).toHaveBeenCalledTimes(1);
     });
 
+    it('backs out the on-disk merge when a post-start step fails, leaving no stranded merge (C54)', async () => {
+      // Given: branchMergeStart succeeds — the merge is materialized on disk —
+      // but the ahead-of-target computation throws (branchInfo fails)
+      mockLore.branchMergeStart.mockReturnValue(fluentMock() as never);
+      mockLore.branchMergeAbort.mockReturnValue(fluentMock() as never);
+      mockLore.branchInfo.mockReturnValue(
+        fluentMock({ error: loreError(3, 'branch info unavailable') }) as never
+      );
+
+      // When/Then: the failure surfaces as a typed error
+      await expect(service.start(startRequest())).rejects.toBeInstanceOf(MergeOperationError);
+
+      // And: the materialized merge was backed out on disk — the checkout is
+      // not left mid-merge with no in-flight record
+      expect(mockLore.branchMergeAbort).toHaveBeenCalledWith({ repositoryPath: REPO }, {});
+
+      // And: no merge is registered — a retry of start() runs branchMergeStart
+      // again and succeeds
+      installAheadSignal(
+        { [SOURCE]: 'source-tip', [TARGET]: 'target-tip' },
+        { 'source-tip': ['source-tip', 'base'], 'target-tip': ['base'] }
+      );
+      await expect(service.start(startRequest())).resolves.toBeDefined();
+      expect(mockLore.branchMergeStart).toHaveBeenCalledTimes(2);
+    });
+
     it('wraps an SDK failure in a MergeOperationError and leaves no merge in flight', async () => {
       // Given: branchMergeStart throws
       mockLore.branchMergeStart.mockReturnValue(
@@ -506,6 +532,46 @@ describe('MergeService', () => {
         { branch: TARGET }
       );
       expect(result).toEqual({ revision: 'landed-on-main-rev' });
+    });
+
+    it('aborts the target-side merge when the landing commit fails, so a retry of complete() can land (C55)', async () => {
+      // Given: a clean workspace merge; the landing re-merge into the target
+      // starts clean, but the target-side commit throws (e.g. dirty index)
+      mockLore.branchMergeStart
+        .mockReturnValueOnce(fluentMock() as never) // start()
+        .mockReturnValue(cleanTargetMerge() as never); // landing
+      mockLore.branchMergeAbort.mockReturnValue(fluentMock() as never);
+      lore_.getFileStatus.mockResolvedValue(statusGroup([]));
+      lore_.getCurrentRevision.mockResolvedValue('workspace-merge-rev');
+      lore_.commit
+        .mockResolvedValueOnce(undefined) // phase 1: source-branch merge commit
+        .mockRejectedValueOnce(new Error('index is dirty')); // phase 2: target commit
+      await service.start(startRequest());
+
+      // When/Then: completion fails with the landing error
+      await expect(service.complete({ repositoryPath: REPO })).rejects.toThrow(/index is dirty/);
+
+      // And: the pending target-side merge was aborted BEFORE the checkout was
+      // restored to the source branch — the target is not left mid-merge
+      expect(mockLore.branchMergeAbort).toHaveBeenCalledWith({ repositoryPath: REPO }, {});
+      const abortOrder = mockLore.branchMergeAbort.mock.invocationCallOrder[0] ?? Infinity;
+      const restoreOrder = lore_.switchBranch.mock.invocationCallOrder.at(-1) ?? 0;
+      expect(abortOrder).toBeLessThan(restoreOrder);
+      expect(lore_.switchBranch).toHaveBeenLastCalledWith(REPO, SOURCE);
+      expect(mockLore.branchPush).not.toHaveBeenCalled();
+
+      // And: a retry of complete() re-runs the landing merge cleanly and lands
+      jest.clearAllMocks();
+      mockLore.branchMergeStart.mockReturnValue(cleanTargetMerge() as never);
+      mockLore.branchPush.mockReturnValue(fluentMock() as never);
+      lore_.getFileStatus.mockResolvedValue(statusGroup([]));
+      lore_.commit.mockResolvedValue(undefined);
+      lore_.getCurrentRevision.mockResolvedValue('landed-on-main-rev');
+      const result = await service.complete({ repositoryPath: REPO });
+      expect(result).toEqual({ revision: 'landed-on-main-rev' });
+      // Phase 1 is skipped (already committed); only the target commit runs.
+      expect(lore_.commit).toHaveBeenCalledTimes(1);
+      expect(lore_.commit).toHaveBeenCalledWith(REPO, "Merge branch 'agent-x' into 'main'");
     });
 
     it('aborts the target-side merge and errors if the landing re-merge unexpectedly conflicts', async () => {

@@ -133,11 +133,30 @@ export class MergeService {
       `Failed to start merge of '${targetBranch}' into '${sourceBranch}'`
     );
 
-    const hasChangesToLand = await this.sourceHasRevisionsToLand(
-      repositoryPath,
-      sourceBranch,
-      targetBranch
-    );
+    // The merge is now materialized on disk but not yet recorded. If the
+    // ahead-of-target computation fails, back the merge out before rethrowing —
+    // otherwise the checkout is stranded mid-merge with no in-flight record:
+    // resolve/abort/complete would all refuse ("no merge in progress") and a
+    // retried start would re-run branchMergeStart on an already-merging repo.
+    let hasChangesToLand: boolean;
+    try {
+      hasChangesToLand = await this.sourceHasRevisionsToLand(
+        repositoryPath,
+        sourceBranch,
+        targetBranch
+      );
+    } catch (error) {
+      this.log.error('Merge start failed after branchMergeStart; backing out the on-disk merge', {
+        error,
+        operation: 'merge:start',
+        repositoryPath,
+      });
+      await this.abortMergeQuietly(
+        repositoryPath,
+        'Failed to back out the merge after a start failure'
+      );
+      throw error;
+    }
 
     const record: ActiveMerge = { sourceBranch, targetBranch, conflictPaths, hasChangesToLand };
     this.activeMerges.set(repositoryPath, record);
@@ -272,8 +291,27 @@ export class MergeService {
       }
 
       const targetMessage = `Merge branch '${record.sourceBranch}' into '${record.targetBranch}'`;
-      await this.loreRepositoryService.commit(repositoryPath, targetMessage);
-      const landedRevision = await this.loreRepositoryService.getCurrentRevision(repositoryPath);
+      let landedRevision: string;
+      try {
+        await this.loreRepositoryService.commit(repositoryPath, targetMessage);
+        landedRevision = await this.loreRepositoryService.getCurrentRevision(repositoryPath);
+      } catch (error) {
+        // The target checkout may still hold the pending noCommit merge; back
+        // it out before the finally restores the source branch — otherwise the
+        // target is left mid-merge and a retried complete() wedges on the
+        // landing branchMergeStart.
+        this.log.error('Merge complete: landing failed; backing out the target-side merge', {
+          error,
+          operation: 'merge:complete',
+          repositoryPath,
+          targetBranch: record.targetBranch,
+        });
+        await this.abortMergeQuietly(
+          repositoryPath,
+          'Failed to back out the target-side merge after a landing failure'
+        );
+        throw error;
+      }
       await this.run(
         lore.branchPush({ repositoryPath }, { branch: record.targetBranch }),
         `Failed to push '${record.targetBranch}'`
@@ -282,6 +320,21 @@ export class MergeService {
     } finally {
       // Always restore the workspace checkout to the source branch.
       await this.loreRepositoryService.switchBranch(repositoryPath, record.sourceBranch);
+    }
+  }
+
+  // Best-effort branchMergeAbort for failure paths: backs out an on-disk merge
+  // so the failed operation leaves the checkout clean. An abort failure is
+  // logged but never masks the original error being rethrown by the caller.
+  private async abortMergeQuietly(repositoryPath: string, context: string): Promise<void> {
+    try {
+      await this.run(lore.branchMergeAbort({ repositoryPath }, {}), context);
+    } catch (abortError) {
+      this.log.error(context, {
+        error: abortError,
+        operation: 'merge:abort',
+        repositoryPath,
+      });
     }
   }
 

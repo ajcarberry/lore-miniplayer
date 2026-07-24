@@ -210,7 +210,6 @@ export const WorkspaceBandSchema = z.enum(['awaitingReview', 'inProgress', 'idle
 
 export const WorkspaceAttentionReasonSchema = z.enum([
   'permissionPrompt',
-  'idlePrompt',
   'reviewReady',
   'conflict',
   'diverged',
@@ -261,8 +260,8 @@ export const AgentIntentionSchema = z.object({
   costUsd: z.number().nonnegative().optional(),
 });
 
-// Push channel payload (main -> renderer): agent session and intention
-// updates share one channel, discriminated by kind.
+// The agent observer's 'push' payload (consumed in-main by the workspace
+// model): session and intention updates share one event, discriminated by kind.
 export const AgentObservabilityPushSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('sessionState'), state: AgentSessionStateSchema }),
   z.object({
@@ -344,10 +343,8 @@ export const ReviewOpenRequestSchema = z.object({
   workspacePath: z.string().min(1),
   repositoryId: RepositorySchema.shape.id,
   branchName: z.string().min(1),
-  revision: z.string(),
   workflow: ReviewWorkflowModeSchema,
   compare: ReviewCompareSchema,
-  title: z.string().optional(),
 });
 
 // Mission Control's per-workspace card (design 2a): the workspace, its
@@ -390,12 +387,6 @@ export const WorkspaceProvisionRequestSchema = z.object({
   repositoryId: RepositorySchema.shape.id,
   branchName: z.string().min(1, 'Branch name is required'),
 });
-export const WorkspaceProvisionResponseSchema = WorkspaceSchema;
-
-export const WorkspaceListRequestSchema = z.object({
-  repositoryId: RepositorySchema.shape.id,
-});
-export const WorkspaceListResponseSchema = z.array(WorkspaceSchema);
 
 // Destructive (worktree directory + local/remote branch removal); the
 // workspace is identified by either its instance id or its worktree path.
@@ -411,12 +402,10 @@ export const WorkspaceTeardownResultSchema = z.object({
   localBranchRemoved: z.boolean(),
   remoteBranchRemoved: z.boolean(),
 });
-export const WorkspaceTeardownResponseSchema = WorkspaceTeardownResultSchema;
 
 export const WorkspaceMarkActiveRequestSchema = z.object({
   workspaceId: z.string().min(1),
 });
-export const WorkspaceMarkActiveResponseSchema = WorkspaceSchema;
 
 // "Forget" a workspace (design amendment, packet U3): untrack-only, the
 // worktree directory and branch are left untouched — the non-destructive
@@ -433,52 +422,25 @@ export const DiffRequestSchema = z.object({
   target: CompareTargetSchema,
   paths: z.array(z.string().min(1)).optional(),
 });
-export const DiffResponseSchema = z.array(FileDiffResultSchema);
 
 export const MergeStartRequestSchema = z.object({
   repositoryPath: z.string().min(1),
   sourceBranch: z.string().min(1),
   targetBranch: z.string().min(1),
 });
-export const MergeStartResponseSchema = MergeStateSchema;
 
 export const MergeResolveRequestSchema = z.object({
   repositoryPath: z.string().min(1),
   path: z.string().min(1),
   resolution: MergeFileResolutionSchema,
 });
-export const MergeResolveResponseSchema = MergeStateSchema;
 
 export const MergeAbortRequestSchema = z.object({
   repositoryPath: z.string().min(1),
 });
-export const MergeAbortResponseSchema = z.object({ aborted: z.boolean() });
 
 export const MergeCompleteRequestSchema = z.object({
   repositoryPath: z.string().min(1),
-});
-export const MergeCompleteResponseSchema = z.object({
-  revision: z.string().min(1),
-});
-
-export const LockEntrySchema = z.object({
-  path: z.string().min(1),
-  userId: z.string().min(1),
-  branch: z.string().min(1),
-});
-
-export const LockQueryRequestSchema = z.object({
-  repositoryPath: z.string().min(1),
-  paths: z.array(z.string().min(1)).optional(),
-});
-export const LockQueryResponseSchema = z.array(LockEntrySchema);
-
-export const LockReleaseRequestSchema = z.object({
-  repositoryPath: z.string().min(1),
-  paths: z.array(z.string().min(1)).min(1, 'At least one path is required'),
-});
-export const LockReleaseResponseSchema = z.object({
-  released: z.array(z.string().min(1)),
 });
 
 // Resolves a notification's raw `userId` to a display name (P5's
@@ -490,18 +452,15 @@ export const ResolveUserNameRequestSchema = z.object({
   repositoryPath: z.string().min(1),
   userId: z.string().min(1),
 });
-export const ResolveUserNameResponseSchema = z.object({
-  name: z.string().min(1),
-});
 
 // IPC channel names, grouped by domain and colon-namespaced to match the
 // existing 'lore:...' channels declared at their call sites in preload.ts /
-// lore-handlers.ts. `agent.observability` is the one push channel
-// (main -> renderer); every other channel is request/response (invoke).
+// lore-handlers.ts. `workspaceModel.snapshot` and `review.context` are the
+// push channels (main -> renderer); every other channel is request/response
+// (invoke) or a one-way renderer send.
 export const IPC_CHANNELS = {
   workspace: {
     provision: 'workspace:provision',
-    list: 'workspace:list',
     teardown: 'workspace:teardown',
     markActive: 'workspace:markActive',
     forget: 'workspace:forget',
@@ -515,27 +474,19 @@ export const IPC_CHANNELS = {
     abort: 'merge:abort',
     complete: 'merge:complete',
   },
-  locks: {
-    query: 'locks:query',
-    release: 'locks:release',
-  },
   // Attribution name resolution (P5's resolveUserName, exposed for the P15
   // toast). One request/response invoke; no push involved.
   identity: {
     resolveUserName: 'identity:resolveUserName',
   },
-  agent: {
-    observability: 'agent:observability',
-  },
-  // Mission Control window (P10, design 2a). `open`/`close` manage the
-  // secondary window; `watch` (invoke) targets the workspace model at a repo
-  // and returns its current snapshot; `snapshot` is the one-way push the model
+  // Mission Control window (P10, design 2a). `open` manages the secondary
+  // window; `watch` (invoke) targets the workspace model at a repo and
+  // returns its current snapshot; `snapshot` is the one-way push the model
   // emits on every rebuild (Zod-validated in the renderer before use);
   // `refresh` (invoke) triggers an immediate rebuild on demand (the header's
   // manual refresh control) alongside the existing automatic triggers.
   missionControl: {
     open: 'missionControl:open',
-    close: 'missionControl:close',
   },
   workspaceModel: {
     watch: 'workspace:model:watch',

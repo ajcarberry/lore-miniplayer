@@ -17,7 +17,6 @@ import { AgentTranscriptService } from './services/agent-transcript';
 import { WorkspaceModelService } from './services/workspace-model';
 import { DiffService } from './services/diff-service';
 import { MergeService } from './services/merge-service';
-import { LockService } from './services/lock-service';
 import { IPC_CHANNELS, WorkspaceModelSnapshotSchema } from '../shared/schemas';
 import { loadWindowPosition, saveWindowPosition } from './ipc/config-handlers';
 import { hardenSession, hardenWebContents } from './security';
@@ -197,7 +196,6 @@ app.whenReady().then(async () => {
   // Owns the review window's merge workflow (design 2c): start/resolve/abort/
   // complete a branch→main merge, one in flight per repository.
   const mergeService = new MergeService(log, loreRepositoryService);
-  const lockService = new LockService();
 
   // Agent observability (hook listener) + transcript enrichment feed the
   // workspace model (P9), which composes Lore signals and agent state into
@@ -223,8 +221,7 @@ app.whenReady().then(async () => {
     workspaceService,
     workspaceModel,
     diffService,
-    mergeService,
-    lockService
+    mergeService
   );
 
   // Then initialize the services
@@ -232,12 +229,7 @@ app.whenReady().then(async () => {
   initializeLoreSdk();
 
   // Start the hook listener and hand its config to WorkspaceService so injected
-  // hooks target the live listener. Session-state pushes are forwarded to the
-  // renderer over the P2 push channel (payloads are Zod-validated in the
-  // service before emit, mirroring the other push channels).
-  agentObserverService.on('push', payload => {
-    mainWindow?.webContents.send(IPC_CHANNELS.agent.observability, payload);
-  });
+  // hooks target the live listener.
   await agentObserverService.start();
   workspaceService.setObserverConfig(agentObserverService.getObserverConfig());
 

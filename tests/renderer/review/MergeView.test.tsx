@@ -26,13 +26,11 @@ function makeRequest(overrides: Partial<ReviewOpenRequest> = {}): ReviewOpenRequ
     workspacePath: WORKSPACE_PATH,
     repositoryId: REPO_ID,
     branchName: SOURCE_BRANCH,
-    revision: 'r128',
     workflow: 'merge',
     compare: {
       source: { kind: 'branchHead', branch: SOURCE_BRANCH },
       target: { kind: 'branchHead', branch: TARGET_BRANCH },
     },
-    title: 'Balance pass',
     ...overrides,
   };
 }

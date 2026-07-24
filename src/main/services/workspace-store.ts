@@ -1,7 +1,6 @@
 import { app } from 'electron';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
 import type { MainLogger } from '../ipc/logger';
 import type { Repository } from '../../shared/types';
@@ -11,9 +10,9 @@ import { ACCENT_HUE_VALUES } from '../../shared/accent';
 // The unified workspace registry (packet U1). One store class, one file
 // (`workspaces.json`, version 2) that holds BOTH card-view repositories and
 // provisioned worktrees as unified `Repository` entries (origin-tagged). It
-// migrates, once and idempotently, from the two legacy files it replaces:
-// `repositories.json` (card-view repos) and the P18 `workspaces.json` (v1
-// worktree registry), renaming each aside to `*.json.bak` (never deleting).
+// folds in the one legacy file that shipped — `repositories.json` (card-view
+// repos) — once and idempotently, renaming it aside to `*.json.bak` (never
+// deleting).
 //
 // RepositoryService and WorkspaceService each hold their own instance pointed
 // at the same file; every method reloads from disk before acting, so the file
@@ -27,7 +26,7 @@ const RegistryFileSchema = z.object({
   workspaces: z.array(RepositorySchema),
 });
 
-// --- legacy shapes (migration sources only) --------------------------------
+// --- legacy shape (migration source only) ----------------------------------
 
 // Legacy `repositories.json`: the card-view repo shape before unification.
 // accentHue may be absent (it post-dates the earliest stores — back-filled).
@@ -46,21 +45,7 @@ const LegacyRepositoryFileSchema = z.object({
   repositories: z.array(LegacyRepositorySchema),
 });
 
-// Legacy P18 `workspaces.json` v1: the skinny worktree registry entry.
-const LegacyWorkspaceEntrySchema = z.object({
-  repositoryId: z.string().min(1),
-  path: z.string().min(1),
-  branchName: z.string().min(1),
-  provisionedAt: z.string(),
-});
-
-const LegacyWorkspaceFileSchema = z.object({
-  version: z.string(),
-  workspaces: z.array(LegacyWorkspaceEntrySchema),
-});
-
 type LegacyRepository = z.infer<typeof LegacyRepositorySchema>;
-type LegacyWorkspaceEntry = z.infer<typeof LegacyWorkspaceEntrySchema>;
 
 function accentHueForIndex(index: number): number {
   return ACCENT_HUE_VALUES[index % ACCENT_HUE_VALUES.length] as number;
@@ -70,6 +55,10 @@ export class WorkspaceRegistry {
   private readonly storePath: string;
   private readonly legacyRepoPath: string;
   private entries: Repository[] = [];
+  // Memoized once per instance: the migration check is idempotent but reads
+  // the legacy file from disk, so it runs a single time rather than on every
+  // registry operation.
+  private migration: Promise<void> | null = null;
 
   constructor(private readonly log: MainLogger) {
     const userData = app.getPath('userData');
@@ -156,22 +145,15 @@ export class WorkspaceRegistry {
   // --- load + migration ------------------------------------------------------
 
   private async load(): Promise<void> {
-    await this.migrateIfNeeded();
-    const data = await fs.readFile(this.storePath, 'utf-8').catch((error: unknown) => {
-      if ((error as { code?: string }).code === 'ENOENT') {
-        return null;
-      }
-      throw error;
-    });
-    if (data === null) {
-      // migrateIfNeeded always leaves a v2 file; this is defensive only.
+    this.migration ??= this.migrateIfNeeded();
+    await this.migration;
+    const raw = await this.readJsonIfExists(this.storePath);
+    if (raw === null) {
       this.entries = [];
-      await this.save();
       return;
     }
     try {
-      const parsed = JSON.parse(data) as unknown;
-      this.entries = [...RegistryFileSchema.parse(parsed).workspaces];
+      this.entries = [...RegistryFileSchema.parse(raw).workspaces];
     } catch (error) {
       this.log.error('Failed to load workspace registry', {
         error,
@@ -192,77 +174,32 @@ export class WorkspaceRegistry {
     await fs.writeFile(this.storePath, JSON.stringify(validated, null, 2), 'utf-8');
   }
 
-  // Migrate the two legacy files into the unified v2 registry exactly once.
-  // No-op when the store is already v2 and no legacy `repositories.json`
-  // lingers, so it is safe to call on every load and across process restarts.
-  // Reads all sources into memory before renaming anything aside, so a crash
-  // mid-migration never loses data.
+  // Fold the legacy `repositories.json` (the one legacy store that shipped)
+  // into the v2 registry exactly once. No-op when no legacy file lingers, so
+  // it is safe across process restarts. Reads all sources into memory before
+  // renaming anything aside, so a crash mid-migration never loses data.
   private async migrateIfNeeded(): Promise<void> {
-    const rawWorkspaces = await this.readJsonIfExists(this.storePath);
     const rawRepositories = await this.readJsonIfExists(this.legacyRepoPath);
-    const ws = this.classifyWorkspaces(rawWorkspaces);
-
-    // Fresh install: nothing anywhere → seed an empty v2 file.
-    if (rawWorkspaces === null && rawRepositories === null) {
-      this.entries = [];
-      await this.save();
+    if (rawRepositories === null) {
       return;
     }
 
-    // Already migrated (v2 present, no legacy repositories.json to fold in).
-    if (ws.isV2 && rawRepositories === null) {
-      return;
+    // A workspaces.json that is not valid v2 is corrupt: let the normal
+    // load() surface it rather than clobbering it here.
+    const rawWorkspaces = await this.readJsonIfExists(this.storePath);
+    let existing: Repository[] = [];
+    if (rawWorkspaces !== null) {
+      const asV2 = RegistryFileSchema.safeParse(rawWorkspaces);
+      if (!asV2.success) {
+        return;
+      }
+      existing = asV2.data.workspaces;
     }
 
-    // A workspaces.json that is neither valid v2 nor valid v1 is corrupt: let
-    // the normal load() surface it rather than clobbering it here.
-    if (rawWorkspaces !== null && !ws.isV2 && !ws.isV1) {
-      return;
-    }
-
-    await this.performMigration(ws, rawRepositories);
-  }
-
-  // Decide what the current workspaces.json is (v2, legacy v1, or neither) and
-  // surface its already-parsed entries — v2 checked first so the two shapes
-  // never overlap.
-  private classifyWorkspaces(raw: unknown): {
-    isV2: boolean;
-    isV1: boolean;
-    v2: Repository[];
-    v1: LegacyWorkspaceEntry[];
-  } {
-    if (raw === null) {
-      return { isV2: false, isV1: false, v2: [], v1: [] };
-    }
-    const asV2 = RegistryFileSchema.safeParse(raw);
-    if (asV2.success) {
-      return { isV2: true, isV1: false, v2: asV2.data.workspaces, v1: [] };
-    }
-    const asV1 = LegacyWorkspaceFileSchema.safeParse(raw);
-    if (asV1.success) {
-      return { isV2: false, isV1: true, v2: [], v1: asV1.data.workspaces };
-    }
-    return { isV2: false, isV1: false, v2: [], v1: [] };
-  }
-
-  // Merge legacy sources into a v2 file. Back up legacy files BEFORE
-  // overwriting workspaces.json — only rename the workspaces.json file aside
-  // when it was a v1 file being replaced; an existing v2 file is kept (merged
-  // into). Sources are already in memory, so a crash mid-rename loses nothing.
-  private async performMigration(
-    ws: { isV1: boolean; v2: Repository[]; v1: LegacyWorkspaceEntry[] },
-    rawRepositories: unknown
-  ): Promise<void> {
     const legacyRepositories = this.parseLegacyRepositories(rawRepositories);
-    const merged = this.buildUnified(ws.v2, legacyRepositories, ws.v1);
+    const merged = this.buildUnified(existing, legacyRepositories);
 
-    if (ws.isV1) {
-      await this.renameAside(this.storePath);
-    }
-    if (rawRepositories !== null) {
-      await this.renameAside(this.legacyRepoPath);
-    }
+    await this.renameAside(this.legacyRepoPath);
 
     this.entries = merged;
     await this.save();
@@ -270,15 +207,11 @@ export class WorkspaceRegistry {
     this.log.info('Migrated workspace registry to v2', {
       operation: 'workspace-registry:migrate',
       repositories: legacyRepositories.length,
-      worktrees: ws.v1.length,
       total: merged.length,
     });
   }
 
   private parseLegacyRepositories(raw: unknown): LegacyRepository[] {
-    if (raw === null) {
-      return [];
-    }
     const parsed = LegacyRepositoryFileSchema.safeParse(raw);
     if (!parsed.success) {
       throw new Error(`Failed to load workspace registry: legacy repositories.json is corrupt`);
@@ -286,13 +219,13 @@ export class WorkspaceRegistry {
     return parsed.data.repositories;
   }
 
-  // Merge legacy sources into unified entries, deduplicating by resolved
-  // localPath (existing v2 entries win; a legacy row for an already-known path
-  // is skipped). Accent hues are back-filled round-robin by final position.
+  // Merge the legacy repositories into unified entries, deduplicating by
+  // resolved localPath (existing v2 entries win; a legacy row for an
+  // already-known path is skipped). Accent hues are back-filled round-robin
+  // by final position.
   private buildUnified(
     existingV2: Repository[],
-    legacyRepositories: LegacyRepository[],
-    legacyWorkspaces: LegacyWorkspaceEntry[]
+    legacyRepositories: LegacyRepository[]
   ): Repository[] {
     const unified: Repository[] = [...existingV2];
     const hasPath = (candidate: string): boolean =>
@@ -303,25 +236,6 @@ export class WorkspaceRegistry {
         continue;
       }
       unified.push(this.toAttached(repo, unified.length));
-    }
-
-    // A provisioned worktree joins its parent repo's url via repositoryId
-    // (looked up among the legacy repositories it was registered against).
-    const urlById = new Map(legacyRepositories.map(repo => [repo.id, repo.url]));
-    for (const worktree of legacyWorkspaces) {
-      if (hasPath(worktree.path)) {
-        continue;
-      }
-      const url = urlById.get(worktree.repositoryId);
-      if (url === undefined) {
-        this.log.warn('Dropping an orphaned worktree during migration (parent repo not found)', {
-          operation: 'workspace-registry:migrate',
-          worktreePath: worktree.path,
-          repositoryId: worktree.repositoryId,
-        });
-        continue;
-      }
-      unified.push(this.toProvisioned(worktree, url, unified.length));
     }
 
     return unified;
@@ -338,23 +252,6 @@ export class WorkspaceRegistry {
       accentHue: typeof repo.accentHue === 'number' ? repo.accentHue : accentHueForIndex(index),
       createdAt: repo.createdAt,
       updatedAt: repo.updatedAt,
-    });
-  }
-
-  private toProvisioned(worktree: LegacyWorkspaceEntry, url: string, index: number): Repository {
-    return RepositorySchema.parse({
-      id: uuidv4() as string,
-      // A provisioned workspace is named for its branch (branch names repeat
-      // across repos — name uniqueness is per-url now).
-      name: worktree.branchName,
-      url,
-      localPath: worktree.path,
-      origin: 'provisioned',
-      accentHue: accentHueForIndex(index),
-      branchName: worktree.branchName,
-      provisionedAt: worktree.provisionedAt,
-      createdAt: worktree.provisionedAt,
-      updatedAt: worktree.provisionedAt,
     });
   }
 
@@ -377,15 +274,9 @@ export class WorkspaceRegistry {
     }
   }
 
-  // Rename a legacy file to `*.json.bak` without ever clobbering an existing
-  // backup (a previously-migrated `.bak` is preserved; a suffix is appended).
+  // Rename the legacy file to `*.json.bak` (never deleting it).
   private async renameAside(filePath: string): Promise<void> {
-    let target = `${filePath}.bak`;
-    let counter = 1;
-    while (await pathExists(target)) {
-      target = `${filePath}.bak.${counter}`;
-      counter += 1;
-    }
+    const target = `${filePath}.bak`;
     await fs.rename(filePath, target);
     this.log.info('Backed up a legacy registry file', {
       operation: 'workspace-registry:migrate',
@@ -412,13 +303,4 @@ export function sameLoreRepo(
 
 function samePath(a: string, b: string): boolean {
   return path.resolve(a) === path.resolve(b);
-}
-
-async function pathExists(target: string): Promise<boolean> {
-  try {
-    await fs.access(target);
-    return true;
-  } catch {
-    return false;
-  }
 }

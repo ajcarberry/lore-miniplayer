@@ -52,17 +52,20 @@ describe('WorkspaceRegistry', () => {
   });
 
   describe('basic persistence', () => {
-    it('returns an empty registry and seeds a v2 file on first read', async () => {
+    it('returns an empty registry on first read and writes a v2 file on first save', async () => {
       // Given: a fresh store; When/Then: nothing is registered
       await expect(registry.all()).resolves.toEqual([]);
 
-      // And: a v2 file is written
+      // When: the first entry is written
+      await registry.upsertById(repo());
+
+      // Then: a v2 file is written
       const raw = JSON.parse(fs.readFileSync(storePath('workspaces.json'), 'utf-8')) as {
         version: string;
         workspaces: unknown[];
       };
       expect(raw.version).toBe('2.0.0');
-      expect(raw.workspaces).toEqual([]);
+      expect(raw.workspaces).toHaveLength(1);
     });
 
     it('upserts by id and survives a reload into a new instance', async () => {
@@ -167,89 +170,36 @@ describe('WorkspaceRegistry', () => {
         },
       ],
     };
-    const legacyWorkspaceFile = {
-      version: '1.0.0',
-      workspaces: [
-        {
-          repositoryId: REPO_A,
-          path: '/tmp/first-wt/agent-x',
-          branchName: 'agent-x',
-          provisionedAt: '2026-07-22T00:00:00.000Z',
-        },
-      ],
-    };
-
-    it('migrates BOTH legacy files, joins the worktree by url, and backs both up', async () => {
-      // Given: both legacy files on disk
-      fs.writeFileSync(storePath('repositories.json'), JSON.stringify(legacyRepoFile));
-      fs.writeFileSync(storePath('workspaces.json'), JSON.stringify(legacyWorkspaceFile));
-
-      // When: the registry loads
-      const all = await registry.all();
-
-      // Then: the repository migrates to origin 'attached', the worktree to
-      // 'provisioned' carrying its parent's url + branch name
-      const attached = all.find(e => e.origin === 'attached');
-      const provisioned = all.find(e => e.origin === 'provisioned');
-      expect(attached).toMatchObject({ id: REPO_A, url: 'lore.example.com/First' });
-      expect(provisioned).toMatchObject({
-        url: 'lore.example.com/First',
-        localPath: '/tmp/first-wt/agent-x',
-        branchName: 'agent-x',
-        name: 'agent-x',
-        provisionedAt: '2026-07-22T00:00:00.000Z',
-      });
-
-      // And: both legacy files are renamed aside (never deleted), and the v2
-      // file is written
-      expect(fs.existsSync(storePath('repositories.json'))).toBe(false);
-      expect(fs.existsSync(storePath('repositories.json.bak'))).toBe(true);
-      expect(fs.existsSync(storePath('workspaces.json.bak'))).toBe(true);
-      const v2 = JSON.parse(fs.readFileSync(storePath('workspaces.json'), 'utf-8')) as {
-        version: string;
-      };
-      expect(v2.version).toBe('2.0.0');
-    });
-
-    it('migrates when ONLY the legacy repositories.json exists', async () => {
+    it('migrates the legacy repositories.json and backs it up', async () => {
       // Given: only the legacy repository file
       fs.writeFileSync(storePath('repositories.json'), JSON.stringify(legacyRepoFile));
 
       // When: loading
       const all = await registry.all();
 
-      // Then: the repo is migrated and the file backed up
+      // Then: the repo is migrated to origin 'attached' and the file backed up
       expect(all).toHaveLength(1);
       expect(all[0]).toMatchObject({ id: REPO_A, origin: 'attached' });
+      expect(fs.existsSync(storePath('repositories.json'))).toBe(false);
       expect(fs.existsSync(storePath('repositories.json.bak'))).toBe(true);
+      const v2 = JSON.parse(fs.readFileSync(storePath('workspaces.json'), 'utf-8')) as {
+        version: string;
+      };
+      expect(v2.version).toBe('2.0.0');
     });
 
-    it('drops an orphaned worktree whose parent repo is absent', async () => {
-      // Given: only a legacy workspaces.json referencing an unknown parent
-      fs.writeFileSync(storePath('workspaces.json'), JSON.stringify(legacyWorkspaceFile));
-
-      // When: loading (no repositories.json to resolve the url)
-      const all = await registry.all();
-
-      // Then: the orphan is dropped (no url to join) and the v1 file backed up
-      expect(all).toEqual([]);
-      expect(fs.existsSync(storePath('workspaces.json.bak'))).toBe(true);
-    });
-
-    it('does nothing when NEITHER legacy file exists (fresh install)', async () => {
+    it('does nothing when no legacy file exists (fresh install)', async () => {
       // When: loading a fresh profile
       const all = await registry.all();
 
-      // Then: an empty v2 store, no backups created
+      // Then: an empty registry, no backups created
       expect(all).toEqual([]);
       expect(fs.existsSync(storePath('repositories.json.bak'))).toBe(false);
-      expect(fs.existsSync(storePath('workspaces.json.bak'))).toBe(false);
     });
 
-    it('is idempotent across reruns, preserving the backups', async () => {
-      // Given: a first migration of both files
+    it('is idempotent across reruns, preserving the backup', async () => {
+      // Given: a first migration
       fs.writeFileSync(storePath('repositories.json'), JSON.stringify(legacyRepoFile));
-      fs.writeFileSync(storePath('workspaces.json'), JSON.stringify(legacyWorkspaceFile));
       const first = await registry.all();
 
       // When: a fresh instance re-reads (simulating an app restart)
@@ -258,21 +208,7 @@ describe('WorkspaceRegistry', () => {
       // Then: the result is unchanged and no re-migration occurs
       expect(rerun).toEqual(first);
       expect(fs.existsSync(storePath('repositories.json'))).toBe(false);
-      // Exactly one backup each — the rerun did not migrate again
-      expect(fs.existsSync(storePath('repositories.json.bak.1'))).toBe(false);
-    });
-
-    it('never clobbers an existing .bak when a legacy file reappears', async () => {
-      // Given: a pre-existing backup and a fresh legacy repositories.json
-      fs.writeFileSync(storePath('repositories.json.bak'), 'PRIOR-BACKUP');
-      fs.writeFileSync(storePath('repositories.json'), JSON.stringify(legacyRepoFile));
-
-      // When: migrating
-      await registry.all();
-
-      // Then: the prior backup is preserved and the new one lands beside it
-      expect(fs.readFileSync(storePath('repositories.json.bak'), 'utf-8')).toBe('PRIOR-BACKUP');
-      expect(fs.existsSync(storePath('repositories.json.bak.1'))).toBe(true);
+      expect(fs.existsSync(storePath('repositories.json.bak'))).toBe(true);
     });
 
     it('folds a lingering repositories.json into an existing v2 store', async () => {

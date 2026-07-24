@@ -35,13 +35,11 @@ test.describe('Review window — reviewIntent seam routing', () => {
       workspacePath,
       repositoryId: randomUUID(),
       branchName: 'agent/my-task',
-      revision: '',
       workflow: 'commit',
       compare: {
         source: { kind: 'branchHead', branch: 'agent/my-task' },
         target: { kind: 'workingTree' },
       },
-      title: 'my-task',
     };
 
     const [reviewWindow] = await Promise.all([
@@ -75,13 +73,11 @@ test.describe('Review window — reviewIntent seam routing', () => {
       workspacePath,
       repositoryId: randomUUID(),
       branchName: 'agent/my-task',
-      revision: '',
       workflow: 'merge',
       compare: {
         source: { kind: 'branchHead', branch: 'agent/my-task' },
         target: { kind: 'branchHead', branch: 'main' },
       },
-      title: 'my-task',
     };
 
     const [reviewWindow] = await Promise.all([

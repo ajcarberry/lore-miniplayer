@@ -41,32 +41,16 @@ import type {
   WorkspaceCardSchema,
   WorkspaceModelSnapshotSchema,
   WorkspaceProvisionRequestSchema,
-  WorkspaceProvisionResponseSchema,
-  WorkspaceListRequestSchema,
-  WorkspaceListResponseSchema,
   WorkspaceTeardownRequestSchema,
   WorkspaceTeardownResultSchema,
-  WorkspaceTeardownResponseSchema,
   WorkspaceMarkActiveRequestSchema,
-  WorkspaceMarkActiveResponseSchema,
   WorkspaceForgetRequestSchema,
   DiffRequestSchema,
-  DiffResponseSchema,
   MergeStartRequestSchema,
-  MergeStartResponseSchema,
   MergeResolveRequestSchema,
-  MergeResolveResponseSchema,
   MergeAbortRequestSchema,
-  MergeAbortResponseSchema,
   MergeCompleteRequestSchema,
-  MergeCompleteResponseSchema,
-  LockEntrySchema,
-  LockQueryRequestSchema,
-  LockQueryResponseSchema,
-  LockReleaseRequestSchema,
-  LockReleaseResponseSchema,
   ResolveUserNameRequestSchema,
-  ResolveUserNameResponseSchema,
 } from './schemas';
 
 export type ThemeMode = 'auto' | 'light' | 'dark';
@@ -214,7 +198,7 @@ export type AgentCommentaryEntry = z.infer<typeof AgentCommentaryEntrySchema>;
 
 export type AgentIntention = z.infer<typeof AgentIntentionSchema>;
 
-// Push channel payload (main -> renderer, IPC_CHANNELS.agent.observability).
+// The agent observer's 'push' payload (consumed in-main by the workspace model).
 export type AgentObservabilityPush = z.infer<typeof AgentObservabilityPushSchema>;
 
 export type FileDiffAction = z.infer<typeof FileDiffActionSchema>;
@@ -248,43 +232,35 @@ export type WorkspaceModelSnapshot = z.infer<typeof WorkspaceModelSnapshotSchema
 
 // IPC request/response payload types (the `T` inside each channel's
 // `Result<T>`; see IPC_CHANNELS in schemas.ts for the channel names).
+// Requests are inferred from their boundary-validated Zod schemas; responses
+// are plain aliases of the underlying result types (nothing parses a
+// response at runtime).
 export type WorkspaceProvisionRequest = z.infer<typeof WorkspaceProvisionRequestSchema>;
-export type WorkspaceProvisionResponse = z.infer<typeof WorkspaceProvisionResponseSchema>;
-
-export type WorkspaceListRequest = z.infer<typeof WorkspaceListRequestSchema>;
-export type WorkspaceListResponse = z.infer<typeof WorkspaceListResponseSchema>;
+export type WorkspaceProvisionResponse = Workspace;
 
 export type WorkspaceTeardownRequest = z.infer<typeof WorkspaceTeardownRequestSchema>;
 export type WorkspaceTeardownResult = z.infer<typeof WorkspaceTeardownResultSchema>;
-export type WorkspaceTeardownResponse = z.infer<typeof WorkspaceTeardownResponseSchema>;
+export type WorkspaceTeardownResponse = WorkspaceTeardownResult;
 
 export type WorkspaceMarkActiveRequest = z.infer<typeof WorkspaceMarkActiveRequestSchema>;
-export type WorkspaceMarkActiveResponse = z.infer<typeof WorkspaceMarkActiveResponseSchema>;
+export type WorkspaceMarkActiveResponse = Workspace;
 
 export type WorkspaceForgetRequest = z.infer<typeof WorkspaceForgetRequestSchema>;
 
 export type DiffRequest = z.infer<typeof DiffRequestSchema>;
-export type DiffResponse = z.infer<typeof DiffResponseSchema>;
+export type DiffResponse = FileDiffResult[];
 
 export type MergeStartRequest = z.infer<typeof MergeStartRequestSchema>;
-export type MergeStartResponse = z.infer<typeof MergeStartResponseSchema>;
+export type MergeStartResponse = MergeState;
 
 export type MergeResolveRequest = z.infer<typeof MergeResolveRequestSchema>;
-export type MergeResolveResponse = z.infer<typeof MergeResolveResponseSchema>;
+export type MergeResolveResponse = MergeState;
 
 export type MergeAbortRequest = z.infer<typeof MergeAbortRequestSchema>;
-export type MergeAbortResponse = z.infer<typeof MergeAbortResponseSchema>;
+export type MergeAbortResponse = { aborted: boolean };
 
 export type MergeCompleteRequest = z.infer<typeof MergeCompleteRequestSchema>;
-export type MergeCompleteResponse = z.infer<typeof MergeCompleteResponseSchema>;
-
-export type LockEntry = z.infer<typeof LockEntrySchema>;
-
-export type LockQueryRequest = z.infer<typeof LockQueryRequestSchema>;
-export type LockQueryResponse = z.infer<typeof LockQueryResponseSchema>;
-
-export type LockReleaseRequest = z.infer<typeof LockReleaseRequestSchema>;
-export type LockReleaseResponse = z.infer<typeof LockReleaseResponseSchema>;
+export type MergeCompleteResponse = { revision: string };
 
 export type ResolveUserNameRequest = z.infer<typeof ResolveUserNameRequestSchema>;
-export type ResolveUserNameResponse = z.infer<typeof ResolveUserNameResponseSchema>;
+export type ResolveUserNameResponse = { name: string };

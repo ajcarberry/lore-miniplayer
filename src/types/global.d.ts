@@ -13,8 +13,6 @@ import type {
   VoidResult,
   WorkspaceProvisionRequest,
   WorkspaceProvisionResponse,
-  WorkspaceListRequest,
-  WorkspaceListResponse,
   WorkspaceTeardownRequest,
   WorkspaceTeardownResponse,
   WorkspaceMarkActiveRequest,
@@ -32,10 +30,6 @@ import type {
   MergeCompleteResponse,
   ReviewOpenRequest,
   WorkspaceModelSnapshot,
-  LockQueryRequest,
-  LockQueryResponse,
-  LockReleaseRequest,
-  LockReleaseResponse,
   ResolveUserNameRequest,
   ResolveUserNameResponse,
 } from '../shared/types';
@@ -112,7 +106,6 @@ declare global {
         provision: (
           request: WorkspaceProvisionRequest
         ) => Promise<Result<WorkspaceProvisionResponse>>;
-        list: (request: WorkspaceListRequest) => Promise<Result<WorkspaceListResponse>>;
         teardown: (request: WorkspaceTeardownRequest) => Promise<Result<WorkspaceTeardownResponse>>;
         markActive: (
           request: WorkspaceMarkActiveRequest
@@ -120,12 +113,6 @@ declare global {
         // Untrack-only removal (design amendment): drops the workspace from
         // the registry without touching the worktree directory or the branch.
         forget: (request: WorkspaceForgetRequest) => Promise<VoidResult>;
-      };
-      agent: {
-        // Registers a listener for agent session-state updates pushed from
-        // main; returns the cleanup that removes it. Payloads are validated in
-        // the renderer.
-        onObservability: (callback: (push: unknown) => void) => () => void;
       };
       diff: {
         compare: (request: DiffRequest) => Promise<Result<DiffResponse>>;
@@ -146,21 +133,16 @@ declare global {
         abort: (request: MergeAbortRequest) => Promise<Result<MergeAbortResponse>>;
         complete: (request: MergeCompleteRequest) => Promise<Result<MergeCompleteResponse>>;
       };
-      // Mission Control window (design 2a). open/close manage the secondary
+      // Mission Control window (design 2a). open manages the secondary
       // window; watch targets the workspace model at a repo and returns its
       // snapshot; refresh triggers an immediate rebuild on demand (the
       // header's manual refresh control); onSnapshot subscribes to
       // subsequent rebuilds (payloads validated in the renderer).
       missionControl: {
         open: (repositoryId?: string) => void;
-        close: () => void;
         watch: (repositoryId: string) => Promise<Result<WorkspaceModelSnapshot>>;
         refresh: (repositoryId: string) => Promise<VoidResult>;
         onSnapshot: (callback: (snapshot: unknown) => void) => () => void;
-      };
-      locks: {
-        query: (request: LockQueryRequest) => Promise<Result<LockQueryResponse>>;
-        release: (request: LockReleaseRequest) => Promise<Result<LockReleaseResponse>>;
       };
       // Attribution name resolution (P5's resolveUserName), exposed for the
       // P15 toast.

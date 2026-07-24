@@ -66,7 +66,6 @@ interface Harness {
   harden: jest.Mock;
   getMissionControlWindow: () => FakeWindow | null;
   openListener: (event: unknown, rawRepositoryId: unknown) => void;
-  closeListener: () => void;
   watchHandler: (event: unknown, ...args: unknown[]) => Promise<unknown>;
   refreshHandler: (event: unknown, ...args: unknown[]) => Promise<unknown>;
   instances: FakeWindow[];
@@ -124,7 +123,6 @@ function setup(overrides: Partial<MissionControlWindowDeps> = {}): Harness {
     harden,
     getMissionControlWindow: wh.getMissionControlWindow as () => FakeWindow | null,
     openListener: findOn(IPC_CHANNELS.missionControl.open),
-    closeListener: findOn(IPC_CHANNELS.missionControl.close) as () => void,
     watchHandler: watchCall[1] as (event: unknown, ...args: unknown[]) => Promise<unknown>,
     refreshHandler: refreshCall[1] as (event: unknown, ...args: unknown[]) => Promise<unknown>,
     instances: electron.BrowserWindow.__instances,
@@ -180,20 +178,6 @@ describe('registerMissionControlWindow — open', () => {
 
     expect(h.model.unwatch).toHaveBeenCalledTimes(1);
     expect(h.getMissionControlWindow()).toBeNull();
-  });
-});
-
-describe('registerMissionControlWindow — close', () => {
-  it('closes the open window', () => {
-    const h = setup();
-    h.openListener({}, REPO_ID);
-    h.closeListener();
-    expect(h.instances[0]!.close).toHaveBeenCalledTimes(1);
-  });
-
-  it('is a no-op when no window is open', () => {
-    const h = setup();
-    expect(() => h.closeListener()).not.toThrow();
   });
 });
 

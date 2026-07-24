@@ -6,7 +6,6 @@ import {
   RepositoryCreateInputSchema,
   RepositoryUpdateInputSchema,
   WorkspaceProvisionRequestSchema,
-  WorkspaceListRequestSchema,
   WorkspaceTeardownRequestSchema,
   WorkspaceMarkActiveRequestSchema,
   WorkspaceForgetRequestSchema,
@@ -15,8 +14,6 @@ import {
   MergeResolveRequestSchema,
   MergeAbortRequestSchema,
   MergeCompleteRequestSchema,
-  LockQueryRequestSchema,
-  LockReleaseRequestSchema,
   ResolveUserNameRequestSchema,
 } from '../../shared/schemas';
 
@@ -153,7 +150,6 @@ export const PathBasenameArgsSchema = z.tuple([PathBasenameInputSchema]);
 // workspace:* — each channel double-validates its request with the P2
 // contract schema (the renderer already validates before invoking).
 export const WorkspaceProvisionArgsSchema = z.tuple([WorkspaceProvisionRequestSchema]);
-export const WorkspaceListArgsSchema = z.tuple([WorkspaceListRequestSchema]);
 export const WorkspaceTeardownArgsSchema = z.tuple([WorkspaceTeardownRequestSchema]);
 export const WorkspaceMarkActiveArgsSchema = z.tuple([WorkspaceMarkActiveRequestSchema]);
 export const WorkspaceForgetArgsSchema = z.tuple([WorkspaceForgetRequestSchema]);
@@ -177,11 +173,6 @@ export const MergeStartArgsSchema = z.tuple([MergeStartRequestSchema]);
 export const MergeResolveArgsSchema = z.tuple([MergeResolveRequestSchema]);
 export const MergeAbortArgsSchema = z.tuple([MergeAbortRequestSchema]);
 export const MergeCompleteArgsSchema = z.tuple([MergeCompleteRequestSchema]);
-
-// locks:* — lock visibility (query) and release (spec: show + release,
-// never enforce acquisition)
-export const LockQueryArgsSchema = z.tuple([LockQueryRequestSchema]);
-export const LockReleaseArgsSchema = z.tuple([LockReleaseRequestSchema]);
 
 // identity:resolveUserName — resolves a notification's userId to a display
 // name (P5's LoreRepositoryService.resolveUserName).

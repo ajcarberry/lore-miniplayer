@@ -326,14 +326,6 @@ export function registerMissionControlWindow(
     missionControlWindow = win;
   });
 
-  // Close from the opener (the ambient window's footer icon toggles it). The
-  // window's own TitleBar close uses the shared window:close handler instead.
-  ipcMain.on(IPC_CHANNELS.missionControl.close, () => {
-    if (missionControlWindow && !missionControlWindow.isDestroyed()) {
-      missionControlWindow.close();
-    }
-  });
-
   // Point the workspace model at a repository and return its current snapshot.
   // watch() warms the cache markActive depends on and starts the snapshot push
   // stream; the returned snapshot seeds the renderer without a push race.
@@ -384,11 +376,6 @@ const REVIEW_WINDOW_SIZE = { width: 1220, height: 840 } as const;
 const reviewWindows = new Map<string, BrowserWindow>();
 const reviewRequests = new WeakMap<BrowserWindow, ReviewOpenRequest>();
 
-export function getReviewWindow(workspacePath: string): BrowserWindow | null {
-  const win = reviewWindows.get(workspacePath);
-  return win && !win.isDestroyed() ? win : null;
-}
-
 export function registerReviewWindow(log: MainLogger, deps: ReviewWindowDeps): void {
   ipcMain.on(IPC_CHANNELS.review.open, (_event, rawRequest: unknown): void => {
     const parsed = ReviewOpenRequestSchema.safeParse(rawRequest);
@@ -416,7 +403,7 @@ export function registerReviewWindow(log: MainLogger, deps: ReviewWindowDeps): v
       width: REVIEW_WINDOW_SIZE.width,
       height: REVIEW_WINDOW_SIZE.height,
       frame: false,
-      title: `Review — ${request.title ?? request.branchName}`,
+      title: `Review — ${request.branchName}`,
       backgroundColor: '#f7f2e7',
       webPreferences: {
         nodeIntegration: false,

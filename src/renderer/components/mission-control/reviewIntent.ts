@@ -42,7 +42,6 @@ export function requestOpenReviewWindow(intent: OpenReviewIntent): void {
     workspacePath: workspace.path,
     repositoryId: workspace.repositoryId,
     branchName: workspace.branchName,
-    revision: workspace.revision,
     workflow,
     compare: buildCompare(workflow, workspace),
   };

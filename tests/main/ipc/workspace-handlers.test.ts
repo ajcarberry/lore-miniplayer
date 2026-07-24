@@ -24,7 +24,6 @@ import type { WorkspaceModelService } from '../../../src/main/services/workspace
 
 const mockWorkspaceService = {
   provision: jest.fn(),
-  list: jest.fn(),
   teardown: jest.fn(),
   forget: jest.fn(),
 } as unknown as jest.Mocked<WorkspaceService>;
@@ -52,10 +51,9 @@ beforeEach(() => {
 });
 
 describe('workspace handler registration', () => {
-  it('registers the five workspace channels', () => {
-    // Then: provision, list, teardown, markActive, and forget are reachable
+  it('registers the four workspace channels', () => {
+    // Then: provision, teardown, markActive, and forget are reachable
     expect(registeredHandlers.has(IPC_CHANNELS.workspace.provision)).toBe(true);
-    expect(registeredHandlers.has(IPC_CHANNELS.workspace.list)).toBe(true);
     expect(registeredHandlers.has(IPC_CHANNELS.workspace.teardown)).toBe(true);
     expect(registeredHandlers.has(IPC_CHANNELS.workspace.markActive)).toBe(true);
     expect(registeredHandlers.has(IPC_CHANNELS.workspace.forget)).toBe(true);
@@ -179,43 +177,6 @@ describe('workspace:provision', () => {
 
     // Then: the error surfaces as a failure result
     expect(result).toEqual({ success: false, error: 'server unreachable' });
-  });
-});
-
-describe('workspace:list', () => {
-  it('forwards the repository id and wraps the workspace array', async () => {
-    // Given: the service returns two workspaces
-    const workspaces = [
-      {
-        instanceId: 'a',
-        path: '/w/a',
-        branchName: 'x',
-        name: 'x',
-        revision: 'r',
-        stale: false,
-        repositoryId: REPO_ID,
-        origin: 'provisioned' as const,
-      },
-    ];
-    mockWorkspaceService.list.mockResolvedValue(workspaces);
-
-    // When: listing
-    const result = await invoke(IPC_CHANNELS.workspace.list, { repositoryId: REPO_ID });
-
-    // Then: the service receives the id and the array is wrapped
-    expect(mockWorkspaceService.list).toHaveBeenCalledWith(REPO_ID);
-    expect(result).toEqual({ success: true, data: workspaces });
-  });
-
-  it('rejects a list request with a non-uuid repository id', async () => {
-    // When: listing with a bad id
-    const result = (await invoke(IPC_CHANNELS.workspace.list, { repositoryId: 42 })) as {
-      success: boolean;
-    };
-
-    // Then: validation fails before the service is reached
-    expect(result.success).toBe(false);
-    expect(mockWorkspaceService.list).not.toHaveBeenCalled();
   });
 });
 

@@ -21,13 +21,11 @@ function makeRequest(overrides: Partial<ReviewOpenRequest> = {}): ReviewOpenRequ
     workspacePath: WORKSPACE_PATH,
     repositoryId: REPO_ID,
     branchName: 'agent/act2-balance',
-    revision: 'r128',
     workflow: 'commit',
     compare: {
       source: { kind: 'revision', revision: 'r128' },
       target: { kind: 'workingTree' },
     },
-    title: 'Balance pass',
     ...overrides,
   };
 }
@@ -175,7 +173,7 @@ describe('ReviewWindow — commit workflow', () => {
     renderWindow();
 
     // Title + eyebrow (repo · branch)
-    expect(await screen.findByText('Review — Balance pass')).toBeInTheDocument();
+    expect(await screen.findByText('Review — agent/act2-balance')).toBeInTheDocument();
     expect(screen.getByText('emberfall · agent/act2-balance')).toBeInTheDocument();
 
     // File list header aggregates the line stats across files.
@@ -236,10 +234,9 @@ describe('ReviewWindow — commit workflow', () => {
     renderWindow();
     await screen.findByText('encounters.toml');
 
-    // A file is staged (encounters.toml) but the message is empty initially?
-    // The title preloads a message, so clear it to prove the gate.
+    // A file is staged (encounters.toml) but the message starts empty, so the
+    // gate holds until a message is typed.
     const message = screen.getByLabelText('Commit message');
-    await user.clear(message);
     expect(screen.getByRole('button', { name: 'Commit' })).toBeDisabled();
 
     await user.type(message, 'Balance pass on Act II');
@@ -252,6 +249,7 @@ describe('ReviewWindow — commit workflow', () => {
     renderWindow();
     await screen.findByText('encounters.toml');
 
+    await user.type(screen.getByLabelText('Commit message'), 'Balance pass');
     await user.click(screen.getByRole('button', { name: 'Commit' }));
     expect(api.commit).toHaveBeenCalledWith(WORKSPACE_PATH, 'Balance pass');
 

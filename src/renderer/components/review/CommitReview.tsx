@@ -41,12 +41,12 @@ export function CommitReview(props: CommitReviewProps): ReactElement {
   const [revisions, setRevisions] = useState<RevisionSummary[]>([]);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [repositoryName, setRepositoryName] = useState<string | null>(null);
-  const [message, setMessage] = useState<string>(request.title ?? '');
+  const [message, setMessage] = useState<string>('');
   const [committing, setCommitting] = useState(false);
   const [committed, setCommitted] = useState(false);
   const [pushing, setPushing] = useState(false);
 
-  // Initial state (compare/message) is seeded from `request` and re-seeded by a
+  // Initial state (compare) is seeded from `request` and re-seeded by a
   // remount when the request changes (keyed in ReviewWindow), so no reset effect
   // is needed here.
 
@@ -177,7 +177,7 @@ export function CommitReview(props: CommitReviewProps): ReactElement {
             style={{ fontSize: 15, margin: 0 }}
             truncate
           >
-            {`Review — ${request.title ?? request.branchName}`}
+            {`Review — ${request.branchName}`}
           </Text>
           <Text size='xs' ff='var(--font-mono)' c='dimmed'>
             {repositoryName ? `${repositoryName} · ${request.branchName}` : request.branchName}

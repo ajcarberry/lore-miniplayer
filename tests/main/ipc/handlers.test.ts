@@ -42,7 +42,6 @@ import type { WorkspaceService } from '../../../src/main/services/workspace-serv
 import type { WorkspaceModelService } from '../../../src/main/services/workspace-model';
 import type { DiffService } from '../../../src/main/services/diff-service';
 import type { MergeService } from '../../../src/main/services/merge-service';
-import type { LockService } from '../../../src/main/services/lock-service';
 
 const mockRepositoryService = {
   getAll: jest.fn(),
@@ -91,11 +90,6 @@ const mockMergeService = {
   complete: jest.fn(),
 } as unknown as jest.Mocked<MergeService>;
 
-const mockLockService = {
-  query: jest.fn(),
-  release: jest.fn(),
-} as unknown as jest.Mocked<LockService>;
-
 function invoke(channel: string, ...args: unknown[]): unknown {
   const handler = registeredHandlers.get(channel);
   if (!handler) {
@@ -113,8 +107,7 @@ beforeAll(() => {
     mockWorkspaceService,
     mockWorkspaceModel,
     mockDiffService,
-    mockMergeService,
-    mockLockService
+    mockMergeService
   );
 });
 

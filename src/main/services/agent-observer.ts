@@ -69,8 +69,8 @@ export interface AgentObserverOptions {
 // agents in provisioned workspaces POST fire-and-forget hook events to
 // `http://127.0.0.1:<port>/hook/<workspaceToken>`; this service authenticates
 // the token, maps the event to an AgentSessionState, keeps it in memory, and
-// emits a schema-valid `AgentObservabilityPush` ('push') that the main index
-// forwards to the renderer.
+// emits a schema-valid `AgentObservabilityPush` ('push') that the workspace
+// model consumes.
 //
 // Security posture (mission stakes high): bound to 127.0.0.1 only, never
 // 0.0.0.0; per-workspace tokens are 32 random bytes (unguessable); payload

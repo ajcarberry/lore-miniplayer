@@ -55,8 +55,8 @@ export class RepositoryService {
   }
 
   async initialize(): Promise<void> {
-    // Triggers migration from the two legacy files and seeds an empty v2 store
-    // on first run; idempotent across restarts.
+    // Triggers migration from the legacy repositories.json when one lingers;
+    // idempotent across restarts.
     await this.registry.all();
     // Repair placeholder-url attach entries written by the pre-fix flow, and
     // backfill any entry missing its loreRepositoryId, so they group with their

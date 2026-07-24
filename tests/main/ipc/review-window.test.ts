@@ -10,13 +10,11 @@ function makeRequest(overrides: Partial<ReviewOpenRequest> = {}): ReviewOpenRequ
     workspacePath: '/wt/act2-balance',
     repositoryId: REPO_ID,
     branchName: 'agent/act2-balance',
-    revision: 'r128',
     workflow: 'commit',
     compare: {
       source: { kind: 'revision', revision: 'r128' },
       target: { kind: 'workingTree' },
     },
-    title: 'Balance pass',
     ...overrides,
   };
 }
@@ -76,7 +74,6 @@ interface Harness {
   harden: jest.Mock;
   openListener: (event: unknown, rawRequest: unknown) => void;
   contextHandler: (event: unknown) => Promise<unknown>;
-  getReviewWindow: (workspacePath: string) => FakeWindow | null;
   instances: FakeWindow[];
 }
 
@@ -118,7 +115,6 @@ function setup(overrides: Partial<ReviewWindowDeps> = {}): Harness {
     harden,
     openListener: findOn(IPC_CHANNELS.review.open),
     contextHandler: contextCall[1] as (event: unknown) => Promise<unknown>,
-    getReviewWindow: wh.getReviewWindow as (workspacePath: string) => FakeWindow | null,
     instances: electron.BrowserWindow.__instances,
   };
 }
@@ -132,10 +128,9 @@ describe('registerReviewWindow — open', () => {
     expect(h.instances).toHaveLength(1);
     const win = h.instances[0]!;
     expect(win.opts.webPreferences.preload).toBe('/app/preload.js');
-    expect(win.opts.title).toBe('Review — Balance pass');
+    expect(win.opts.title).toBe('Review — agent/act2-balance');
     expect(h.harden).toHaveBeenCalledWith(win);
     expect(win.loadURL).toHaveBeenCalledWith('http://localhost:5173/review.html');
-    expect(h.getReviewWindow('/wt/act2-balance')).toBe(win);
   });
 
   it('loads the packaged file when there is no dev server', () => {
@@ -181,7 +176,12 @@ describe('registerReviewWindow — open', () => {
     const h = setup();
     h.openListener({}, makeRequest());
     h.instances[0]!.emit('closed');
-    expect(h.getReviewWindow('/wt/act2-balance')).toBeNull();
+
+    // Re-opening the same workspace creates a fresh window rather than
+    // re-targeting the closed one.
+    h.openListener({}, makeRequest());
+    expect(h.instances).toHaveLength(2);
+    expect(h.instances[0]!.focus).not.toHaveBeenCalled();
   });
 });
 

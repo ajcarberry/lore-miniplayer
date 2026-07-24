@@ -25,7 +25,6 @@ import {
   WorkspaceCardSchema,
   WorkspaceModelSnapshotSchema,
   WorkspaceProvisionRequestSchema,
-  WorkspaceListRequestSchema,
   WorkspaceTeardownRequestSchema,
   WorkspaceTeardownResultSchema,
   WorkspaceMarkActiveRequestSchema,
@@ -34,13 +33,7 @@ import {
   MergeStartRequestSchema,
   MergeResolveRequestSchema,
   MergeAbortRequestSchema,
-  MergeAbortResponseSchema,
   MergeCompleteRequestSchema,
-  MergeCompleteResponseSchema,
-  LockEntrySchema,
-  LockQueryRequestSchema,
-  LockReleaseRequestSchema,
-  LockReleaseResponseSchema,
   IPC_CHANNELS,
 } from '../../src/shared/schemas';
 
@@ -563,8 +556,8 @@ describe('CloneProgressSchema', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Agentic development: workspaces, agent observability, diff/merge review,
-// locks (P2 contracts consumed by later packets).
+// Agentic development: workspaces, agent observability, diff/merge review
+// (P2 contracts consumed by later packets).
 // ---------------------------------------------------------------------------
 
 const validWorkspace = {
@@ -675,7 +668,6 @@ describe('WorkspaceBandSchema and WorkspaceAttentionSchema', () => {
       needsYou: true,
       reasons: [
         'permissionPrompt',
-        'idlePrompt',
         'reviewReady',
         'conflict',
         'diverged',
@@ -1069,13 +1061,11 @@ describe('ReviewOpenRequestSchema', () => {
     workspacePath: '/wt/act2-balance',
     repositoryId,
     branchName: 'agent/act2-balance',
-    revision: 'r128',
     workflow: 'commit' as const,
     compare: {
       source: { kind: 'revision' as const, revision: 'r128' },
       target: { kind: 'workingTree' as const },
     },
-    title: 'Balance pass on Act II encounters',
   };
 
   it('accepts a fully-specified commit open request', () => {
@@ -1084,14 +1074,6 @@ describe('ReviewOpenRequestSchema', () => {
 
     // Then: parsing succeeds
     expect(result.success).toBe(true);
-  });
-
-  it('accepts a request without the optional title', () => {
-    // Given: a request omitting the human title
-    const { title: _title, ...withoutTitle } = valid;
-
-    // When/Then: parsing still succeeds
-    expect(ReviewOpenRequestSchema.safeParse(withoutTitle).success).toBe(true);
   });
 
   it('rejects a request with an empty workspace path', () => {
@@ -1142,14 +1124,6 @@ describe('Workspace IPC request/response schemas', () => {
 
     // Then: parsing fails
     expect(result.success).toBe(false);
-  });
-
-  it('accepts a valid list request', () => {
-    // When: parsing a workspace list request
-    const result = WorkspaceListRequestSchema.safeParse({ repositoryId });
-
-    // Then: parsing succeeds
-    expect(result.success).toBe(true);
   });
 
   it('accepts a teardown request identified by workspaceId', () => {
@@ -1375,104 +1349,30 @@ describe('Merge IPC request/response schemas', () => {
     expect(result.success).toBe(false);
   });
 
-  it('accepts a merge abort request and response', () => {
-    // When: parsing a merge-abort request and its response
+  it('accepts a merge abort request', () => {
+    // When: parsing a merge-abort request
     const requestResult = MergeAbortRequestSchema.safeParse({ repositoryPath: '/repos/a' });
-    const responseResult = MergeAbortResponseSchema.safeParse({ aborted: true });
 
-    // Then: both parse successfully
+    // Then: parsing succeeds
     expect(requestResult.success).toBe(true);
-    expect(responseResult.success).toBe(true);
   });
 
-  it('accepts a merge complete request and response', () => {
-    // When: parsing a merge-complete request and its response
+  it('accepts a merge complete request', () => {
+    // When: parsing a merge-complete request
     const requestResult = MergeCompleteRequestSchema.safeParse({ repositoryPath: '/repos/a' });
-    const responseResult = MergeCompleteResponseSchema.safeParse({ revision: 'a1b2c3' });
 
-    // Then: both parse successfully
+    // Then: parsing succeeds
     expect(requestResult.success).toBe(true);
-    expect(responseResult.success).toBe(true);
-  });
-
-  it('rejects a merge complete response with an empty revision', () => {
-    // When: parsing a merge-complete response with a blank revision
-    const result = MergeCompleteResponseSchema.safeParse({ revision: '' });
-
-    // Then: parsing fails
-    expect(result.success).toBe(false);
-  });
-});
-
-describe('Lock IPC request/response schemas', () => {
-  it('accepts a lock entry', () => {
-    // When: parsing a single lock entry
-    const result = LockEntrySchema.safeParse({
-      path: 'src/index.ts',
-      userId: 'mara-voss',
-      branch: 'feat/agent-1',
-    });
-
-    // Then: parsing succeeds
-    expect(result.success).toBe(true);
-  });
-
-  it('accepts a lock query request scoped to specific paths', () => {
-    // When: parsing a lock query request with explicit paths
-    const result = LockQueryRequestSchema.safeParse({
-      repositoryPath: '/repos/a',
-      paths: ['src/index.ts'],
-    });
-
-    // Then: parsing succeeds
-    expect(result.success).toBe(true);
-  });
-
-  it('accepts a lock query request with no paths (query all)', () => {
-    // When: parsing a lock query request without paths
-    const result = LockQueryRequestSchema.safeParse({ repositoryPath: '/repos/a' });
-
-    // Then: parsing succeeds
-    expect(result.success).toBe(true);
-  });
-
-  it('accepts a lock release request', () => {
-    // When: parsing a lock release request
-    const result = LockReleaseRequestSchema.safeParse({
-      repositoryPath: '/repos/a',
-      paths: ['src/index.ts'],
-    });
-
-    // Then: parsing succeeds
-    expect(result.success).toBe(true);
-  });
-
-  it('rejects a lock release request with an empty paths array', () => {
-    // When: parsing a lock release request with nothing to release
-    const result = LockReleaseRequestSchema.safeParse({ repositoryPath: '/repos/a', paths: [] });
-
-    // Then: parsing fails
-    expect(result.success).toBe(false);
-  });
-
-  it('accepts a lock release response', () => {
-    // When: parsing a lock release response
-    const result = LockReleaseResponseSchema.safeParse({ released: ['src/index.ts'] });
-
-    // Then: parsing succeeds
-    expect(result.success).toBe(true);
   });
 });
 
 describe('IPC_CHANNELS', () => {
-  it('declares a unique channel name for every workspace/diff/merge/lock/agent operation', () => {
+  it('declares a unique channel name for every workspace/diff/merge operation', () => {
     // When: flattening every declared channel name
     const names = [
       ...Object.values(IPC_CHANNELS.workspace),
       ...Object.values(IPC_CHANNELS.diff),
       ...Object.values(IPC_CHANNELS.merge),
-      ...Object.values(IPC_CHANNELS.locks),
-      ...Object.values(IPC_CHANNELS.agent),
       ...Object.values(IPC_CHANNELS.review),
     ];
 

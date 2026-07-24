@@ -8,7 +8,6 @@ function makeRequest(overrides: Partial<ReviewOpenRequest> = {}): ReviewOpenRequ
     workspacePath: '/wt/act2',
     repositoryId: '11111111-1111-4111-8111-111111111111',
     branchName: 'agent/act2',
-    revision: 'r128',
     workflow: 'commit',
     compare: {
       source: { kind: 'revision', revision: 'r128' },

@@ -15,8 +15,6 @@ import type {
   VoidResult,
   WorkspaceProvisionRequest,
   WorkspaceProvisionResponse,
-  WorkspaceListRequest,
-  WorkspaceListResponse,
   WorkspaceTeardownRequest,
   WorkspaceTeardownResponse,
   WorkspaceMarkActiveRequest,
@@ -34,10 +32,6 @@ import type {
   MergeCompleteResponse,
   ReviewOpenRequest,
   WorkspaceModelSnapshot,
-  LockQueryRequest,
-  LockQueryResponse,
-  LockReleaseRequest,
-  LockReleaseResponse,
   ResolveUserNameRequest,
   ResolveUserNameResponse,
 } from '../shared/types';
@@ -242,11 +236,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
         Result<WorkspaceProvisionResponse>
       >;
     },
-    list: async (request: WorkspaceListRequest): Promise<Result<WorkspaceListResponse>> => {
-      return ipcRenderer.invoke(IPC_CHANNELS.workspace.list, request) as Promise<
-        Result<WorkspaceListResponse>
-      >;
-    },
     teardown: async (
       request: WorkspaceTeardownRequest
     ): Promise<Result<WorkspaceTeardownResponse>> => {
@@ -269,17 +258,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return ipcRenderer.invoke(IPC_CHANNELS.workspace.forget, request) as Promise<VoidResult>;
     },
   },
-  // Mission Control window (P10, design 2a). `open`/`close` manage the
-  // secondary window; `watch` points the workspace model at a repository and
-  // returns its current snapshot; `onSnapshot` subscribes to subsequent model
-  // rebuilds (payload crosses the bridge as unknown, Zod-validated in the
-  // renderer before use).
+  // Mission Control window (P10, design 2a). `open` manages the secondary
+  // window; `watch` points the workspace model at a repository and returns its
+  // current snapshot; `onSnapshot` subscribes to subsequent model rebuilds
+  // (payload crosses the bridge as unknown, Zod-validated in the renderer
+  // before use).
   missionControl: {
     open: (repositoryId?: string): void => {
       ipcRenderer.send(IPC_CHANNELS.missionControl.open, repositoryId);
-    },
-    close: (): void => {
-      ipcRenderer.send(IPC_CHANNELS.missionControl.close);
     },
     watch: async (repositoryId: string): Promise<Result<WorkspaceModelSnapshot>> => {
       return ipcRenderer.invoke(IPC_CHANNELS.workspaceModel.watch, repositoryId) as Promise<
@@ -356,35 +342,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     complete: async (request: MergeCompleteRequest): Promise<Result<MergeCompleteResponse>> => {
       return ipcRenderer.invoke(IPC_CHANNELS.merge.complete, request) as Promise<
         Result<MergeCompleteResponse>
-      >;
-    },
-  },
-  // Agent observability (research note): session-state updates pushed from the
-  // main-process hook listener.
-  agent: {
-    // One-way push channel from main; the payload crosses the bridge as
-    // unknown and is Zod-validated in the renderer before use.
-    onObservability: (callback: (push: unknown) => void): (() => void) => {
-      const listener = (_event: unknown, payload: unknown): void => {
-        callback(payload);
-      };
-      ipcRenderer.on(IPC_CHANNELS.agent.observability, listener);
-      return (): void => {
-        ipcRenderer.removeListener(IPC_CHANNELS.agent.observability, listener);
-      };
-    },
-  },
-  // Lock visibility (spec "Supporting signals"): show + release, never
-  // enforce acquisition.
-  locks: {
-    query: async (request: LockQueryRequest): Promise<Result<LockQueryResponse>> => {
-      return ipcRenderer.invoke(IPC_CHANNELS.locks.query, request) as Promise<
-        Result<LockQueryResponse>
-      >;
-    },
-    release: async (request: LockReleaseRequest): Promise<Result<LockReleaseResponse>> => {
-      return ipcRenderer.invoke(IPC_CHANNELS.locks.release, request) as Promise<
-        Result<LockReleaseResponse>
       >;
     },
   },

@@ -30,9 +30,10 @@ export default {
     '!src/main/index.ts',
     '!src/main/preload.ts',
     '!src/renderer/index.tsx',
-    // Mission Control's React bootstrap (createRoot) mirrors index.tsx and is
-    // exercised by the Playwright e2e suite, not Jest.
+    // Mission Control's and the review window's React bootstraps (createRoot)
+    // mirror index.tsx and are exercised by the Playwright e2e suite, not Jest.
     '!src/renderer/mission-control.tsx',
+    '!src/renderer/review.tsx',
   ],
   coverageReporters: ['text-summary', 'lcov', 'html'],
   // Don't bail - run all tests to see full state

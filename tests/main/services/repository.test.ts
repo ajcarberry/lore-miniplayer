@@ -120,10 +120,8 @@ describe('RepositoryService', () => {
   });
 
   describe('initialize', () => {
-    it('should create an empty store file on first run', async () => {
-      // Then: the unified registry file exists and holds no repositories
-      const storePath = path.join(mockUserData.dir, 'workspaces.json');
-      expect(fs.existsSync(storePath)).toBe(true);
+    it('should report an empty registry on first run', async () => {
+      // Then: the unified registry holds no repositories
       await expect(service.getAll()).resolves.toEqual([]);
     });
   });
@@ -595,8 +593,11 @@ describe('RepositoryService', () => {
       };
       fs.writeFileSync(storePath, JSON.stringify(legacyStore));
 
-      // When: reading the store
-      const repos = await service.getAll();
+      // When: a service constructed over the legacy file reads the store
+      // (migration runs once per registry instance)
+      const migrated = new RepositoryService(log);
+      await migrated.initialize();
+      const repos = await migrated.getAll();
 
       // Then: accent hues are back-filled round-robin by list order
       expect(repos.map(repo => repo.accentHue)).toEqual([74, 172]);
@@ -614,8 +615,10 @@ describe('RepositoryService', () => {
       const storePath = path.join(mockUserData.dir, 'repositories.json');
       fs.writeFileSync(storePath, '{"repositories": "not-an-array"}');
 
-      // When: reading from it
-      const promise = service.getAll();
+      // When: a service constructed over the corrupt file reads from it
+      // (migration runs once per registry instance)
+      const corrupted = new RepositoryService(log);
+      const promise = corrupted.getAll();
 
       // Then: the failure is reported rather than silently swallowed
       await expect(promise).rejects.toThrow('Failed to load workspace registry');

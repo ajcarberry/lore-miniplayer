@@ -46,6 +46,34 @@ jobs:
       - name: Unit tests with coverage
         run: pnpm test:jest:coverage
 
+      # Real-server integration suite (tests/integration) + the WP6 live-server
+      # UI e2e subset both need actual `loreserver`/`lore` binaries. Only
+      # aarch64-apple-darwin has a published release asset AND working harness
+      # OS support (tests/integration/harness/binaries.ts has no Windows
+      # mapping), so this stays macOS-only rather than joining the matrix
+      # generally — matching local dev (arm64 macOS) is also the safe default
+      # per the release asset check.
+      - name: Resolve Lore binary version + triple
+        if: runner.os == 'macOS'
+        id: lore-bins
+        run: |
+          VERSION="$(node -p "require('./node_modules/@lore-vcs/sdk/package.json').version")"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "triple=aarch64-apple-darwin" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Lore binaries
+        if: runner.os == 'macOS'
+        uses: actions/cache@v4
+        with:
+          path: .lore-test-cache/lore-bins
+          key: lore-bins-${{ steps.lore-bins.outputs.version }}-${{ steps.lore-bins.outputs.triple }}
+
+      - name: Integration tests (real loreserver)
+        if: runner.os == 'macOS'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm test:integration
+
       # Electron E2E runs headed; hosted macOS/Windows runners have a display,
       # Linux does not, so it stays fast-checks-only.
       - name: Build app for E2E
@@ -64,12 +92,21 @@ jobs:
 
       - name: Playwright E2E
         if: runner.os != 'Linux'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm exec playwright test
 
+      # Harness server logs (tests/integration/harness/server.ts) live under
+      # the OS temp dir and are normally deleted by the harness's own
+      # stop()/afterAll cleanup, so this only catches the log on a crash that
+      # skipped that cleanup -- best-effort, hence if-no-files-found: ignore.
       - name: Upload Playwright failure artifacts
         if: failure() && runner.os != 'Linux'
         uses: actions/upload-artifact@v4
         with:
           name: playwright-results-${{ matrix.os }}
-          path: test-results/
+          path: |
+            test-results/
+            /tmp/lore-test-server-*/server.log
+            /var/folders/**/lore-test-server-*/server.log
           if-no-files-found: ignore

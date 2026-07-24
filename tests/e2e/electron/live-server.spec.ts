@@ -34,6 +34,17 @@ import {
 test.describe.configure({ timeout: 120_000, retries: 1 });
 
 test.describe('Live server (WP6 U1-U4)', () => {
+  // The harness's binary provisioning (tests/integration/harness/binaries.ts's
+  // mapOs) only resolves Lore release assets for darwin/linux -- it throws
+  // for win32. CI (WP7) runs this e2e step on macOS AND Windows, so this
+  // whole block must skip there rather than let beforeAll's startLoreServer()
+  // throw and fail the run; the platform-agnostic specs alongside it keep
+  // running on Windows untouched.
+  test.skip(
+    process.platform === 'win32',
+    'lore harness provisions loreserver only on macOS/Linux (binaries.ts mapOs has no win32 case)'
+  );
+
   let testServer: LoreTestServer | undefined;
 
   test.beforeAll(async () => {

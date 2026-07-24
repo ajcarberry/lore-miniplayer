@@ -30,12 +30,18 @@ export interface LaunchedApp {
 
 // Launches the built app against an isolated temp userData dir. Pass
 // `userDataDir` (from a previous LaunchedApp) to relaunch against the same
-// profile; omit it to get a fresh one.
-export async function launchApp(userDataDir?: string): Promise<LaunchedApp> {
+// profile; omit it to get a fresh one. `extraEnv` merges on top of the
+// inherited environment — the live-server specs use it to redirect HOME/XDG_*
+// so the app's in-process Lore SDK FFI never touches the developer's real
+// global Lore config (see tests/e2e/electron/live-server.setup.ts).
+export async function launchApp(
+  userDataDir?: string,
+  extraEnv?: Record<string, string>
+): Promise<LaunchedApp> {
   const dir = userDataDir ?? createTempUserDataDir();
   const app = await electron.launch({
     args: [APP_MAIN],
-    env: { ...process.env, LORE_MINIPLAYER_USER_DATA: dir },
+    env: { ...process.env, ...extraEnv, LORE_MINIPLAYER_USER_DATA: dir },
   });
   return { app, userDataDir: dir };
 }

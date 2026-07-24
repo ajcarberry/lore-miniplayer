@@ -107,7 +107,7 @@ pnpm claude:type-check   # After any TypeScript changes
 pnpm claude:lint         # Check for code issues (JSON output for parsing)
 pnpm claude:test:jest    # Fast unit test feedback
 pnpm claude:test:play    # E2E validation
-pnpm test:integration    # Real-server integration suite (starts a local loreserver; binaries auto-cached in .lore-test-cache)
+pnpm test:integration    # Real-server integration suite — when/how in code_standards.md §5; guide + scenario catalog in docs/testing/
 pnpm format:fix          # Auto-fix formatting issues
 ```
 

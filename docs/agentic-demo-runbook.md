@@ -185,12 +185,12 @@ Repeat step 9 for workspace A once you're done with it.
 
 ## Degradations (honest, by design)
 
-- **Raw `userId` in toasts/locks when no auth endpoint is reachable.** Lore-
+- **Raw `userId` in toasts when no auth endpoint is reachable.** Lore-
   side authorship (`revisionTreeInfo.authorIdentity`) is empty on a purely
   local/offline commit and `authUserInfo` needs a server auth endpoint (P1
   finding c). Attribution therefore rides the notification's own `userId`,
   resolved to a display name only when the server's auth endpoint answers;
-  otherwise the toast/lock UI shows the raw id verbatim rather than
+  otherwise the toast UI shows the raw id verbatim rather than
   fabricating a name.
 - **Hookless (or not-yet-started) workspaces never claim agent state they
   don't have.** If Claude Code isn't run in a workspace (or its hook write

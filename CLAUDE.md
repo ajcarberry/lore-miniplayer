@@ -119,7 +119,7 @@ src/
 │   ├── security.ts # Deny-by-default navigation/window-open/permission guards
 │   ├── ipc/        # IPC handlers and validators
 │   └── services/   # Business logic (repository store, Lore SDK, branch graph,
-│                   #   workspaces + teardown, diff, merge, locks, workspace model,
+│                   #   workspaces + teardown, diff, merge, workspace model,
 │                   #   agent observer [localhost hook listener], agent transcript)
 ├── renderer/       # React UI application
 │   ├── App.tsx     # Root component

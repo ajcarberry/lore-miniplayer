@@ -10,6 +10,7 @@ export default {
   testPathIgnorePatterns: [
     '/node_modules/',
     '/tests/e2e/',
+    '/tests/integration/',
   ],
   transform: {
     '^.+\\.(ts|tsx)$': 'ts-jest',

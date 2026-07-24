@@ -107,6 +107,7 @@ pnpm claude:type-check   # After any TypeScript changes
 pnpm claude:lint         # Check for code issues (JSON output for parsing)
 pnpm claude:test:jest    # Fast unit test feedback
 pnpm claude:test:play    # E2E validation
+pnpm test:integration    # Real-server integration suite (starts a local loreserver; binaries auto-cached in .lore-test-cache)
 pnpm format:fix          # Auto-fix formatting issues
 ```
 
@@ -130,7 +131,8 @@ src/
 
 tests/
 ├── e2e/
-│   └── electron/   # Playwright Electron end-to-end tests
+│   └── electron/   # Playwright Electron end-to-end tests (incl. live-server against a real loreserver)
+├── integration/    # Real-server integration suite (tsx + node:test): harness/ + support/ + workflows/ + edge-cases/
 ├── main/           # Main process tests
 ├── renderer/       # React component tests
 ├── mocks/          # Test mocks and fixtures

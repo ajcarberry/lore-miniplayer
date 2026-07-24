@@ -49,9 +49,14 @@ export class RepositoryService {
     private readonly log: MainLogger,
     // Optional so tests (and any SDK-less bootstrap) construct without it; when
     // absent, attach records the url as given and heal is skipped.
-    private readonly identityResolver?: RepositoryIdentityResolver
+    private readonly identityResolver?: RepositoryIdentityResolver,
+    // Injected in production (index.ts) so this service and WorkspaceService
+    // share ONE registry instance — serializing their read-modify-write
+    // cycles through the same queue (C56). Optional so tests construct as
+    // before.
+    registry?: WorkspaceRegistry
   ) {
-    this.registry = new WorkspaceRegistry(log);
+    this.registry = registry ?? new WorkspaceRegistry(log);
   }
 
   async initialize(): Promise<void> {

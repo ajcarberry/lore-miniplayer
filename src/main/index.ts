@@ -12,6 +12,7 @@ import { RepositoryService } from './services/repository';
 import { initializeLoreSdk, shutdownLoreSdk } from './services/lore-sdk';
 import { LoreRepositoryService } from './services/lore-repository';
 import { WorkspaceService } from './services/workspace-service';
+import { WorkspaceRegistry } from './services/workspace-store';
 import { AgentObserverService } from './services/agent-observer';
 import { AgentTranscriptService } from './services/agent-transcript';
 import { WorkspaceModelService } from './services/workspace-model';
@@ -188,10 +189,22 @@ app.whenReady().then(async () => {
   // The LoreRepositoryService resolves an attached checkout's true Lore
   // identity (url + stable id) so attach records the correct grouping key and
   // placeholder entries heal on load.
-  repositoryService = new RepositoryService(log, loreRepositoryService);
+  // ONE workspace registry instance shared by RepositoryService and
+  // WorkspaceService (C56): both mutate the same workspaces.json, and the
+  // registry serializes read-modify-write cycles per instance — sharing the
+  // instance is what makes concurrent IPC calls across the two services
+  // lose-update-free.
+  const workspaceRegistry = new WorkspaceRegistry(log);
+  repositoryService = new RepositoryService(log, loreRepositoryService, workspaceRegistry);
   // Owns workspace provisioning/teardown; P7 later injects the observer hook
   // listener's port + token via workspaceService.setObserverConfig(...).
-  const workspaceService = new WorkspaceService(log, repositoryService, loreRepositoryService);
+  const workspaceService = new WorkspaceService(
+    log,
+    repositoryService,
+    loreRepositoryService,
+    undefined,
+    workspaceRegistry
+  );
   const diffService = new DiffService(loreRepositoryService);
   // Owns the review window's merge workflow (design 2c): start/resolve/abort/
   // complete a branch→main merge, one in flight per repository.
@@ -232,6 +245,16 @@ app.whenReady().then(async () => {
   // hooks target the live listener.
   await agentObserverService.start();
   workspaceService.setObserverConfig(agentObserverService.getObserverConfig());
+  // Re-write observer hooks for workspaces provisioned by previous runs (C53):
+  // tokens live only in the observer's memory, so hooks on disk embed tokens
+  // this listener would reject. Fire-and-forget, matching how provision writes
+  // them; failures are logged, startup never blocks on it.
+  void workspaceService.reinjectObserverHooks().catch((error: unknown) => {
+    log.error('Failed to re-inject observer hooks at startup', {
+      error,
+      operation: 'workspace:reinjectObserverHooks',
+    });
+  });
 
   // Mission Control window (P10, design 2a). Register its open/close + model
   // watch handlers, and forward the workspace model's snapshot rebuilds to the

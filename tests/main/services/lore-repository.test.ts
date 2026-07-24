@@ -1011,7 +1011,9 @@ describe('LoreRepositoryService', () => {
     it('returns undefined when the event lacks a usable url or name', async () => {
       // Given: REPOSITORY_DATA is missing remoteUrl
       mockLore.repositoryInfo.mockReturnValue(
-        fluentMock({ events: [repositoryDataEvent({ remoteUrl: '', name: 'r', id: 'y' })] }) as never
+        fluentMock({
+          events: [repositoryDataEvent({ remoteUrl: '', name: 'r', id: 'y' })],
+        }) as never
       );
 
       // When: resolving

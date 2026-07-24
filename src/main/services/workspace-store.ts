@@ -14,10 +14,12 @@ import { ACCENT_HUE_VALUES } from '../../shared/accent';
 // repos) — once and idempotently, renaming it aside to `*.json.bak` (never
 // deleting).
 //
-// RepositoryService and WorkspaceService each hold their own instance pointed
-// at the same file; every method reloads from disk before acting, so the file
-// stays the single source of truth (the pre-existing load-before-write
-// discipline of both legacy stores).
+// RepositoryService and WorkspaceService share ONE instance (constructor
+// injection from index.ts — C56); every method reloads from disk before
+// acting, so the file stays the single source of truth (the pre-existing
+// load-before-write discipline of both legacy stores), and every
+// load-mutate-save cycle is serialized through an in-process promise queue so
+// concurrent IPC calls can never interleave their cycles and lose an update.
 
 const STORE_VERSION = '2.0.0';
 
@@ -59,6 +61,11 @@ export class WorkspaceRegistry {
   // the legacy file from disk, so it runs a single time rather than on every
   // registry operation.
   private migration: Promise<void> | null = null;
+  // In-process mutex (C56): every public operation is a read-modify-write
+  // cycle (`load(); mutate; save()`) with awaits between, so two concurrently
+  // awaited operations would interleave and the last save would win (lost
+  // update). Chaining them through this promise queue serializes each cycle.
+  private queue: Promise<unknown> = Promise.resolve();
 
   constructor(private readonly log: MainLogger) {
     const userData = app.getPath('userData');
@@ -69,23 +76,31 @@ export class WorkspaceRegistry {
   // --- reads -----------------------------------------------------------------
 
   async all(): Promise<Repository[]> {
-    await this.load();
-    return [...this.entries];
+    return this.enqueue(async () => {
+      await this.load();
+      return [...this.entries];
+    });
   }
 
   async findById(id: string): Promise<Repository | undefined> {
-    await this.load();
-    return this.entries.find(entry => entry.id === id);
+    return this.enqueue(async () => {
+      await this.load();
+      return this.entries.find(entry => entry.id === id);
+    });
   }
 
   async findByLocalPath(localPath: string): Promise<Repository | undefined> {
-    await this.load();
-    return this.entries.find(entry => samePath(entry.localPath, localPath));
+    return this.enqueue(async () => {
+      await this.load();
+      return this.entries.find(entry => samePath(entry.localPath, localPath));
+    });
   }
 
   async findByUrl(url: string): Promise<Repository[]> {
-    await this.load();
-    return this.entries.filter(entry => entry.url === url);
+    return this.enqueue(async () => {
+      await this.load();
+      return this.entries.filter(entry => entry.url === url);
+    });
   }
 
   // --- writes ----------------------------------------------------------------
@@ -93,53 +108,77 @@ export class WorkspaceRegistry {
   // Insert or replace by id (repository create/update).
   async upsertById(entry: Repository): Promise<void> {
     const validated = RepositorySchema.parse(entry);
-    await this.load();
-    const index = this.entries.findIndex(existing => existing.id === validated.id);
-    if (index === -1) {
-      this.entries.push(validated);
-    } else {
-      this.entries[index] = validated;
-    }
-    await this.save();
+    await this.enqueue(async () => {
+      await this.load();
+      const index = this.entries.findIndex(existing => existing.id === validated.id);
+      if (index === -1) {
+        this.entries.push(validated);
+      } else {
+        this.entries[index] = validated;
+      }
+      await this.save();
+    });
   }
 
   // Insert or replace by resolved localPath (workspace provision/adoption), so
   // re-provisioning the same directory never duplicates it.
   async upsertByLocalPath(entry: Repository): Promise<void> {
     const validated = RepositorySchema.parse(entry);
-    await this.load();
-    const index = this.entries.findIndex(existing =>
-      samePath(existing.localPath, validated.localPath)
-    );
-    if (index === -1) {
-      this.entries.push(validated);
-    } else {
-      this.entries[index] = validated;
-    }
-    await this.save();
+    await this.enqueue(async () => {
+      await this.load();
+      const index = this.entries.findIndex(existing =>
+        samePath(existing.localPath, validated.localPath)
+      );
+      if (index === -1) {
+        this.entries.push(validated);
+      } else {
+        this.entries[index] = validated;
+      }
+      await this.save();
+    });
   }
 
   async removeById(id: string): Promise<boolean> {
-    await this.load();
-    const before = this.entries.length;
-    this.entries = this.entries.filter(entry => entry.id !== id);
-    const removed = this.entries.length < before;
-    if (removed) {
-      await this.save();
-    }
-    return removed;
+    return this.enqueue(async () => {
+      await this.load();
+      const before = this.entries.length;
+      this.entries = this.entries.filter(entry => entry.id !== id);
+      const removed = this.entries.length < before;
+      if (removed) {
+        await this.save();
+      }
+      return removed;
+    });
   }
 
   async removeByLocalPath(localPath: string): Promise<void> {
-    await this.load();
-    this.entries = this.entries.filter(entry => !samePath(entry.localPath, localPath));
-    await this.save();
+    await this.enqueue(async () => {
+      await this.load();
+      this.entries = this.entries.filter(entry => !samePath(entry.localPath, localPath));
+      await this.save();
+    });
   }
 
   // Round-robin accent hue for the next entry (matches the legacy repo store).
   async nextAccentHue(): Promise<number> {
-    await this.load();
-    return accentHueForIndex(this.entries.length);
+    return this.enqueue(async () => {
+      await this.load();
+      return accentHueForIndex(this.entries.length);
+    });
+  }
+
+  // --- serialization ---------------------------------------------------------
+
+  // Runs `task` after every previously enqueued cycle has settled. The stored
+  // queue never rejects (a failed cycle is caught there), so one failure never
+  // poisons later operations — each caller still sees its own result/error.
+  private enqueue<T>(task: () => Promise<T>): Promise<T> {
+    const run = this.queue.then(task);
+    this.queue = run.then(
+      () => undefined,
+      () => undefined
+    );
+    return run;
   }
 
   // --- load + migration ------------------------------------------------------

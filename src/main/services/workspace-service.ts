@@ -12,6 +12,9 @@ import {
   membersOfRepo,
   repoForEntry,
   listInstances,
+  assertWithinRoot,
+  assertSafeTeardownPath,
+  assertNoUnsavedWork,
   WorkspaceOperationError,
 } from './workspace-lore-ops';
 import type { RawInstance } from './workspace-lore-ops';
@@ -39,11 +42,6 @@ import {
 // worktree root visibly adjacent to, and distinct from, the repo directory.
 const WORKTREE_DIR_SUFFIX = '-wt';
 
-// Fallback loopback port used for the observer hook URL until P7's listener
-// wires a real one through `setObserverConfig`. The hooks are fire-and-forget
-// POSTs, so a not-yet-listening port is harmless.
-const DEFAULT_OBSERVER_PORT = 41_500;
-
 // Re-exported so existing importers (agent-observer) keep their import site.
 export type { WorkspaceObserverConfig } from './workspace-hooks';
 // Re-exported so existing importers (e.g. tests) keep their import site.
@@ -57,7 +55,11 @@ export { WorkspaceOperationError } from './workspace-lore-ops';
 // the documented-best path and is exercised through mocks, with the
 // live-server flow integration-pending.
 export class WorkspaceService extends EventEmitter {
-  private observerConfig: WorkspaceObserverConfig;
+  // Absent until the observer injects its live port + token provider via
+  // `setObserverConfig` (C31: no fabricated fallback — a hook embedding a
+  // token the listener never registered could only ever 403, so hook writing
+  // is skipped entirely while the config is absent).
+  private observerConfig: WorkspaceObserverConfig | undefined;
 
   // The unified workspace registry (workspaces.json, packet U1). The source of
   // truth for WHICH workspaces exist: Lore's instance registry is PER-STORE, so
@@ -69,18 +71,26 @@ export class WorkspaceService extends EventEmitter {
   // workspace's OWN path at read time.
   private readonly store: WorkspaceRegistry;
 
+  // Workspace paths with a provision currently in flight (P10): a second
+  // concurrent provision for the same directory would race the exists-check
+  // and clone over the first (its failure cleanup rm -rf'ing the winner's
+  // half-built checkout), so it is refused until the first settles.
+  private readonly inFlightProvisions = new Set<string>();
+
   constructor(
     private readonly log: MainLogger,
     private readonly repositoryService: RepositoryService,
     private readonly loreRepositoryService: LoreRepositoryService,
-    observerConfig?: WorkspaceObserverConfig
+    observerConfig?: WorkspaceObserverConfig,
+    // Injected in production (index.ts) so RepositoryService and this service
+    // share ONE registry instance — serializing their read-modify-write
+    // cycles through the same queue (C56). Optional so tests construct as
+    // before.
+    store?: WorkspaceRegistry
   ) {
     super();
-    this.store = new WorkspaceRegistry(log);
-    this.observerConfig = observerConfig ?? {
-      port: DEFAULT_OBSERVER_PORT,
-      tokenForWorkspace: (): string => randomUUID(),
-    };
+    this.store = store ?? new WorkspaceRegistry(log);
+    this.observerConfig = observerConfig;
   }
 
   // Lets P7 (the hook listener) inject the real port + token provider once it
@@ -103,8 +113,29 @@ export class WorkspaceService extends EventEmitter {
 
     const worktreeRoot = this.worktreeRootFor(repo.localPath);
     const workspacePath = path.join(worktreeRoot, branchName);
-    this.assertWithinRoot(workspacePath, worktreeRoot);
+    assertWithinRoot(workspacePath, worktreeRoot);
 
+    // One provision per target directory (P10): a concurrent second call
+    // would pass the exists-check below while the first is still cloning.
+    const inFlightKey = path.resolve(workspacePath);
+    if (this.inFlightProvisions.has(inFlightKey)) {
+      throw new Error(`A provision is already in flight for this workspace: ${workspacePath}`);
+    }
+    this.inFlightProvisions.add(inFlightKey);
+    try {
+      return await this.provisionAt(repo, workspacePath, branchName);
+    } finally {
+      this.inFlightProvisions.delete(inFlightKey);
+    }
+  }
+
+  // The body of provision() past its request/uniqueness guards, run with the
+  // target directory's in-flight lock held.
+  private async provisionAt(
+    repo: Repository,
+    workspacePath: string,
+    branchName: string
+  ): Promise<Workspace> {
     if (await this.pathExists(workspacePath)) {
       // Adoption (P18): a directory that already exists AND self-reports a
       // matching-branch instance is an orphaned workspace (e.g. provisioned by
@@ -207,8 +238,11 @@ export class WorkspaceService extends EventEmitter {
     const { repo, entry, instance } = located;
     // The registry is the source of truth for the path; the branch name comes
     // from the registry too, so a missing/stale live instance can't strand it.
+    // Only a provisioned entry carries a branch of its own (C51): an
+    // attached/cloned entry's display name must never be used as one — it
+    // could collide with a real branch in the shared store.
     const workspacePath = entry.localPath;
-    const branchName = entry.branchName ?? entry.name;
+    const branchName = entry.branchName;
 
     // Attached/cloned entries are first-class repository checkouts, not
     // worktrees the app provisioned — a bare teardown request can never
@@ -225,10 +259,17 @@ export class WorkspaceService extends EventEmitter {
     // check would trivially refuse every one of them (breaking the
     // amendment's non-anchor teardown affordance) if applied here too.
     const guardRepoPath = entry.origin === 'provisioned' ? repo?.localPath : undefined;
-    await this.assertSafeTeardownPath(workspacePath, guardRepoPath);
+    await assertSafeTeardownPath(workspacePath, guardRepoPath);
 
     if (!parsed.force) {
-      await this.assertNoUnsavedWork(workspacePath, branchName);
+      // Only reachable for provisioned entries (attached/cloned ones already
+      // threw above without force), so entry.branchName is present; the name
+      // fallback keeps a degenerate entry fail-closed rather than crashing.
+      await assertNoUnsavedWork(
+        this.loreRepositoryService,
+        workspacePath,
+        branchName ?? entry.name
+      );
     }
 
     this.log.info('Workspace teardown: removing directory', {
@@ -248,31 +289,7 @@ export class WorkspaceService extends EventEmitter {
 
     let localBranchRemoved = false;
     if (sibling) {
-      try {
-        await run(
-          lore.repositoryInstancePrune({ repositoryPath: sibling }, {}),
-          'Failed to prune workspace instance'
-        );
-      } catch (error) {
-        this.log.error('Workspace teardown: failed to prune instance (continuing)', {
-          error,
-          operation: 'workspace:teardown',
-          workspacePath,
-        });
-      }
-      try {
-        await run(
-          lore.branchArchive({ repositoryPath: sibling }, { branch: branchName }),
-          'Failed to archive local branch'
-        );
-        localBranchRemoved = true;
-      } catch (error) {
-        this.log.error('Workspace teardown: failed to archive local branch (continuing)', {
-          error,
-          operation: 'workspace:teardown',
-          branch: branchName,
-        });
-      }
+      localBranchRemoved = await this.pruneAndArchive(sibling, workspacePath, branchName);
     } else {
       this.log.info(
         'Workspace teardown: no sibling workspace in the shared store; skipping prune + archive',
@@ -311,9 +328,40 @@ export class WorkspaceService extends EventEmitter {
 
   // Write Claude Code observer hooks into the workspace's settings.local.json.
   // Public so P7 can re-inject if it rotates tokens; the writer itself lives in
-  // ./workspace-hooks.
+  // ./workspace-hooks. A no-op (logged) until the observer's real config is
+  // injected — see the observerConfig field note.
   async writeObserverHooks(workspacePath: string): Promise<void> {
+    if (!this.observerConfig) {
+      this.log.warn('No observer config injected; skipping observer hook write', {
+        operation: 'workspace:writeObserverHooks',
+        workspacePath,
+      });
+      return;
+    }
     await writeObserverHooks(this.log, workspacePath, this.observerConfig);
+  }
+
+  // Re-write observer hooks for every provisioned workspace in the registry
+  // (C53): observer tokens are minted in-memory per process, so hooks written
+  // by a previous run embed tokens this run's listener would reject. Called at
+  // startup once the live observer config is injected; a missing directory is
+  // skipped and per-workspace failures are logged, never thrown.
+  async reinjectObserverHooks(): Promise<void> {
+    const entries = await this.store.all();
+    for (const entry of entries) {
+      if (entry.origin !== 'provisioned' || !(await this.pathExists(entry.localPath))) {
+        continue;
+      }
+      try {
+        await this.writeObserverHooks(entry.localPath);
+      } catch (error) {
+        this.log.error('Failed to re-inject observer hooks for workspace', {
+          error,
+          operation: 'workspace:reinjectObserverHooks',
+          workspacePath: entry.localPath,
+        });
+      }
+    }
   }
 
   // --- internals ------------------------------------------------------------
@@ -324,45 +372,48 @@ export class WorkspaceService extends EventEmitter {
     return path.join(parent, `${repoName}${WORKTREE_DIR_SUFFIX}`);
   }
 
-  private assertWithinRoot(target: string, root: string): void {
-    const resolvedRoot = path.resolve(root);
-    const resolvedTarget = path.resolve(target);
-    if (resolvedTarget === resolvedRoot) {
-      throw new Error(
-        'Invalid branch name: workspace path must be a subdirectory of the worktree root'
-      );
-    }
-    if (!resolvedTarget.startsWith(resolvedRoot + path.sep)) {
-      throw new Error(`Resolved workspace path escapes the worktree root: ${resolvedTarget}`);
-    }
-  }
-
-  private async assertSafeTeardownPath(
+  // Prune the removed instance and archive its branch in the SHARED store via
+  // the sibling's handle (see teardown). Only a provisioned entry carries a
+  // branch of its own to archive (C51): an attached/cloned entry has no
+  // branchName, and its display name must never be used as one. Both steps
+  // continue-on-error (logged); returns whether the local branch was archived.
+  private async pruneAndArchive(
+    sibling: string,
     workspacePath: string,
-    repoLocalPath?: string
-  ): Promise<void> {
-    const resolved = path.resolve(workspacePath);
-    if (repoLocalPath !== undefined && resolved === path.resolve(repoLocalPath)) {
-      throw new Error('Refusing to remove the repository checkout itself');
+    branchName: string | undefined
+  ): Promise<boolean> {
+    try {
+      await run(
+        lore.repositoryInstancePrune({ repositoryPath: sibling }, {}),
+        'Failed to prune workspace instance'
+      );
+    } catch (error) {
+      this.log.error('Workspace teardown: failed to prune instance (continuing)', {
+        error,
+        operation: 'workspace:teardown',
+        workspacePath,
+      });
     }
-    const stats = await fs.lstat(resolved).catch(() => null);
-    if (stats?.isSymbolicLink()) {
-      throw new Error('Refusing to remove a symlinked workspace path');
+    if (branchName === undefined) {
+      this.log.info('Workspace teardown: entry carries no provisioned branch; skipping archive', {
+        operation: 'workspace:teardown',
+        workspacePath,
+      });
+      return false;
     }
-  }
-
-  private async assertNoUnsavedWork(workspacePath: string, branchName: string): Promise<void> {
-    const status = await this.loreRepositoryService.getFileStatus(workspacePath);
-    const dirtyCount = status.untracked.length + status.unstaged.length + status.staged.length;
-    if (dirtyCount > 0) {
-      throw new Error('Workspace has uncommitted changes; pass force to remove it anyway');
-    }
-    const divergence = await this.loreRepositoryService.getBranchDivergence(
-      workspacePath,
-      branchName
-    );
-    if (divergence.state === 'ahead') {
-      throw new Error('Workspace has unpushed commits; pass force to remove it anyway');
+    try {
+      await run(
+        lore.branchArchive({ repositoryPath: sibling }, { branch: branchName }),
+        'Failed to archive local branch'
+      );
+      return true;
+    } catch (error) {
+      this.log.error('Workspace teardown: failed to archive local branch (continuing)', {
+        error,
+        operation: 'workspace:teardown',
+        branch: branchName,
+      });
+      return false;
     }
   }
 

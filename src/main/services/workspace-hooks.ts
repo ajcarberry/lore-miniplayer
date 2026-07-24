@@ -27,8 +27,15 @@ export interface WorkspaceObserverConfig {
   readonly tokenForWorkspace: (workspacePath: string) => string;
 }
 
+// Any hook group targeting this URL shape was written by a previous injection
+// (possibly a prior run's port/token) and is replaced wholesale on
+// re-injection; user-authored groups never match the loopback observer shape.
+const OBSERVER_HOOK_URL_PATTERN = /^http:\/\/127\.0\.0\.1:\d+\/hook\//;
+
 // Write Claude Code observer hooks into the workspace's settings.local.json,
 // deep-merging into any existing file so user content is never clobbered.
+// Idempotent: re-injection (token rotation, startup re-registration) replaces
+// the app's own prior hook groups instead of accumulating duplicates.
 export async function writeObserverHooks(
   log: MainLogger,
   workspacePath: string,
@@ -91,13 +98,36 @@ function mergeObserverHooks(
 
   for (const event of OBSERVER_HOOK_EVENTS) {
     const current = hooks[event];
-    const groups: unknown[] = Array.isArray(current) ? [...(current as unknown[])] : [];
+    // Strip any group a previous injection wrote (stale port or token) before
+    // appending, so repeated injection never duplicates observer hooks.
+    const groups: unknown[] = Array.isArray(current)
+      ? (current as unknown[]).filter(group => !isObserverHookGroup(group))
+      : [];
     groups.push(hookGroup);
     hooks[event] = groups;
   }
 
   result['hooks'] = hooks;
   return result;
+}
+
+// True when a hook group contains an entry targeting the loopback observer
+// URL shape — i.e. it was written by this app's own hook injection.
+function isObserverHookGroup(group: unknown): boolean {
+  if (!group || typeof group !== 'object' || Array.isArray(group)) {
+    return false;
+  }
+  const hooks = (group as Record<string, unknown>)['hooks'];
+  if (!Array.isArray(hooks)) {
+    return false;
+  }
+  return hooks.some(hook => {
+    if (!hook || typeof hook !== 'object' || Array.isArray(hook)) {
+      return false;
+    }
+    const { type, url } = hook as { type?: unknown; url?: unknown };
+    return type === 'http' && typeof url === 'string' && OBSERVER_HOOK_URL_PATTERN.test(url);
+  });
 }
 
 async function isSymlink(target: string): Promise<boolean> {

@@ -210,6 +210,87 @@ describe('AgentTranscriptService', () => {
   });
 
   describe('tasks directory', () => {
+    it('refuses a traversal sessionId from transcript content and never reads outside the tasks root', async () => {
+      // Given: a tasks root, and a secret task file OUTSIDE it at the location
+      // a `..` traversal would reach
+      const projectsRoot = path.join(tmpBase, 'projects');
+      const tasksRoot = path.join(tmpBase, 'tasks');
+      const leakDir = path.join(tmpBase, 'leak');
+      await fsp.mkdir(projectsRoot, { recursive: true });
+      await fsp.mkdir(tasksRoot, { recursive: true });
+      await fsp.mkdir(leakDir, { recursive: true });
+      await fsp.writeFile(
+        path.join(leakDir, '1.json'),
+        JSON.stringify({ id: 'x', subject: 'SECRET TASK SUBJECT', status: 'pending' }),
+        'utf8'
+      );
+
+      // When: the transcript's attacker-influenceable sessionId walks out of
+      // the tasks root
+      const file = path.join(projectsRoot, 'session.jsonl');
+      await fsp.writeFile(
+        file,
+        JSON.stringify({
+          type: 'user',
+          sessionId: '../leak',
+          timestamp: '2026-07-22T10:00:00.000Z',
+          message: { role: 'user', content: 'hi' },
+        }),
+        'utf8'
+      );
+      const intention = await new AgentTranscriptService(logger, {
+        enabled: true,
+        projectsRoot,
+        tasksRoot,
+      }).extract(file);
+
+      // Then: no task escapes the root; the refusal is logged without leaking
+      // the outside file's content
+      expect(intention.tasks).toEqual([]);
+      expect(mockLog.warn).toHaveBeenCalledWith(
+        'Refusing session id that is not a safe tasks directory name',
+        expect.objectContaining({ operation: 'agent-transcript:tasks' })
+      );
+      const allLogged = [mockLog.debug, mockLog.info, mockLog.warn, mockLog.error]
+        .flatMap(fn => (fn as jest.Mock).mock.calls)
+        .map(args => JSON.stringify(args))
+        .join(' ');
+      expect(allLogged).not.toContain('SECRET TASK SUBJECT');
+    });
+
+    it('refuses an absolute-path sessionId (fail closed, no tasks)', async () => {
+      // Given: a transcript whose sessionId is an absolute path
+      const projectsRoot = path.join(tmpBase, 'projects');
+      const tasksRoot = path.join(tmpBase, 'tasks');
+      await fsp.mkdir(projectsRoot, { recursive: true });
+      await fsp.mkdir(tasksRoot, { recursive: true });
+      const file = path.join(projectsRoot, 'session.jsonl');
+      await fsp.writeFile(
+        file,
+        JSON.stringify({
+          type: 'user',
+          sessionId: path.join(tmpBase, 'leak'),
+          timestamp: '2026-07-22T10:00:00.000Z',
+          message: { role: 'user', content: 'hi' },
+        }),
+        'utf8'
+      );
+
+      // When: extracting
+      const intention = await new AgentTranscriptService(logger, {
+        enabled: true,
+        projectsRoot,
+        tasksRoot,
+      }).extract(file);
+
+      // Then: the id is refused and no tasks are read
+      expect(intention.tasks).toEqual([]);
+      expect(mockLog.warn).toHaveBeenCalledWith(
+        'Refusing session id that is not a safe tasks directory name',
+        expect.objectContaining({ operation: 'agent-transcript:tasks' })
+      );
+    });
+
     it('tolerates a missing tasks directory (no tasks, no throw)', async () => {
       const file = path.join(tmpBase, 'session.jsonl');
       await fsp.writeFile(

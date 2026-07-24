@@ -1,6 +1,16 @@
 import * as fs from 'node:fs';
+import * as fsp from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+
+// The concurrency test needs to hold the registry's save mid-write, and
+// fs/promises exports are non-configurable (jest.spyOn cannot patch them), so
+// writeFile is wrapped in a pass-through jest.fn the test can intercept once.
+// Every other call falls through to the real filesystem.
+jest.mock('node:fs/promises', () => {
+  const actual = jest.requireActual<typeof import('node:fs/promises')>('node:fs/promises');
+  return { ...actual, writeFile: jest.fn(actual.writeFile) };
+});
 
 // The registry resolves its file from Electron's userData directory; point it
 // at a per-test temp dir so tests run against the real filesystem.
@@ -155,6 +165,53 @@ describe('WorkspaceRegistry', () => {
     });
   });
 
+  describe('concurrency (C56)', () => {
+    it('serializes overlapping read-modify-write cycles so neither update is lost', async () => {
+      // Given: the registry's FIRST save is held mid-write, so a second
+      // upsert can overlap the first's load-mutate-save cycle
+      const realWriteFile =
+        jest.requireActual<typeof import('node:fs/promises')>('node:fs/promises').writeFile;
+      let releaseFirstWrite!: () => void;
+      const firstWriteHeld = new Promise<void>(resolve => {
+        releaseFirstWrite = resolve;
+      });
+      let signalFirstWriteStarted!: () => void;
+      const firstWriteStarted = new Promise<void>(resolve => {
+        signalFirstWriteStarted = resolve;
+      });
+      (fsp.writeFile as jest.MockedFunction<typeof fsp.writeFile>).mockImplementationOnce(
+        async (...args: Parameters<typeof fsp.writeFile>) => {
+          signalFirstWriteStarted();
+          await firstWriteHeld;
+          return realWriteFile(...args);
+        }
+      );
+
+      // When: a second upsert runs while the first's save is still in flight
+      const first = registry.upsertById(repo({ id: REPO_A, localPath: '/tmp/repos/first' }));
+      const overlap = (async (): Promise<void> => {
+        await firstWriteStarted;
+        await registry.upsertById(
+          repo({ id: REPO_B, name: 'Second', localPath: '/tmp/repos/second' })
+        );
+      })();
+      // Give an unserialized implementation every chance to complete the
+      // second cycle before the first write lands (the lost-update window)
+      const raced = await Promise.race([
+        overlap.then(() => 'overlap-finished'),
+        new Promise<'held'>(resolve => setTimeout(() => resolve('held'), 50)),
+      ]);
+      releaseFirstWrite();
+      await Promise.all([first, overlap]);
+
+      // Then: the second cycle was queued behind the first (never interleaved)
+      expect(raced).toBe('held');
+      // And: BOTH entries survive on disk — no lost update
+      const reloaded = await new WorkspaceRegistry(mockLog).all();
+      expect(reloaded.map(entry => entry.id).sort()).toEqual([REPO_A, REPO_B].sort());
+    });
+  });
+
   describe('migration to v2', () => {
     const legacyRepoFile = {
       version: '1.0.0',
@@ -257,9 +314,9 @@ describe('sameLoreRepo', () => {
 
   it('falls back to url equality when either side lacks an id', () => {
     // Given: one side has no id — grouping degrades to url
-    expect(sameLoreRepo({ url: 'lore://a/x', loreRepositoryId: 'id-1' }, { url: 'lore://a/x' })).toBe(
-      true
-    );
+    expect(
+      sameLoreRepo({ url: 'lore://a/x', loreRepositoryId: 'id-1' }, { url: 'lore://a/x' })
+    ).toBe(true);
     expect(sameLoreRepo({ url: 'lore://a/x' }, { url: 'lore://b/y' })).toBe(false);
   });
 });

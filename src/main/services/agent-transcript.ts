@@ -26,6 +26,13 @@ const TRANSCRIPT_ENRICHMENT_ENV = 'LORE_MINIPLAYER_TRANSCRIPT_ENRICHMENT';
 // Newest-N cap on commentary entries surfaced (the agent's narrative account).
 const COMMENTARY_CAP = 20;
 
+// The sessionId used for the task read comes from transcript CONTENT (as
+// attacker-influenceable as the transcript path) and is joined into the tasks
+// root, so only a plain single-component directory name is accepted: no path
+// separators, and no leading `.` (which rules out `.`/`..` traversal). Real
+// session ids are UUID-shaped and always match.
+const SAFE_SESSION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
 // Upper bound on transcript bytes read into memory. Sessions are typically well
 // under this; a file larger than the cap is read TAIL-first (its most recent
 // bytes), which keeps the sidecar `ai-title`/`last-prompt` records and the
@@ -398,7 +405,19 @@ export class AgentTranscriptService {
     if (sessionId.length === 0) {
       return [];
     }
-    const dir = path.join(this.tasksRoot, sessionId);
+    // Confine the task read to the tasks root the same way the transcript read
+    // is confined to the projects root: a strict shape gate on the id, plus a
+    // resolved-path containment check as belt-and-braces. Fail closed — an
+    // invalid id skips task enrichment with a log, never a read.
+    const tasksRoot = path.resolve(this.tasksRoot);
+    const dir = path.resolve(tasksRoot, sessionId);
+    if (!SAFE_SESSION_ID_PATTERN.test(sessionId) || !isWithin(dir, tasksRoot)) {
+      this.log.warn('Refusing session id that is not a safe tasks directory name', {
+        operation: 'agent-transcript:tasks',
+        sessionId,
+      });
+      return [];
+    }
 
     let entries: string[];
     try {

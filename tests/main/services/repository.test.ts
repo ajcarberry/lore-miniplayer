@@ -127,6 +127,22 @@ describe('RepositoryService', () => {
   });
 
   describe('create', () => {
+    it('routes registry operations through an injected shared registry instance (C56)', async () => {
+      // Given: a shared registry injected at construction (index.ts wires ONE
+      // instance across RepositoryService and WorkspaceService so their
+      // read-modify-write cycles serialize through the same queue)
+      const shared = new WorkspaceRegistry(log as never);
+      const upsertSpy = jest.spyOn(shared, 'upsertById');
+      const svc = new RepositoryService(log, undefined, shared);
+      await svc.initialize();
+
+      // When: creating a repository
+      await svc.create(createInput);
+
+      // Then: the injected instance handled the write
+      expect(upsertSpy).toHaveBeenCalled();
+    });
+
     it('should persist a new repository to disk', async () => {
       // When: creating a repository
       const created = await service.create(createInput);

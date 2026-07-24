@@ -13,9 +13,8 @@ import type {
 import type { WorkspaceObserverConfig } from './workspace-service';
 
 // Default loopback port the hook listener binds (research note "Recommended
-// shape"); matches the WorkspaceService fallback so provisioned hooks that
-// pre-date start() still target the right port. If occupied, start() scans
-// upward.
+// shape"). If occupied, start() scans upward; hooks always embed the port
+// actually bound (getObserverConfig reads it live), never this constant.
 const DEFAULT_OBSERVER_PORT = 41_500;
 
 // How many ports to try past the requested one before giving up.

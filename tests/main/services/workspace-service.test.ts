@@ -21,6 +21,7 @@ jest.mock('@lore-vcs/sdk', () => {
       repositoryClone: jest.fn(),
       branchCreate: jest.fn(),
       branchArchive: jest.fn(),
+      branchInfo: jest.fn(),
       repositoryInstanceList: jest.fn(),
       repositoryInstancePrune: jest.fn(),
     },
@@ -39,6 +40,7 @@ jest.mock('electron', () => ({
 
 import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
+import * as http from 'node:http';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { lore, LoreError } from '@lore-vcs/sdk';
@@ -49,6 +51,7 @@ import {
   WorkspaceOperationError,
 } from '../../../src/main/services/workspace-service';
 import { WorkspaceRegistry } from '../../../src/main/services/workspace-store';
+import { AgentObserverService } from '../../../src/main/services/agent-observer';
 import type { RepositoryService } from '../../../src/main/services/repository';
 import type { LoreRepositoryService } from '../../../src/main/services/lore-repository';
 import type { Repository } from '../../../src/shared/types';
@@ -237,6 +240,8 @@ describe('WorkspaceService', () => {
     mockLore.repositoryClone.mockReturnValue(fluentMock() as never);
     mockLore.branchCreate.mockReturnValue(fluentMock() as never);
     mockLore.branchArchive.mockReturnValue(fluentMock() as never);
+    // No BRANCH_INFO by default: fork evidence degrades to unknown hashes.
+    mockLore.branchInfo.mockReturnValue(fluentMock() as never);
     mockLore.repositoryInstancePrune.mockReturnValue(fluentMock() as never);
 
     service = new WorkspaceService(mockLog, repositoryService, loreRepositoryService, {
@@ -422,6 +427,52 @@ describe('WorkspaceService', () => {
       await expect(new WorkspaceRegistry(mockLog).all()).resolves.toEqual([]);
     });
 
+    it('refuses a second provision for the same workspace while the first is still in flight (P10)', async () => {
+      // Given: a clone that hangs until released, and a shared store that will
+      // self-report the workspace once the clone lands
+      let releaseClone!: () => void;
+      const cloneGate = new Promise<void>(resolve => {
+        releaseClone = resolve;
+      });
+      const chain = {
+        callback: (): unknown => chain,
+        waitAsync: async (): Promise<number> => {
+          await cloneGate;
+          return 0;
+        },
+      };
+      mockLore.repositoryClone.mockReturnValue(chain as never);
+      stores.register('shared', {
+        instanceId: 'inst-1',
+        path: workspaceDir,
+        branchName: BRANCH,
+        revision: 'r1',
+      });
+
+      // When: a second provision for the same branch starts while the first
+      // is still mid-clone
+      const first = service.provision({ repositoryId: repo.id, branchName: BRANCH });
+      while (mockLore.repositoryClone.mock.calls.length === 0) {
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+      const second = service
+        .provision({ repositoryId: repo.id, branchName: BRANCH })
+        .catch((error: unknown) => error as Error);
+      for (let i = 0; i < 10; i++) {
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+
+      // Then: no second clone ever started into the same directory (whose
+      // failure cleanup would rm -rf the first's half-built checkout)
+      expect(mockLore.repositoryClone).toHaveBeenCalledTimes(1);
+      // And: the second call was refused, while the first still completes
+      const secondOutcome = await second;
+      expect(secondOutcome).toBeInstanceOf(Error);
+      expect((secondOutcome as Error).message).toContain('already in flight');
+      releaseClone();
+      await expect(first).resolves.toMatchObject({ path: workspaceDir, branchName: BRANCH });
+    });
+
     it('wraps a non-Error clone rejection using its string form', async () => {
       // Given: the clone rejects with a bare string
       const chain = {
@@ -486,21 +537,147 @@ describe('WorkspaceService', () => {
       });
     });
 
-    it('falls back to a generated token and default port when no observer config is given', async () => {
-      // Given: a service constructed without an observer config
+    it('skips hook writing and logs when no observer config has been injected', async () => {
+      // Given: a service constructed without an observer config (C31: the old
+      // randomUUID fallback minted tokens the listener could never
+      // authenticate, so a hook written under it could only ever 403)
       const bareService = new WorkspaceService(mockLog, repositoryService, loreRepositoryService);
       fs.mkdirSync(workspaceDir, { recursive: true });
 
       // When: injecting hooks
       await bareService.writeObserverHooks(workspaceDir);
 
-      // Then: a loopback hook URL is still written for every event
+      // Then: nothing is written and the skip is logged
+      expect(fs.existsSync(path.join(workspaceDir, '.claude', 'settings.local.json'))).toBe(false);
+      expect((mockLog as unknown as { warn: jest.Mock }).warn).toHaveBeenCalledWith(
+        'No observer config injected; skipping observer hook write',
+        expect.objectContaining({ operation: 'workspace:writeObserverHooks' })
+      );
+    });
+
+    it('re-injection replaces the prior observer hook groups instead of duplicating them', async () => {
+      // Given: a workspace already carrying observer hooks from a previous run
+      // (stale port + token) alongside a user-authored hook
+      const settingsPath = path.join(workspaceDir, '.claude', 'settings.local.json');
+      fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+      fs.writeFileSync(
+        settingsPath,
+        JSON.stringify({
+          hooks: {
+            SessionStart: [
+              { hooks: [{ type: 'command', command: 'echo hi' }] },
+              { hooks: [{ type: 'http', url: 'http://127.0.0.1:41500/hook/stale-token' }] },
+            ],
+            Stop: [{ hooks: [{ type: 'http', url: 'http://127.0.0.1:41501/hook/stale-token' }] }],
+          },
+        })
+      );
+
+      // When: injecting observer hooks again (fresh port + token)
+      await service.writeObserverHooks(workspaceDir);
+
+      // Then: exactly one observer group remains per event — the fresh one —
+      // and the user-authored hook is untouched
+      const merged = JSON.parse(fs.readFileSync(settingsPath, 'utf-8')) as {
+        hooks: Record<
+          string,
+          Array<{ hooks: Array<{ type: string; url?: string; command?: string }> }>
+        >;
+      };
+      expect(merged.hooks['SessionStart']).toEqual([
+        { hooks: [{ type: 'command', command: 'echo hi' }] },
+        { hooks: [{ type: 'http', url: 'http://127.0.0.1:4599/hook/tok-123' }] },
+      ]);
+      expect(merged.hooks['Stop']).toEqual([
+        { hooks: [{ type: 'http', url: 'http://127.0.0.1:4599/hook/tok-123' }] },
+      ]);
+    });
+
+    it('is idempotent: writing twice yields a single observer hook group per event', async () => {
+      // Given: a bare workspace directory
+      fs.mkdirSync(workspaceDir, { recursive: true });
+
+      // When: injecting observer hooks twice (provision + startup re-injection)
+      await service.writeObserverHooks(workspaceDir);
+      await service.writeObserverHooks(workspaceDir);
+
+      // Then: every observed event carries exactly one hook group
       const settingsPath = path.join(workspaceDir, '.claude', 'settings.local.json');
       const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8')) as {
         hooks: Record<string, Array<{ hooks: Array<{ type: string; url: string }> }>>;
       };
-      const url = settings.hooks['SessionStart']?.[0]?.hooks[0]?.url ?? '';
-      expect(url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/hook\/.+/);
+      for (const event of Object.keys(settings.hooks)) {
+        expect(settings.hooks[event]).toHaveLength(1);
+      }
+    });
+
+    it('re-writes hooks for provisioned registry entries at startup and skips missing directories (C53)', async () => {
+      // Given: two registered provisioned workspaces from a previous run — one
+      // on disk, one whose directory is gone
+      const goneDir = path.join(worktreeRoot, 'gone');
+      fs.mkdirSync(workspaceDir, { recursive: true });
+      await seedRegistry([
+        { path: workspaceDir, branchName: BRANCH },
+        { path: goneDir, branchName: 'agent-y' },
+      ]);
+
+      // When: startup re-injection runs
+      await service.reinjectObserverHooks();
+
+      // Then: the on-disk workspace has hooks embedding the CURRENT config's
+      // port + token; the missing one is skipped without throwing
+      const settingsPath = path.join(workspaceDir, '.claude', 'settings.local.json');
+      const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8')) as {
+        hooks: Record<string, Array<{ hooks: Array<{ type: string; url: string }> }>>;
+      };
+      expect(settings.hooks['SessionStart']?.[0]?.hooks[0]).toEqual({
+        type: 'http',
+        url: 'http://127.0.0.1:4599/hook/tok-123',
+      });
+      expect(fs.existsSync(goneDir)).toBe(false);
+    });
+
+    it('startup re-injection registers tokens the live listener accepts (C53)', async () => {
+      // Given: a workspace provisioned by a PREVIOUS app run (registry entry
+      // exists; the observer's in-memory token maps are empty — the restart)
+      fs.mkdirSync(workspaceDir, { recursive: true });
+      await seedRegistry([{ path: workspaceDir, branchName: BRANCH }]);
+      const observer = new AgentObserverService(mockLog, { port: 0 });
+      await observer.start();
+      try {
+        service.setObserverConfig(observer.getObserverConfig());
+
+        // When: startup re-injection runs
+        await service.reinjectObserverHooks();
+
+        // Then: the token embedded in the re-written hook URL authenticates
+        // against the live listener (200, not 403)
+        const settingsPath = path.join(workspaceDir, '.claude', 'settings.local.json');
+        const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8')) as {
+          hooks: Record<string, Array<{ hooks: Array<{ url: string }> }>>;
+        };
+        const url = new URL(settings.hooks['SessionStart']?.[0]?.hooks[0]?.url ?? '');
+        const status = await new Promise<number>((resolve, reject) => {
+          const req = http.request(
+            {
+              host: url.hostname,
+              port: url.port,
+              path: url.pathname,
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+            },
+            res => {
+              res.on('data', () => undefined);
+              res.on('end', () => resolve(res.statusCode ?? 0));
+            }
+          );
+          req.on('error', reject);
+          req.end(JSON.stringify({ session_id: 'sess-1', hook_event_name: 'SessionStart' }));
+        });
+        expect(status).toBe(200);
+      } finally {
+        await observer.stop();
+      }
     });
 
     it('refuses to write through a symlinked .claude directory that escapes the workspace', async () => {
@@ -928,6 +1105,99 @@ describe('WorkspaceService', () => {
       expect(fs.existsSync(workspaceDir)).toBe(true);
     });
 
+    it('refuses when the branch has diverged from the remote and force is false (C52)', async () => {
+      // Given: a tracked workspace whose branch is behindOrDiverged — its
+      // local commits are not provably on the remote (remote moved on too)
+      await registeredWorkspace(true);
+      loreRepositoryService.getBranchDivergence.mockResolvedValue({
+        state: 'behindOrDiverged',
+        latest: 'b',
+        latestRemote: 'c',
+      });
+
+      // When/Then: unforced teardown is refused and nothing is deleted
+      await expect(service.teardown({ workspaceId: 'inst-1', force: false })).rejects.toThrow(
+        'unpushed'
+      );
+      expect(fs.existsSync(workspaceDir)).toBe(true);
+      expect(mockLore.branchArchive).not.toHaveBeenCalled();
+    });
+
+    it('refuses a never-pushed branch whose tip moved past its fork point (C52)', async () => {
+      // Given: divergence is unknown (no remote tip — the branch was never
+      // pushed) and the branch tip has moved past its creation fork point:
+      // committed-but-unpushed agent work
+      await registeredWorkspace(true);
+      loreRepositoryService.getBranchDivergence.mockResolvedValue({
+        state: 'unknown',
+        latest: '',
+        latestRemote: '',
+      });
+      mockLore.branchInfo.mockReturnValue(
+        fluentMock({
+          events: [
+            {
+              tag: LoreEventTag.BRANCH_INFO,
+              data: { latest: 'c2c2c2', branchPoint: 'c0c0c0' },
+            },
+          ],
+        }) as never
+      );
+
+      // When/Then: unforced teardown is refused and nothing is deleted
+      await expect(service.teardown({ workspaceId: 'inst-1', force: false })).rejects.toThrow(
+        'unpushed'
+      );
+      expect(fs.existsSync(workspaceDir)).toBe(true);
+      expect(mockLore.branchArchive).not.toHaveBeenCalled();
+    });
+
+    it('allows a freshly provisioned never-pushed branch still at its fork point (C52)', async () => {
+      // Given: unknown divergence but the tip IS the fork point — the branch
+      // has no commits of its own (the fork revision came from the clone), so
+      // nothing exists only locally
+      await registeredWorkspace(true);
+      loreRepositoryService.getBranchDivergence.mockResolvedValue({
+        state: 'unknown',
+        latest: '',
+        latestRemote: '',
+      });
+      mockLore.branchInfo.mockReturnValue(
+        fluentMock({
+          events: [
+            {
+              tag: LoreEventTag.BRANCH_INFO,
+              data: { latest: 'c0c0c0', branchPoint: 'c0c0c0' },
+            },
+          ],
+        }) as never
+      );
+
+      // When: unforced teardown
+      const result = await service.teardown({ workspaceId: 'inst-1', force: false });
+
+      // Then: allowed — the guard must not false-positive a clean fresh worktree
+      expect(result.directoryRemoved).toBe(true);
+      expect(fs.existsSync(workspaceDir)).toBe(false);
+    });
+
+    it('fails closed when unknown divergence yields no fork evidence (C52)', async () => {
+      // Given: unknown divergence and BRANCH_INFO streams nothing, so the
+      // tip and fork point are unresolvable
+      await registeredWorkspace(true);
+      loreRepositoryService.getBranchDivergence.mockResolvedValue({
+        state: 'unknown',
+        latest: '',
+        latestRemote: '',
+      });
+
+      // When/Then: unforced teardown is refused rather than guessing
+      await expect(service.teardown({ workspaceId: 'inst-1', force: false })).rejects.toThrow(
+        'unpushed'
+      );
+      expect(fs.existsSync(workspaceDir)).toBe(true);
+    });
+
     it('force removes a dirty workspace, skipping the clean guard', async () => {
       // Given: a dirty, tracked workspace
       await registeredWorkspace(true);
@@ -1074,6 +1344,29 @@ describe('WorkspaceService', () => {
       await expect(
         new WorkspaceRegistry(mockLog).findByLocalPath(siblingDir)
       ).resolves.toBeUndefined();
+    });
+
+    it('never archives a branch named after an attached entry display name (C51)', async () => {
+      // Given: an attached sibling — whose registry entry carries NO
+      // provisioned branchName, only its user-facing display name 'adfa' —
+      // plus a provisioned worktree sharing the store, so a sibling handle
+      // exists and prune/archive would run
+      const attachedDir = await registerAttachedSibling();
+      await registeredWorkspace(false);
+
+      // When: force-closing the attached checkout
+      const result = await service.teardown({ workspaceId: 'inst-adfa', force: true });
+
+      // Then: the shared store is still pruned via the provisioned sibling...
+      expect(fs.existsSync(attachedDir)).toBe(false);
+      expect(mockLore.repositoryInstancePrune).toHaveBeenCalledWith(
+        { repositoryPath: workspaceDir },
+        {}
+      );
+      // ...but NO branch is archived: the display name must never be used as
+      // a branch name against the shared store (it could match a real branch)
+      expect(mockLore.branchArchive).not.toHaveBeenCalled();
+      expect(result.localBranchRemoved).toBe(false);
     });
 
     it('provisioned entries keep the existing behavior: no force required when clean', async () => {
@@ -1308,6 +1601,27 @@ describe('WorkspaceService', () => {
   });
 
   describe('edge cases', () => {
+    it('routes registry operations through an injected shared registry instance (C56)', async () => {
+      // Given: a shared registry injected at construction (index.ts wires ONE
+      // instance across RepositoryService and WorkspaceService so their
+      // read-modify-write cycles serialize through the same queue)
+      const shared = new WorkspaceRegistry(mockLog);
+      const allSpy = jest.spyOn(shared, 'all');
+      const injected = new WorkspaceService(
+        mockLog,
+        repositoryService,
+        loreRepositoryService,
+        undefined,
+        shared
+      );
+
+      // When: listing workspaces
+      await injected.list(repo.id);
+
+      // Then: the injected instance served the read
+      expect(allSpy).toHaveBeenCalled();
+    });
+
     it('setObserverConfig swaps the port and token used for hook URLs', async () => {
       // Given: a service whose observer config is replaced after construction
       service.setObserverConfig({ port: 5123, tokenForWorkspace: () => 'swapped' });

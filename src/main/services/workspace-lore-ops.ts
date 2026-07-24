@@ -1,10 +1,13 @@
 import { lore, LoreError } from '@lore-vcs/sdk';
 import type { LoreFluentApi } from '@lore-vcs/sdk';
 import { LoreEventTag } from '@lore-vcs/sdk/types/enums';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 import type { MainLogger } from '../ipc/logger';
-import type { Repository } from '../../shared/types';
+import type { BranchDivergence, LoreFileStatusGroup, Repository } from '../../shared/types';
 import { collectEvents } from './lore-events';
 import type { LoreEventDataOf } from './lore-events';
+import { isUnknownHash } from './branch-graph';
 import { sameLoreRepo } from './workspace-store';
 
 // Registry entries of the same Lore repo as `anchor`, any origin, excluding
@@ -100,6 +103,97 @@ export async function collect<TTag extends LoreEventTag, T>(
   context: string
 ): Promise<T[]> {
   return collectEvents(operation, tag, map, error => toOperationError(context, error));
+}
+
+// --- provision + teardown guards (moved from workspace-service.ts to keep it
+// under the project's max-lines limit) ---------------------------------------
+
+// The new workspace directory must be a strict subdirectory of the worktree
+// root (branch names may carry traversal segments).
+export function assertWithinRoot(target: string, root: string): void {
+  const resolvedRoot = path.resolve(root);
+  const resolvedTarget = path.resolve(target);
+  if (resolvedTarget === resolvedRoot) {
+    throw new Error(
+      'Invalid branch name: workspace path must be a subdirectory of the worktree root'
+    );
+  }
+  if (!resolvedTarget.startsWith(resolvedRoot + path.sep)) {
+    throw new Error(`Resolved workspace path escapes the worktree root: ${resolvedTarget}`);
+  }
+}
+
+// Teardown may never remove the repo's own checkout or follow a symlinked
+// workspace path out of the workspace root.
+export async function assertSafeTeardownPath(
+  workspacePath: string,
+  repoLocalPath?: string
+): Promise<void> {
+  const resolved = path.resolve(workspacePath);
+  if (repoLocalPath !== undefined && resolved === path.resolve(repoLocalPath)) {
+    throw new Error('Refusing to remove the repository checkout itself');
+  }
+  const stats = await fs.lstat(resolved).catch(() => null);
+  if (stats?.isSymbolicLink()) {
+    throw new Error('Refusing to remove a symlinked workspace path');
+  }
+}
+
+// The narrow slice of LoreRepositoryService the unsaved-work guard needs.
+interface UnsavedWorkProbe {
+  getFileStatus(repositoryPath: string): Promise<LoreFileStatusGroup>;
+  getBranchDivergence(repositoryPath: string, branchName: string): Promise<BranchDivergence>;
+}
+
+// Teardown's unsaved-work guard (C52), failing closed: only an inSync branch
+// provably has every local commit on the remote. 'ahead' has unpushed commits
+// outright; 'behindOrDiverged' cannot prove the local tip is remote (true
+// divergence loses commits too); 'unknown' — typically a provisioned branch
+// never pushed, so no remote tip resolves — is allowed only when the branch
+// tip still sits at its creation fork point (a fresh branch with no commits
+// of its own: the fork revision came from the clone). A tip past the fork
+// point, or unresolvable evidence, counts as unpushed work.
+export async function assertNoUnsavedWork(
+  probe: UnsavedWorkProbe,
+  workspacePath: string,
+  branchName: string
+): Promise<void> {
+  const status = await probe.getFileStatus(workspacePath);
+  const dirtyCount = status.untracked.length + status.unstaged.length + status.staged.length;
+  if (dirtyCount > 0) {
+    throw new Error('Workspace has uncommitted changes; pass force to remove it anyway');
+  }
+  const divergence = await probe.getBranchDivergence(workspacePath, branchName);
+  if (divergence.state === 'inSync') {
+    return;
+  }
+  if (divergence.state !== 'unknown') {
+    throw new Error('Workspace has unpushed commits; pass force to remove it anyway');
+  }
+  const fork = await getBranchFork(workspacePath, branchName);
+  if (isUnknownHash(fork.latest) || fork.latest !== fork.branchPoint) {
+    throw new Error('Workspace has unpushed commits; pass force to remove it anyway');
+  }
+}
+
+// The branch's local tip alongside its creation fork point (BRANCH_INFO's
+// branchPoint) — the unsaved-work guard's evidence for never-pushed branches.
+// Absent hashes degrade to '' (an unknown hash) so the guard fails closed.
+export async function getBranchFork(
+  repositoryPath: string,
+  branchName: string
+): Promise<{ latest: string; branchPoint: string }> {
+  const entries = await collect(
+    lore.branchInfo({ repositoryPath }, { branch: branchName }),
+    LoreEventTag.BRANCH_INFO,
+    (data: LoreEventDataOf<LoreEventTag.BRANCH_INFO>) => ({
+      latest: String(data.latest),
+      branchPoint: String(data.branchPoint),
+    }),
+    `Failed to get branch info for '${branchName}'`
+  );
+  const info = entries[entries.length - 1];
+  return { latest: info?.latest ?? '', branchPoint: info?.branchPoint ?? '' };
 }
 
 // A live instance a Lore checkout self-reports from its own store

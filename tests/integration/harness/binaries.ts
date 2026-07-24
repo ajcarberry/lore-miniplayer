@@ -19,13 +19,6 @@ export interface LoreBinaries {
   version: string;
 }
 
-export class LoreBinaryProvisionError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'LoreBinaryProvisionError';
-  }
-}
-
 const GITHUB_REPO = 'EpicGames/lore';
 const BIN_NAMES = ['loreserver', 'lore'] as const;
 type BinName = (typeof BIN_NAMES)[number];
@@ -96,7 +89,7 @@ function mapArch(value: string): string {
     case 'amd64':
       return 'x86_64';
     default:
-      throw new LoreBinaryProvisionError(`Unsupported architecture for Lore binaries: ${value}`);
+      throw new Error(`Unsupported architecture for Lore binaries: ${value}`);
   }
 }
 
@@ -109,7 +102,7 @@ function mapOs(value: string): string {
     case 'Linux':
       return 'unknown-linux-gnu';
     default:
-      throw new LoreBinaryProvisionError(`Unsupported OS for Lore binaries: ${value}`);
+      throw new Error(`Unsupported OS for Lore binaries: ${value}`);
   }
 }
 
@@ -122,24 +115,22 @@ async function isExecutable(path: string): Promise<boolean> {
   }
 }
 
-function authHeaders(): Record<string, string> {
+function ghHeaders(accept: string): Record<string, string> {
   const token = process.env['GITHUB_TOKEN'] ?? process.env['LORE_GH_TOKEN'];
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  return {
+    Accept: accept,
+    'User-Agent': 'lore-miniplayer-integration-tests',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
 }
 
 async function fetchReleaseAssets(
   version: string
 ): Promise<ReadonlyArray<{ name: string; url: string }>> {
   const url = `https://api.github.com/repos/${GITHUB_REPO}/releases/tags/v${version}`;
-  const res = await fetch(url, {
-    headers: {
-      Accept: 'application/vnd.github+json',
-      'User-Agent': 'lore-miniplayer-integration-tests',
-      ...authHeaders(),
-    },
-  });
+  const res = await fetch(url, { headers: ghHeaders('application/vnd.github+json') });
   if (!res.ok) {
-    throw new LoreBinaryProvisionError(
+    throw new Error(
       `Failed to fetch release metadata for v${version} from ${GITHUB_REPO}: ${res.status} ${res.statusText}`
     );
   }
@@ -153,34 +144,18 @@ function resolveAssetUrl(
   version: string,
   triple: string
 ): string {
-  const pattern = new RegExp(
-    `^${escapeRegExp(bin)}-v${escapeRegExp(version)}-${escapeRegExp(triple)}\\.tar\\.gz$`
-  );
-  const asset = assets.find(candidate => pattern.test(candidate.name));
+  const expected = `${bin}-v${version}-${triple}.tar.gz`;
+  const asset = assets.find(candidate => candidate.name === expected);
   if (!asset) {
-    throw new LoreBinaryProvisionError(
-      `No release asset matching "${bin}-v${version}-${triple}.tar.gz" found in ${GITHUB_REPO} v${version}`
-    );
+    throw new Error(`No release asset matching "${expected}" found in ${GITHUB_REPO} v${version}`);
   }
   return asset.url;
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 async function downloadAsset(assetUrl: string, destFile: string): Promise<void> {
-  const res = await fetch(assetUrl, {
-    headers: {
-      Accept: 'application/octet-stream',
-      'User-Agent': 'lore-miniplayer-integration-tests',
-      ...authHeaders(),
-    },
-  });
+  const res = await fetch(assetUrl, { headers: ghHeaders('application/octet-stream') });
   if (!res.ok) {
-    throw new LoreBinaryProvisionError(
-      `Failed to download ${assetUrl}: ${res.status} ${res.statusText}`
-    );
+    throw new Error(`Failed to download ${assetUrl}: ${res.status} ${res.statusText}`);
   }
   const buffer = Buffer.from(await res.arrayBuffer());
   await writeFile(destFile, buffer);
@@ -220,7 +195,7 @@ async function installBinary(
 
   const extracted = await findExecutable(extractDir, bin);
   if (!extracted) {
-    throw new LoreBinaryProvisionError(
+    throw new Error(
       `Archive for "${bin}" (v${version}, ${triple}) did not contain an executable named "${bin}"`
     );
   }

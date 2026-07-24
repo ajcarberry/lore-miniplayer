@@ -6,14 +6,10 @@
 // round-trip intact through stage/commit/push and a fresh clone.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { withServer } from '../support/world';
-
-function abs(repositoryPath: string, relPath: string): string {
-  return join(repositoryPath, relPath);
-}
+import { join } from 'node:path';
+import { withServer, writeSeedFiles, abs } from '../support/world';
 
 // Given: a repository created on the server with no revisions at all
 // When: Maya clones it and reads status/branches/current-revision/graph/
@@ -72,11 +68,7 @@ test('E6: awkward filenames round-trip through stage/commit/push and a fresh clo
       'caves/背景/wall.tga': Buffer.from([0x01, 0x02, 0x03]),
       "café's crate.mesh": 'mesh-format-v1\n',
     };
-    for (const [relPath, content] of Object.entries(awkwardFiles)) {
-      const fullPath = join(seedPath, relPath);
-      await mkdir(dirname(fullPath), { recursive: true });
-      await writeFile(fullPath, content);
-    }
+    await writeSeedFiles(seedPath, awkwardFiles);
 
     const beforeStage = await service.getFileStatus(seedPath);
     const untrackedPaths = beforeStage.untracked.map(file => file.path).sort();

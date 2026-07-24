@@ -4,7 +4,7 @@
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { startLoreServer, type LoreTestServer } from '../harness/server';
+import { startLoreServer, isolatedHomeEnv, type LoreTestServer } from '../harness/server';
 import { LoreRepositoryService } from '../../../src/main/services/lore-repository';
 
 export interface World {
@@ -29,9 +29,7 @@ let ffiHomeReady: Promise<void> | undefined;
 async function ensureIsolatedFfiHome(): Promise<void> {
   ffiHomeReady ??= (async (): Promise<void> => {
     const homeDir = await mkdtemp(join(tmpdir(), 'lore-ffi-home-'));
-    process.env['HOME'] = homeDir;
-    process.env['XDG_CONFIG_HOME'] = join(homeDir, '.config');
-    process.env['XDG_DATA_HOME'] = join(homeDir, '.local', 'share');
+    Object.assign(process.env, isolatedHomeEnv(homeDir));
   })();
   return ffiHomeReady;
 }
@@ -61,12 +59,21 @@ export interface SeededRepo {
   readonly workdir: string; // the seeding working copy -- already committed + pushed
 }
 
-async function writeSeedFiles(root: string, files: SeedFiles): Promise<void> {
+// Write (creating parent dirs for) a map of files into `root`.
+export async function writeSeedFiles(root: string, files: SeedFiles): Promise<void> {
   for (const [relPath, content] of Object.entries(files)) {
     const fullPath = join(root, relPath);
     await mkdir(dirname(fullPath), { recursive: true });
     await writeFile(fullPath, content);
   }
+}
+
+// stageFiles/unstageFiles take ABSOLUTE paths -- the IPC layer
+// (src/main/ipc/lore-handlers.ts) joins the renderer's repo-relative paths
+// against repositoryPath before calling the service; tests reproduce that
+// join rather than calling the service off-contract.
+export function abs(repositoryPath: string, relPath: string): string {
+  return join(repositoryPath, relPath);
 }
 
 // Create a server repo and give it initial content by driving the `lore`
@@ -88,24 +95,29 @@ export async function seedRepo(
   return { name, url, workdir };
 }
 
+// The common "seed a repo on the server, then clone it as the primary user"
+// arrange step. Returns the seeded repo and the fresh clone's path on disk.
+export async function seedAndClone(
+  server: LoreTestServer,
+  service: LoreRepositoryService,
+  name: string,
+  files: SeedFiles
+): Promise<{ repo: SeededRepo; clonePath: string }> {
+  const repo = await seedRepo(server, name, files);
+  const clonePath = await mkdtemp(join(tmpdir(), `lore-clone-${name}-`));
+  await service.cloneRepository(repo.url, clonePath);
+  return { repo, clonePath };
+}
+
 export interface SecondClient {
-  readonly name: string;
   readonly workdir: string;
-  // Write (and create parent dirs for) files in this client's working copy
-  // without staging/committing them.
-  writeFiles(files: SeedFiles): Promise<void>;
-  stage(paths?: string[]): Promise<void>;
-  commit(message: string): Promise<void>;
-  push(): Promise<void>;
-  // Convenience for the common "teammate moves the remote" shape: write,
-  // stage everything, commit, push, in one call.
+  // The common "teammate moves the remote" shape: write, stage everything,
+  // commit, push, in one call.
   commitAndPush(files: SeedFiles, message: string): Promise<void>;
 }
 
 // Clone `repoUrl` into a SEPARATE working dir as a second user (e.g.
-// "Devin"), with helpers to edit/stage/commit/push there so a test can move
-// the remote out from under the primary clone. General-purpose: WP5's
-// divergence/conflict scenarios reuse this heavily.
+// "Devin"), so a test can move the remote out from under the primary clone.
 export async function secondClient(
   server: LoreTestServer,
   repoUrl: string,
@@ -114,26 +126,14 @@ export async function secondClient(
   const workdir = await mkdtemp(join(tmpdir(), `lore-${name}-`));
   await server.lore(['clone', repoUrl, workdir]);
 
-  const writeFiles = async (files: SeedFiles): Promise<void> => {
+  const commitAndPush = async (files: SeedFiles, message: string): Promise<void> => {
     await writeSeedFiles(workdir, files);
-  };
-  const stage = async (paths: string[] = ['.']): Promise<void> => {
-    await server.lore(['stage', ...paths, '--scan', '--repository', workdir]);
-  };
-  const commit = async (message: string): Promise<void> => {
+    await server.lore(['stage', '.', '--scan', '--repository', workdir]);
     await server.lore(['commit', message, '--repository', workdir]);
-  };
-  const push = async (): Promise<void> => {
     await server.lore(['push', '--repository', workdir]);
   };
-  const commitAndPush = async (files: SeedFiles, message: string): Promise<void> => {
-    await writeFiles(files);
-    await stage();
-    await commit(message);
-    await push();
-  };
 
-  return { name, workdir, writeFiles, stage, commit, push, commitAndPush };
+  return { workdir, commitAndPush };
 }
 
 // A small text "mesh manifest" and a binary-ish "texture" -- realistic

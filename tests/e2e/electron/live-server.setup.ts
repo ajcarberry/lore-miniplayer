@@ -8,6 +8,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ElectronApplication } from '@playwright/test';
+import { isolatedHomeEnv } from '../../integration/harness/server';
 
 export { startLoreServer } from '../../integration/harness/server';
 export type { LoreTestServer } from '../../integration/harness/server';
@@ -22,11 +23,7 @@ export { seedRepo, secondClient, islandCavesFiles } from '../../integration/supp
 // throwaway HOME/XDG_* so these e2e runs never touch that file either.
 export async function isolatedFfiHomeEnv(): Promise<Record<string, string>> {
   const homeDir = await mkdtemp(join(tmpdir(), 'lore-miniplayer-e2e-home-'));
-  return {
-    HOME: homeDir,
-    XDG_CONFIG_HOME: join(homeDir, '.config'),
-    XDG_DATA_HOME: join(homeDir, '.local', 'share'),
-  };
+  return isolatedHomeEnv(homeDir);
 }
 
 // Stub the main process's native directory picker so a test can drive

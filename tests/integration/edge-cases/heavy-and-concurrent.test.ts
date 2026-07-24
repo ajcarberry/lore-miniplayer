@@ -16,12 +16,8 @@ import { randomBytes } from 'node:crypto';
 import { lore } from '@lore-vcs/sdk';
 import { LoreEventTag } from '@lore-vcs/sdk/types/enums';
 import { cloneProgressPercent } from '../../../src/main/services/lore-repository';
-import { withServer, seedRepo } from '../support/world';
+import { withServer, seedRepo, seedAndClone, abs } from '../support/world';
 import type { CloneProgress } from '../../../src/shared/types';
-
-function abs(repositoryPath: string, relPath: string): string {
-  return join(repositoryPath, relPath);
-}
 
 // Given: a repository with two tiny files and one 48MB binary file (their
 //        combined size dwarfs a naive 2-of-3 file-count ratio)
@@ -95,11 +91,9 @@ test('E7: heavy-asset clone progress advances by bytes, not file count', async (
 //       no leaked untracked/staged entries and no stale divergence reading
 test('E8: rapid-fire stage/commit/push cycles leave no stale state between them', async () => {
   await withServer(async ({ server, service }) => {
-    const repo = await seedRepo(server, 'island-caves', {
+    const { clonePath: mayaPath } = await seedAndClone(server, service, 'island-caves', {
       'meshes/cave-entrance.mesh': 'mesh-format-v1\nvertices: 1\n',
     });
-    const mayaPath = await mkdtemp(join(tmpdir(), 'lore-maya-e8-'));
-    await service.cloneRepository(repo.url, mayaPath);
 
     const fileNames = ['assets/rapid-a.bin', 'assets/rapid-b.bin', 'assets/rapid-c.bin'];
 

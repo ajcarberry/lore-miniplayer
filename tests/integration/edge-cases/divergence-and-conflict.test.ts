@@ -9,16 +9,10 @@
 // must be surfaced, not swallowed as an ordinary staged change.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { withServer, seedRepo, secondClient, islandCavesFiles } from '../support/world';
+import { withServer, seedAndClone, secondClient, islandCavesFiles, abs } from '../support/world';
 import type { LoreFileStatus } from '../../../src/shared/types';
-
-// stageFiles takes ABSOLUTE paths -- see status-stage-commit-push.test.ts.
-function abs(repositoryPath: string, relPath: string): string {
-  return join(repositoryPath, relPath);
-}
 
 // Given: Maya has committed (but not pushed) an edit to the texture, while
 //        Devin has pushed an unrelated edit to the mesh on the same branch
@@ -30,9 +24,12 @@ function abs(repositoryPath: string, relPath: string): string {
 //       than refusing or discarding either side
 test('E1: diverged (non-overlapping) histories read behindOrDiverged and a plain sync merges both sides', async () => {
   await withServer(async ({ server, service }) => {
-    const repo = await seedRepo(server, 'island-caves', islandCavesFiles());
-    const mayaPath = await mkdtemp(join(tmpdir(), 'lore-maya-e1-'));
-    await service.cloneRepository(repo.url, mayaPath);
+    const { repo, clonePath: mayaPath } = await seedAndClone(
+      server,
+      service,
+      'island-caves',
+      islandCavesFiles()
+    );
 
     const mayaTexture = Buffer.from([0x54, 0x52, 0x55, 0x45, 0xaa, 0xbb, 0xcc]);
     await writeFile(join(mayaPath, 'textures/rock-diffuse.tga'), mayaTexture);
@@ -98,9 +95,12 @@ test('E1: diverged (non-overlapping) histories read behindOrDiverged and a plain
 // the moment the defect is fixed. See .claude/mission/log.md (WP5 finding).
 test('E4: an overlapping conflict must be visibly surfaced, not reported as a plain staged file', { todo: 'known bug: getFileStatus() drops flagConflict — conflicts are invisible to users (follow-up)' }, async () => {
   await withServer(async ({ server, service }) => {
-    const repo = await seedRepo(server, 'island-caves', islandCavesFiles());
-    const mayaPath = await mkdtemp(join(tmpdir(), 'lore-maya-e4-'));
-    await service.cloneRepository(repo.url, mayaPath);
+    const { repo, clonePath: mayaPath } = await seedAndClone(
+      server,
+      service,
+      'island-caves',
+      islandCavesFiles()
+    );
 
     await writeFile(
       join(mayaPath, 'meshes/cave-entrance.mesh'),

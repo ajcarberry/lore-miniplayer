@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { withServer, seedRepo, secondClient, islandCavesFiles } from '../support/world';
+import { withServer, seedRepo, seedAndClone, secondClient, islandCavesFiles } from '../support/world';
 
 // Given: island-caves has a second branch, feature/caves-lighting, created
 //        and pushed on the remote
@@ -56,10 +56,12 @@ test('W4: switch to a teammate-created branch', async () => {
 //       local history contains it
 test('W5: catch up with a teammate via sync', async () => {
   await withServer(async ({ server, service }) => {
-    const repo = await seedRepo(server, 'island-caves', islandCavesFiles());
-
-    const mayaPath = await mkdtemp(join(tmpdir(), 'lore-maya-w5-'));
-    await service.cloneRepository(repo.url, mayaPath);
+    const { repo, clonePath: mayaPath } = await seedAndClone(
+      server,
+      service,
+      'island-caves',
+      islandCavesFiles()
+    );
     const before = await service.getCurrentRevision(mayaPath);
 
     const devin = await secondClient(server, repo.url, 'devin');
@@ -86,10 +88,12 @@ test('W5: catch up with a teammate via sync', async () => {
 // Then: it reports inSync, then ahead, then behindOrDiverged in turn
 test('W6: divergence reads inSync / ahead / behindOrDiverged across the arc', async () => {
   await withServer(async ({ server, service }) => {
-    const repo = await seedRepo(server, 'island-caves', islandCavesFiles());
-
-    const mayaPath = await mkdtemp(join(tmpdir(), 'lore-maya-w6-'));
-    await service.cloneRepository(repo.url, mayaPath);
+    const { repo, clonePath: mayaPath } = await seedAndClone(
+      server,
+      service,
+      'island-caves',
+      islandCavesFiles()
+    );
 
     const clean = await service.getBranchDivergence(mayaPath, 'main');
     assert.equal(

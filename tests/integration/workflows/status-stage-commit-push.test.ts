@@ -5,18 +5,9 @@
 // unstages one file before it lands in the commit; the rest still commit.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { withServer, seedRepo, islandCavesFiles } from '../support/world';
-
-// stageFiles/unstageFiles take ABSOLUTE paths -- the IPC layer
-// (src/main/ipc/lore-handlers.ts) joins the renderer's repo-relative paths
-// against repositoryPath before calling the service; tests reproduce that
-// join here rather than calling the service off-contract.
-function abs(repositoryPath: string, relPath: string): string {
-  return join(repositoryPath, relPath);
-}
+import { withServer, seedAndClone, islandCavesFiles, abs } from '../support/world';
 
 // Given: Maya has a fresh clone of island-caves with one committed revision
 // When: she edits a tracked texture, adds a new mesh, stages both, commits,
@@ -26,9 +17,7 @@ function abs(repositoryPath: string, relPath: string): string {
 //       fresh status is clean after commit + push
 test('W2: edit, review, stage, commit, push leaves a clean status', async () => {
   await withServer(async ({ server, service }) => {
-    const repo = await seedRepo(server, 'island-caves', islandCavesFiles());
-    const clonePath = await mkdtemp(join(tmpdir(), 'lore-maya-w2-'));
-    await service.cloneRepository(repo.url, clonePath);
+    const { clonePath } = await seedAndClone(server, service, 'island-caves', islandCavesFiles());
 
     // Edit an existing texture, add a new mesh
     await writeFile(
@@ -76,9 +65,7 @@ test('W2: edit, review, stage, commit, push leaves a clean status', async () => 
 //       committing lands only the still-staged files
 test('W3: unstage one file before commit, the rest still land', async () => {
   await withServer(async ({ server, service }) => {
-    const repo = await seedRepo(server, 'island-caves', islandCavesFiles());
-    const clonePath = await mkdtemp(join(tmpdir(), 'lore-maya-w3-'));
-    await service.cloneRepository(repo.url, clonePath);
+    const { clonePath } = await seedAndClone(server, service, 'island-caves', islandCavesFiles());
 
     await writeFile(
       join(clonePath, 'textures', 'moss-diffuse.tga'),

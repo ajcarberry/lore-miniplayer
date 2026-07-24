@@ -13,6 +13,26 @@ import { withServer } from '../support/world';
 
 const FAST_FAILURE_TIMEOUT_MS = 10_000;
 
+// A clean failure: the right error type, a useful message, and no raw FFI
+// internals (koffi/segfault/pointer addresses) leaking through to the UI.
+function expectCleanLoreError(error: unknown): true {
+  assert.ok(error instanceof LoreOperationError, `expected a LoreOperationError, got: ${String(error)}`);
+  assert.ok(error.message.length > 0, 'expected a non-empty, useful error message');
+  assert.doesNotMatch(
+    error.message,
+    /\bffi\b|koffi|segfault|0x[0-9a-f]{4,}/i,
+    `expected no raw FFI leakage in the message, got: ${error.message}`
+  );
+  return true;
+}
+
+function assertFast(start: number): void {
+  assert.ok(
+    Date.now() - start < FAST_FAILURE_TIMEOUT_MS,
+    'expected the rejection well within the fast-failure timeout'
+  );
+}
+
 // Given: an address with nothing listening (Maya fat-fingers the server)
 // When: listRemoteRepositories is called against it
 // Then: it rejects quickly as a LoreOperationError with a useful message --
@@ -27,23 +47,11 @@ test(
 
     await assert.rejects(
       service.listRemoteRepositories('lore://127.0.0.1:1'),
-      (error: unknown) => {
-        assert.ok(error instanceof LoreOperationError, `expected a LoreOperationError, got: ${String(error)}`);
-        assert.ok(error.message.length > 0, 'expected a non-empty, useful error message');
-        assert.doesNotMatch(
-          error.message,
-          /\bffi\b|koffi|segfault|0x[0-9a-f]{4,}/i,
-          `expected no raw FFI leakage in the message, got: ${error.message}`
-        );
-        return true;
-      },
+      expectCleanLoreError,
       'expected listRemoteRepositories against an unreachable address to reject'
     );
 
-    assert.ok(
-      Date.now() - start < FAST_FAILURE_TIMEOUT_MS,
-      'expected the rejection well within the fast-failure timeout'
-    );
+    assertFast(start);
   }
 );
 
@@ -60,23 +68,11 @@ test(
 
       await assert.rejects(
         service.cloneRepository(`${server.grpcUrl}/does-not-exist`, clonePath),
-        (error: unknown) => {
-          assert.ok(error instanceof LoreOperationError, `expected a LoreOperationError, got: ${String(error)}`);
-          assert.ok(error.message.length > 0, 'expected a non-empty, useful error message');
-          assert.doesNotMatch(
-            error.message,
-            /\bffi\b|koffi|segfault|0x[0-9a-f]{4,}/i,
-            `expected no raw FFI leakage in the message, got: ${error.message}`
-          );
-          return true;
-        },
+        expectCleanLoreError,
         'expected cloning a missing repository to reject'
       );
 
-      assert.ok(
-        Date.now() - start < FAST_FAILURE_TIMEOUT_MS,
-        'expected the rejection well within the fast-failure timeout'
-      );
+      assertFast(start);
     });
   }
 );

@@ -22,6 +22,7 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { setTimeout as delay } from 'node:timers/promises';
 import { randomUUID } from 'node:crypto';
 import { ensureLoreBinaries } from './binaries';
 
@@ -36,15 +37,24 @@ export interface LoreTestServer {
   createRepo(name: string): Promise<{ name: string; url: string }>;
   // Run the cached `lore` CLI wired to THIS server's context (isolated env).
   // Lets tests seed repos and act as a second client ("Devin").
-  lore(args: string[], opts?: { cwd?: string }): Promise<{ stdout: string; stderr: string }>;
+  lore(args: string[]): Promise<{ stdout: string; stderr: string }>;
   stop(): Promise<void>;
 }
 
-export class LoreServerStartError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'LoreServerStartError';
-  }
+// The SDK's native FFI and the `lore` CLI both read one global Lore config
+// under $HOME; redirecting HOME/XDG_* at a throwaway dir keeps each test
+// process (and each launched app) hermetic. Shared by the integration world,
+// this server's own client env, and the live-server e2e setup.
+export function isolatedHomeEnv(homeDir: string): {
+  HOME: string;
+  XDG_CONFIG_HOME: string;
+  XDG_DATA_HOME: string;
+} {
+  return {
+    HOME: homeDir,
+    XDG_CONFIG_HOME: join(homeDir, '.config'),
+    XDG_DATA_HOME: join(homeDir, '.local', 'share'),
+  };
 }
 
 const HEALTH_CHECK_TIMEOUT_MS = 15_000;
@@ -95,17 +105,9 @@ async function getFreePort(): Promise<number> {
   });
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise(resolveDelay => global.setTimeout(resolveDelay, ms));
-}
-
-function tail(text: string, maxChars: number): string {
-  return text.length > maxChars ? text.slice(text.length - maxChars) : text;
-}
-
 async function readLogTail(logPath: string): Promise<string> {
   const contents = await readFile(logPath, 'utf8').catch(() => '(log file unavailable)');
-  return tail(contents, LOG_TAIL_CHARS);
+  return contents.length > LOG_TAIL_CHARS ? contents.slice(-LOG_TAIL_CHARS) : contents;
 }
 
 export async function startLoreServer(opts?: { version?: string }): Promise<LoreTestServer> {
@@ -135,9 +137,7 @@ export async function startLoreServer(opts?: { version?: string }): Promise<Lore
 
   const clientEnv: Record<string, string | undefined> = {
     ...process.env,
-    HOME: homeDir,
-    XDG_DATA_HOME: join(homeDir, '.local', 'share'),
-    XDG_CONFIG_HOME: join(homeDir, '.config'),
+    ...isolatedHomeEnv(homeDir),
     TMPDIR: serverTmpDir,
   };
 
@@ -160,7 +160,7 @@ export async function startLoreServer(opts?: { version?: string }): Promise<Lore
   if (spawnPid === undefined) {
     closeLogFd();
     trackedServers.delete(child);
-    throw new LoreServerStartError(`Failed to spawn loreserver from ${bins.loreserver}`);
+    throw new Error(`Failed to spawn loreserver from ${bins.loreserver}`);
   }
 
   try {
@@ -200,22 +200,11 @@ export async function startLoreServer(opts?: { version?: string }): Promise<Lore
     });
   };
 
-  const lore = async (
-    args: string[],
-    loreOpts?: { cwd?: string }
-  ): Promise<{ stdout: string; stderr: string }> => {
-    const execOptions: {
-      env: Record<string, string | undefined>;
-      cwd?: string;
-      maxBuffer: number;
-    } = {
+  const lore = async (args: string[]): Promise<{ stdout: string; stderr: string }> => {
+    const { stdout, stderr } = await execFileAsync(bins.lore, args, {
       env: clientEnv,
       maxBuffer: 10 * 1024 * 1024,
-    };
-    if (loreOpts?.cwd !== undefined) {
-      execOptions.cwd = loreOpts.cwd;
-    }
-    const { stdout, stderr } = await execFileAsync(bins.lore, args, execOptions);
+    });
     return { stdout, stderr };
   };
 
@@ -249,7 +238,7 @@ async function waitForHealthy(
   while (Date.now() < deadline) {
     if (child.exitCode !== null || child.signalCode !== null) {
       const logTail = await readLogTail(logPath);
-      throw new LoreServerStartError(
+      throw new Error(
         `loreserver exited before becoming healthy (code=${String(child.exitCode)}, signal=${String(
           child.signalCode
         )}).\n--- log tail ---\n${logTail}`
@@ -269,7 +258,7 @@ async function waitForHealthy(
   }
 
   const logTail = await readLogTail(logPath);
-  throw new LoreServerStartError(
+  throw new Error(
     `loreserver did not become healthy within ${HEALTH_CHECK_TIMEOUT_MS}ms (last error: ${String(
       lastError
     )}).\n--- log tail ---\n${logTail}`

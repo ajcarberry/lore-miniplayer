@@ -3,35 +3,21 @@
 // `app` dependency) -- the SDK works without initializeLoreSdk()/logConfigure.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { startLoreServer } from './harness/server';
-import { LoreRepositoryService } from '../../src/main/services/lore-repository';
+import { withServer, seedAndClone } from './support/world';
 
 // Given: a live loreserver with a repo seeded with one committed + pushed revision
 // When: the real LoreRepositoryService clones it, then lists remote repositories
 //       and branches on the clone
 // Then: the clone succeeds and the service's results reflect the seeded repo
 test('service smoke: clone + list against a live server', async () => {
-  const server = await startLoreServer();
-  try {
-    const seedDir = await mkdtemp(join(tmpdir(), 'lore-smoke-seed-'));
-    const url = `${server.grpcUrl}/smoke`;
-    await server.lore(['repository', 'create', url, '--repository', seedDir]);
-    await writeFile(join(seedDir, 'hello.txt'), 'hello from the integration smoke test\n');
-    await server.lore(['stage', '.', '--scan', '--repository', seedDir]);
-    await server.lore(['commit', 'Initial commit', '--repository', seedDir]);
-    await server.lore(['push', '--repository', seedDir]);
-
-    const service = new LoreRepositoryService();
-    const clonePath = await mkdtemp(join(tmpdir(), 'lore-smoke-clone-'));
-
-    await service.cloneRepository(url, clonePath);
+  await withServer(async ({ server, service }) => {
+    const { repo, clonePath } = await seedAndClone(server, service, 'smoke', {
+      'hello.txt': 'hello from the integration smoke test\n',
+    });
 
     const remoteRepos = await service.listRemoteRepositories(server.grpcUrl);
     assert.ok(
-      remoteRepos.some(repo => repo.name === 'smoke' && repo.url === url),
+      remoteRepos.some(entry => entry.name === 'smoke' && entry.url === repo.url),
       `expected 'smoke' in remote repository list, got: ${JSON.stringify(remoteRepos)}`
     );
 
@@ -44,7 +30,5 @@ test('service smoke: clone + list against a live server', async () => {
     assert.deepEqual(status.staged, []);
     assert.deepEqual(status.untracked, []);
     assert.deepEqual(status.unstaged, []);
-  } finally {
-    await server.stop();
-  }
+  });
 });

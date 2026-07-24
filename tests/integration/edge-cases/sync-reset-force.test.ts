@@ -9,11 +9,10 @@
 // while both --reset and --force complete it and land on the remote state.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { LoreOperationError } from '../../../src/main/services/lore-repository';
-import { withServer, seedRepo, secondClient, islandCavesFiles } from '../support/world';
+import { withServer, seedAndClone, secondClient, islandCavesFiles } from '../support/world';
 
 const MESH_PATH = 'meshes/cave-entrance.mesh';
 
@@ -22,9 +21,12 @@ const MESH_PATH = 'meshes/cave-entrance.mesh';
 // Then: the working copy matches the remote exactly and her edit is gone
 test('E2: reset sync discards a dirty working copy and matches the remote', async () => {
   await withServer(async ({ server, service }) => {
-    const repo = await seedRepo(server, 'island-caves', islandCavesFiles());
-    const mayaPath = await mkdtemp(join(tmpdir(), 'lore-maya-e2-'));
-    await service.cloneRepository(repo.url, mayaPath);
+    const { clonePath: mayaPath } = await seedAndClone(
+      server,
+      service,
+      'island-caves',
+      islandCavesFiles()
+    );
 
     const originalContent = await readFile(join(mayaPath, MESH_PATH), 'utf8');
     await writeFile(join(mayaPath, MESH_PATH), 'HALF-FINISHED SCRATCH EDIT, never staged\n');
@@ -62,9 +64,12 @@ test('E2: reset sync discards a dirty working copy and matches the remote', asyn
 // Then: it completes and the working copy matches the remote's target state
 test('E3: a plain sync refuses over dirty local edits; force completes it', async () => {
   await withServer(async ({ server, service }) => {
-    const repo = await seedRepo(server, 'island-caves', islandCavesFiles());
-    const mayaPath = await mkdtemp(join(tmpdir(), 'lore-maya-e3-'));
-    await service.cloneRepository(repo.url, mayaPath);
+    const { repo, clonePath: mayaPath } = await seedAndClone(
+      server,
+      service,
+      'island-caves',
+      islandCavesFiles()
+    );
 
     const dirtyContent = 'HALF-FINISHED SCRATCH EDIT, never staged\n';
     await writeFile(join(mayaPath, MESH_PATH), dirtyContent);

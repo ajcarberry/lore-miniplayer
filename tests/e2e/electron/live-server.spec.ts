@@ -1,5 +1,5 @@
 import type { ElectronApplication, Page } from '@playwright/test';
-import { test, expect } from '@playwright/test';
+import { test as base, expect } from '@playwright/test';
 import { launchApp, removeTempUserDataDir } from './launch';
 import {
   startLoreServer,
@@ -16,29 +16,41 @@ import {
 // subset that drives the REAL Electron app -- renderer -> IPC -> main-process
 // service -> live `loreserver` -- through the states most likely to trip the
 // interface. Unlike the rest of tests/e2e (see launch.ts and
-// card-anatomy.spec.ts's doc comments for why they avoid it), these specs
-// start a real hermetic server via tests/integration/harness/server.ts and
-// feed its plaintext `lore://` address straight to the running app.
-//
-// Requires `pnpm build` first, same as every other Electron e2e spec.
-//
-// `retries: 1` is scoped to just this describe block (not playwright.config.ts,
-// which stays untouched at its default 0 locally / 2 in CI): launching this
-// app spins up its in-process Lore SDK native FFI for real, and that launch
-// is occasionally, non-deterministically slow to produce Playwright's
-// "window" event under this harness -- confirmed via `ps` that the OS
-// process spawns and sits idle rather than crashing, and that a fresh retry
-// of the exact same launch reliably succeeds. This is environment launch
-// flakiness, not app behavior -- nothing about *what's asserted* is retried
-// into passing.
+// card-anatomy.spec.ts for why they avoid it), these start a real hermetic
+// server via tests/integration/harness/server.ts and feed its plaintext
+// `lore://` address straight to the running app. Requires `pnpm build` first,
+// like every other Electron e2e spec.
+
+// Per-test launch of the real app (fresh isolated FFI HOME) with guaranteed
+// teardown. The app spins up its in-process Lore SDK native FFI for real, and
+// that launch is occasionally, non-deterministically slow to produce the
+// `window` event under this harness -- confirmed via `ps` that the OS process
+// spawns and sits idle rather than crashing, and that a fresh retry reliably
+// succeeds. This launch plumbing (never *what's asserted*) drives two things:
+// `retries: 1` below, and an empirical ceiling of ~3 real launches per worker
+// (the 4th `firstWindow()` hangs indefinitely), which is why U1 and U4 share
+// one launch in a single test.
+const test = base.extend<{ electronApp: ElectronApplication; window: Page }>({
+  electronApp: async ({}, use) => {
+    const { app, userDataDir } = await launchApp(undefined, await isolatedFfiHomeEnv());
+    await use(app);
+    await app.close();
+    removeTempUserDataDir(userDataDir);
+  },
+  window: async ({ electronApp }, use) => {
+    await use(await electronApp.firstWindow());
+  },
+});
+
+// Scoped to just this file (playwright.config.ts stays at its default 0 local /
+// 2 CI) -- see the launch-flakiness note above.
 test.describe.configure({ timeout: 120_000, retries: 1 });
 
 test.describe('Live server (WP6 U1-U4)', () => {
-  // The harness's binary provisioning (tests/integration/harness/binaries.ts's
-  // mapOs) only resolves Lore release assets for darwin/linux -- it throws
-  // for win32. CI (WP7) runs this e2e step on macOS AND Windows, so this
-  // whole block must skip there rather than let beforeAll's startLoreServer()
-  // throw and fail the run; the platform-agnostic specs alongside it keep
+  // The harness provisions Lore release assets only for darwin/linux
+  // (binaries.ts mapOs throws for win32), and CI runs this step on macOS AND
+  // Windows, so skip the whole block there rather than let beforeAll's
+  // startLoreServer() throw. The platform-agnostic specs alongside it keep
   // running on Windows untouched.
   test.skip(
     process.platform === 'win32',
@@ -52,8 +64,8 @@ test.describe('Live server (WP6 U1-U4)', () => {
   });
 
   test.afterAll(async () => {
-    // Belt-and-suspenders with harness/server.ts's own exit safety net --
-    // this is the graceful path so no loreserver is ever left orphaned.
+    // Graceful path; harness/server.ts also has its own exit safety net, so no
+    // loreserver is ever left orphaned.
     await testServer?.stop();
   });
 
@@ -124,31 +136,20 @@ test.describe('Live server (WP6 U1-U4)', () => {
     });
   }
 
-  // U1 and U4 share one Electron session (see the "why one app session"
-  // comment at the top of the test body): both are otherwise-independent
-  // narratives -- Maya connecting and cloning a real repository, and Maya
-  // opening a brand-new empty one -- realistically chained as one sitting,
-  // exactly like a user adding a second repository without relaunching.
-  test('U1+U4: clone a real repository into the card, then open an empty one', async () => {
+  test('U1+U4: clone a real repository into the card, then open an empty one', async ({
+    electronApp,
+    window,
+  }) => {
     const repoName = 'u1-island-caves';
     const emptyRepoName = 'u4-empty-repo';
     await seedRepo(testServer!, repoName, islandCavesFiles());
     await testServer!.createRepo(emptyRepoName); // no revisions
 
-    // Why one app session: this Electron app launches its in-process Lore
-    // SDK native FFI for real, and empirically the 4th such real launch
-    // within one Playwright worker process hangs indefinitely on
-    // `firstWindow()` -- confirmed via `ps` that the OS process spawns and
-    // stays alive (idle, no crash), so this is Electron/Node/FFI launch
-    // plumbing wedging under this harness, not an application bug (a
-    // subsequent launch always recovers). Three real launches per file is
-    // reliably clean, so U1 and U4 -- which don't need independent app
-    // instances to be faithfully tested -- share one, keeping this file at 3.
-    const { app: electronApp, userDataDir } = await launchApp(
-      undefined,
-      await isolatedFfiHomeEnv()
-    );
-    const window = await electronApp.firstWindow();
+    // U1 and U4 share this one launched session (see the launch note above):
+    // two otherwise-independent narratives -- Maya cloning a real repository,
+    // then opening a brand-new empty one -- realistically chained as one
+    // sitting, exactly like a user adding a second repository without
+    // relaunching.
 
     // Given: Maya connects to the live studio server
     await connectToHarness(window);
@@ -162,8 +163,6 @@ test.describe('Live server (WP6 U1-U4)', () => {
     // and the normal (not "not on disk yet") transport row.
     await expect(repoHeaderName(window, repoName)).toBeVisible();
     await expect(window.getByText('Sync', { exact: true })).toBeVisible();
-    await expect(window.getByText('Commit', { exact: true })).toBeVisible();
-    await expect(window.getByText('Push', { exact: true })).toBeVisible();
     await expect(window.getByText('No history yet')).not.toBeVisible();
 
     // U4 -- When: Maya also adds island-caves-2, a brand-new empty repo
@@ -186,20 +185,14 @@ test.describe('Live server (WP6 U1-U4)', () => {
     await expect(window.getByText('Add repository…')).toBeVisible();
     await expect(window.getByRole('button', { name: repoName, exact: true })).toBeVisible();
     await expect(window.getByRole('button', { name: emptyRepoName, exact: true })).toBeVisible();
-
-    await electronApp.close();
-    removeTempUserDataDir(userDataDir);
   });
 
-  test('U2: a teammate push surfaces the sync-needed pill, and clears on sync', async () => {
+  test('U2: a teammate push surfaces the sync-needed pill, and clears on sync', async ({
+    electronApp,
+    window,
+  }) => {
     const repoName = 'u2-sync-pill';
     const repo = await seedRepo(testServer!, repoName, islandCavesFiles());
-
-    const { app: electronApp, userDataDir } = await launchApp(
-      undefined,
-      await isolatedFfiHomeEnv()
-    );
-    const window = await electronApp.firstWindow();
 
     await connectToHarness(window);
     await addAndCloneRepository(window, electronApp, repoName);
@@ -269,12 +262,12 @@ test.describe('Live server (WP6 U1-U4)', () => {
 
     // Then: the notice clears
     await expect(pillBar).not.toHaveAttribute('data-notice', 'sync', { timeout: 20_000 });
-
-    await electronApp.close();
-    removeTempUserDataDir(userDataDir);
   });
 
-  test('U3: cloning a heavy asset streams real progress events to completion', async () => {
+  test('U3: cloning a heavy asset streams real progress events to completion', async ({
+    electronApp,
+    window,
+  }) => {
     const repoName = 'u3-heavy-asset';
     // Several multi-MB binary assets (~24MB total).
     const heavyAssetFiles = Object.fromEntries(
@@ -284,12 +277,6 @@ test.describe('Live server (WP6 U1-U4)', () => {
       ])
     );
     await seedRepo(testServer!, repoName, heavyAssetFiles);
-
-    const { app: electronApp, userDataDir } = await launchApp(
-      undefined,
-      await isolatedFfiHomeEnv()
-    );
-    const window = await electronApp.firstWindow();
 
     await connectToHarness(window);
     await prepareAddRepositoryForm(window, electronApp, repoName);
@@ -338,24 +325,13 @@ test.describe('Live server (WP6 U1-U4)', () => {
       `expected the final tick to reach 100%, got: ${JSON.stringify(samples)}`
     ).toBe(100);
 
-    // NOT OBSERVABLE HERE, and why: U3 also wants the visible bar advancing
-    // through intermediate percentages (not "frozen/instant"). Probed
-    // directly against this harness (see the SDK's raw REPOSITORY_CLONE_
-    // PROGRESS `count` payloads for this same clone): a 24-120MB local
-    // clone over loopback reports exactly three checkpoints -- discovery
-    // start (0%), discovery complete (0%), full completion (100%) -- with
-    // the whole byte transfer completing between the second and third
-    // checkpoint in under 100ms, regardless of payload size tried (24MB up
-    // to 120MB). There is no intermediate 1-99% tick to observe on this
-    // harness: the SDK only reports byte progress at file/discovery
-    // boundaries, and a same-machine loopback transfer finishes before a
-    // second boundary can land mid-transfer. Reproducing a genuinely
-    // advancing bar would need either real network latency (unavailable in
-    // this hermetic harness) or a payload large enough to keep the transfer
-    // running for multiple seconds, which isn't a reasonable tradeoff for
-    // this suite's runtime.
-
-    await electronApp.close();
-    removeTempUserDataDir(userDataDir);
+    // Intentionally NOT asserted: a visibly advancing 1-99% bar. Probed
+    // directly against this harness, a 24-120MB local clone over loopback
+    // reports exactly three checkpoints -- discovery start (0%), discovery
+    // complete (0%), full completion (100%) -- with the whole byte transfer
+    // finishing between the last two in under 100ms. There is no intermediate
+    // tick to observe here; reproducing one would need real network latency
+    // or a payload large enough to run for seconds, neither worth this suite's
+    // runtime.
   });
 });

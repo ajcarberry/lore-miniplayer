@@ -1,3 +1,5 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MissionCard } from '../../../src/renderer/components/mission-control/MissionCard';
@@ -126,6 +128,29 @@ describe('MissionCard — in progress', () => {
     expect(screen.getByText('$0.37')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Review' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Merge → main' })).not.toBeInTheDocument();
+  });
+});
+
+describe('MissionCard — pulseDot keyframes reach the Mission Control window', () => {
+  // jsdom cannot play CSS animations, so this is a structural regression
+  // guard: the in-progress dot animates with `pulseDot`, whose @keyframes
+  // must live in a stylesheet the Mission Control entry actually imports
+  // (they once lived only in morph.css, which the main window alone loads,
+  // so the dot silently never pulsed here).
+  const rendererDir = path.join(__dirname, '../../../src/renderer');
+
+  it('defines @keyframes pulseDot in globals.css, which the entry imports', () => {
+    const globalsCss = fs.readFileSync(path.join(rendererDir, 'styles/globals.css'), 'utf8');
+    const entry = fs.readFileSync(path.join(rendererDir, 'mission-control.tsx'), 'utf8');
+
+    expect(globalsCss).toContain('@keyframes pulseDot');
+    expect(entry).toContain("import './styles/globals.css'");
+  });
+
+  it('keeps a single definition — morph.css no longer duplicates the keyframes', () => {
+    const morphCss = fs.readFileSync(path.join(rendererDir, 'styles/morph.css'), 'utf8');
+
+    expect(morphCss).not.toContain('@keyframes pulseDot');
   });
 });
 

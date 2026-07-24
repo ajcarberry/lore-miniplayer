@@ -95,6 +95,27 @@ describe('PlayerHeader', () => {
     expect(onOpenSwitcher).toHaveBeenCalledTimes(1);
   });
 
+  it('opens the branch switcher with Enter and Space from the keyboard', async () => {
+    // Given: a rendered header with the switcher button focused (the header
+    // is a role='button' Box, not a native <button>, so keyboard activation
+    // must be wired explicitly)
+    const user = userEvent.setup();
+    const { onOpenSwitcher } = renderHeader();
+    screen.getByRole('button', { name: 'Switch branch' }).focus();
+
+    // When: pressing Enter
+    await user.keyboard('{Enter}');
+
+    // Then: the open callback fires
+    expect(onOpenSwitcher).toHaveBeenCalledTimes(1);
+
+    // When: pressing Space
+    await user.keyboard(' ');
+
+    // Then: the open callback fires again
+    expect(onOpenSwitcher).toHaveBeenCalledTimes(2);
+  });
+
   it('carries no divergence badge — action state lives on the transport buttons', () => {
     // When: rendering the header
     renderHeader();

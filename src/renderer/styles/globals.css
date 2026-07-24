@@ -71,3 +71,17 @@ textarea,
   -webkit-user-select: text;
   user-select: text;
 }
+
+/* The attention dot's quick self-contained ping — used by the AttentionChip
+   (pill and card header, main window) and Mission Control's in-progress card
+   dot. Lives here, not morph.css, because every window entry imports
+   globals.css while only the main window loads morph.css. */
+@keyframes pulseDot {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(176, 118, 31, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(176, 118, 31, 0);
+  }
+}

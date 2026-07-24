@@ -156,19 +156,6 @@
   }
 }
 
-/* The attention chip's dot (needsYou > 0, pill and card header alike) —
-   a quick self-contained ping, independent of the pill-wide notice glow
-   below. */
-@keyframes pulseDot {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 rgba(176, 118, 31, 0.5);
-  }
-  50% {
-    box-shadow: 0 0 0 5px rgba(176, 118, 31, 0);
-  }
-}
-
 /* 'sync' = workspace behind the remote; 'attention' = ≥1 agent workspace
    needs the human (design 1b). Either notice breathes the same whole-pill
    glow. */

@@ -37,6 +37,14 @@ export function PlayerHeader({
   return (
     <Box
       onClick={onOpenSwitcher}
+      onKeyDown={event => {
+        // role='button' on a div gets no native Enter/Space activation —
+        // wire it up explicitly (preventDefault keeps Space from scrolling).
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onOpenSwitcher();
+        }
+      }}
       role='button'
       tabIndex={0}
       aria-label='Switch branch'

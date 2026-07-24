@@ -12,24 +12,14 @@ import {
   type LoreTestServer,
 } from './live-server.setup';
 
-// WP6 (see .claude/mission/spec.md's "Scenarios (WP4-WP6)" -> U1-U4): the UI
-// subset that drives the REAL Electron app -- renderer -> IPC -> main-process
-// service -> live `loreserver` -- through the states most likely to trip the
-// interface. Unlike the rest of tests/e2e (see launch.ts and
-// card-anatomy.spec.ts for why they avoid it), these start a real hermetic
-// server via tests/integration/harness/server.ts and feed its plaintext
-// `lore://` address straight to the running app. Requires `pnpm build` first,
-// like every other Electron e2e spec.
+// Drives the real Electron app -- renderer -> IPC -> main-process service ->
+// live `loreserver` -- against a hermetic server. Requires `pnpm build` first.
 
-// Per-test launch of the real app (fresh isolated FFI HOME) with guaranteed
-// teardown. The app spins up its in-process Lore SDK native FFI for real, and
-// that launch is occasionally, non-deterministically slow to produce the
-// `window` event under this harness -- confirmed via `ps` that the OS process
-// spawns and sits idle rather than crashing, and that a fresh retry reliably
-// succeeds. This launch plumbing (never *what's asserted*) drives two things:
-// `retries: 1` below, and an empirical ceiling of ~3 real launches per worker
-// (the 4th `firstWindow()` hangs indefinitely), which is why U1 and U4 share
-// one launch in a single test.
+// The app launches its in-process Lore SDK native FFI for real, and that launch
+// is occasionally slow to produce the `window` event -- hence `retries: 1` and a
+// ceiling of ~3 real launches per worker (a 4th `firstWindow()` hangs), which is
+// why the clone and empty-repo cases share one launch. This fixture gives each
+// test a fresh isolated-HOME launch with guaranteed teardown.
 const test = base.extend<{ electronApp: ElectronApplication; window: Page }>({
   electronApp: async ({}, use) => {
     const { app, userDataDir } = await launchApp(undefined, await isolatedFfiHomeEnv());
@@ -42,16 +32,13 @@ const test = base.extend<{ electronApp: ElectronApplication; window: Page }>({
   },
 });
 
-// Scoped to just this file (playwright.config.ts stays at its default 0 local /
-// 2 CI) -- see the launch-flakiness note above.
+// Timeout and retries for this file only; the rest of the suite keeps the
+// config defaults.
 test.describe.configure({ timeout: 120_000, retries: 1 });
 
-test.describe('Live server (WP6 U1-U4)', () => {
-  // The harness provisions Lore release assets only for darwin/linux
-  // (binaries.ts mapOs throws for win32), and CI runs this step on macOS AND
-  // Windows, so skip the whole block there rather than let beforeAll's
-  // startLoreServer() throw. The platform-agnostic specs alongside it keep
-  // running on Windows untouched.
+test.describe('Live server', () => {
+  // The harness provisions loreserver only on darwin/linux (binaries.ts mapOs
+  // throws for win32), so skip the whole block on Windows.
   test.skip(
     process.platform === 'win32',
     'lore harness provisions loreserver only on macOS/Linux (binaries.ts mapOs has no win32 case)'
@@ -64,30 +51,23 @@ test.describe('Live server (WP6 U1-U4)', () => {
   });
 
   test.afterAll(async () => {
-    // Graceful path; harness/server.ts also has its own exit safety net, so no
-    // loreserver is ever left orphaned.
+    // harness/server.ts also stops on exit, so no loreserver is orphaned.
     await testServer?.stop();
   });
 
-  // Fills the connect page with the harness server's address and expands
-  // straight to the (repository-less) card -- shared first step for every
-  // scenario below.
+  // Fills the connect page with the harness address and expands to the card.
   async function connectToHarness(window: Page): Promise<void> {
-    // Explicit `lore://` scheme (plaintext, matching the harness) is kept
-    // as-entered by useServerConnection -- only bare hosts get the TLS
-    // default, see connect-page.spec.ts.
+    // The explicit `lore://` scheme is kept as entered; only bare hosts get the
+    // TLS default.
     await window.getByPlaceholder('lores://lore.example.com').fill(testServer!.grpcUrl);
     await window.getByRole('button', { name: 'Connect' }).click();
     await window.locator('.morph-pill').click();
     await expect(window.getByText('On branch')).toBeVisible();
   }
 
-  // Opens the Add Repository modal, searches the live server's repository
-  // list for `repoName`, selects it, and picks a fresh temp folder as the
-  // base directory (via a stubbed native dialog -- Playwright can't drive a
-  // real OS picker). Leaves the submit button enabled and ready to click, so
-  // callers needing to instrument the clone (U3) can hook in before
-  // submitting.
+  // Opens the Add Repository modal, selects `repoName` from the live server's
+  // list, and picks a fresh temp base directory. The native dialog is stubbed
+  // because Playwright cannot drive a real OS picker.
   async function prepareAddRepositoryForm(
     window: Page,
     app: ElectronApplication,
@@ -109,8 +89,7 @@ test.describe('Live server (WP6 U1-U4)', () => {
     await expect(window.getByRole('button', { name: 'Add & Clone Repository' })).toBeEnabled();
   }
 
-  // Submits the (already-filled) Add Repository form and waits for the real
-  // clone to finish and the modal to close.
+  // Submits the filled form and waits for the real clone to finish.
   async function submitAddRepositoryForm(window: Page): Promise<void> {
     await window.getByRole('button', { name: 'Add & Clone Repository' }).click();
     await expect(window.getByText('Define Repository')).not.toBeVisible({ timeout: 30_000 });
@@ -125,18 +104,16 @@ test.describe('Live server (WP6 U1-U4)', () => {
     await submitAddRepositoryForm(window);
   }
 
-  // The selected repository's name renders in two places at once whenever
-  // the card is expanded -- the header eyebrow (PlayerHeader.tsx) AND the
-  // always-mounted pill (Pill.tsx) -- so a bare getByText(repoName) is a
-  // strict-mode violation. Scope to the header, which carries a stable
-  // aria-label regardless of its (changing) visible text.
+  // The repository name renders in two places while the card is expanded (header
+  // eyebrow and the always-mounted pill), so a bare getByText is ambiguous. Scope
+  // to the header button, which carries a stable aria-label.
   function repoHeaderName(window: Page, repoName: string): ReturnType<Page['getByText']> {
     return window.getByRole('button', { name: 'Switch branch' }).getByText(repoName, {
       exact: true,
     });
   }
 
-  test('U1+U4: clone a real repository into the card, then open an empty one', async ({
+  test('clone a real repository into the card, then open an empty one', async ({
     electronApp,
     window,
   }) => {
@@ -145,49 +122,43 @@ test.describe('Live server (WP6 U1-U4)', () => {
     await seedRepo(testServer!, repoName, islandCavesFiles());
     await testServer!.createRepo(emptyRepoName); // no revisions
 
-    // U1 and U4 share this one launched session (see the launch note above):
-    // two otherwise-independent narratives -- Maya cloning a real repository,
-    // then opening a brand-new empty one -- realistically chained as one
-    // sitting, exactly like a user adding a second repository without
-    // relaunching.
+    // Both narratives share one launched session -- cloning a real repository,
+    // then opening a brand-new empty one -- like a user adding a second
+    // repository without relaunching.
 
     // Given: Maya connects to the live studio server
     await connectToHarness(window);
 
-    // U1 -- When: she picks island-caves from the server's real repository
-    // list and clones it
+    // When: she picks island-caves from the server's real repository list and
+    // clones it
     await addAndCloneRepository(window, electronApp, repoName);
 
-    // Then: the UI has moved off the connect page and the repository card
-    // shows the real cloned repository -- its name in the header eyebrow,
-    // and the normal (not "not on disk yet") transport row.
+    // Then: the UI has left the connect page and the card shows the cloned
+    // repository -- its name in the header eyebrow and a normal transport row.
     await expect(repoHeaderName(window, repoName)).toBeVisible();
     await expect(window.getByText('Sync', { exact: true })).toBeVisible();
     await expect(window.getByText('No history yet')).not.toBeVisible();
 
-    // U4 -- When: Maya also adds island-caves-2, a brand-new empty repo
+    // When: Maya also adds a brand-new empty repo
     await addAndCloneRepository(window, electronApp, emptyRepoName);
 
-    // Then: the card shows the empty repository -- cloned onto disk (normal
-    // transport, not "Clone"), with a plain "no history yet" state rather
-    // than a broken/blank graph or a stuck loader.
+    // Then: the card shows the empty repository cloned onto disk, with a plain
+    // "no history yet" state rather than a broken graph or stuck loader.
     await expect(repoHeaderName(window, emptyRepoName)).toBeVisible();
     await expect(window.getByText('Sync', { exact: true })).toBeVisible();
     await expect(window.getByText('No history yet')).toBeVisible();
     await expect(window.getByLabel('Loading history')).not.toBeVisible();
 
-    // And: the window is still alive and responsive (no crash) -- the
-    // repository picker still opens normally and lists both repositories.
-    // Each repository row in the popover is itself a button labeled with
-    // the repo name -- a role-scoped lookup, since the name also renders in
-    // the header eyebrow and the pill at the same time (see repoHeaderName).
+    // And: the window is still responsive -- the repository picker still opens
+    // and lists both repositories. Each row is a button labeled with the repo
+    // name, so the lookup is role-scoped.
     await window.getByLabel('Repositories').click();
     await expect(window.getByText('Add repository…')).toBeVisible();
     await expect(window.getByRole('button', { name: repoName, exact: true })).toBeVisible();
     await expect(window.getByRole('button', { name: emptyRepoName, exact: true })).toBeVisible();
   });
 
-  test('U2: a teammate push surfaces the sync-needed pill, and clears on sync', async ({
+  test('a teammate push surfaces the sync-needed pill, and clears on sync', async ({
     electronApp,
     window,
   }) => {
@@ -198,10 +169,9 @@ test.describe('Live server (WP6 U1-U4)', () => {
     await addAndCloneRepository(window, electronApp, repoName);
     await expect(repoHeaderName(window, repoName)).toBeVisible();
 
-    // Collapse back to the ambient pill -- the surface U2 actually targets.
-    // The title bar's dedicated control is used rather than re-clicking
-    // .morph-pill: while the card is expanded, the pill sits underneath it
-    // and the card's own content intercepts pointer events at that position.
+    // Collapse back to the ambient pill. The title bar's control is used rather
+    // than re-clicking .morph-pill: while the card is expanded it covers the
+    // pill and intercepts pointer events at that position.
     await window.getByRole('button', { name: 'Collapse to pill' }).click();
     await expect(window.locator('.morph-root')).toHaveAttribute('data-expanded', 'false');
 
@@ -209,11 +179,9 @@ test.describe('Live server (WP6 U1-U4)', () => {
     await expect(pillBar).toBeVisible();
     await expect(pillBar).not.toHaveAttribute('data-notice', 'sync');
 
-    // Try for a real unfocused window -- the notice/dim interplay only
-    // matters when the window isn't focused. win.blur() is a request, not a
-    // guarantee (window-behavior.spec.ts hits the same OS/sandbox limit), so
-    // the dim-suspension half of this assertion is skipped rather than
-    // falsely failed when the OS won't grant it.
+    // The notice/dim interplay only matters when the window isn't focused, and
+    // win.blur() is a request the OS may refuse, so the dim half is skipped
+    // rather than falsely failed when blur isn't granted.
     await electronApp.evaluate(async ({ BrowserWindow }) => {
       BrowserWindow.getAllWindows()[0]!.blur();
     });
@@ -222,21 +190,19 @@ test.describe('Live server (WP6 U1-U4)', () => {
     );
 
     // Give the repository's just-established notification subscription (an
-    // unawaited effect with no UI signal of its own) a moment to reach the
-    // server before Devin pushes -- otherwise the push could race ahead of it.
+    // unawaited effect with no UI signal) a moment to reach the server before
+    // the push, otherwise the push could race ahead of it.
     await window.waitForTimeout(500);
 
-    // When: Devin (a second client/working copy) pushes a change to the same
-    // branch out from under Maya.
+    // When: Devin (a second client) pushes a change to the same branch.
     const devin = await secondClient(testServer!, repo.url, 'devin-u2');
     await devin.commitAndPush(
       { 'textures/rock-diffuse.tga': Buffer.from([0x54, 0x52, 0x55, 0x45, 0xaa, 0x01]) },
       'Lighting fix'
     );
 
-    // Then: the collapsed pill picks up the real notice pulse through the
-    // full divergence -> notification -> pill pipeline (no manual IPC poke,
-    // unlike window-behavior.spec.ts's setNoticeActive plumbing test).
+    // Then: the collapsed pill picks up the real notice pulse through the full
+    // divergence -> notification -> pill pipeline.
     await expect(pillBar).toHaveAttribute('data-notice', 'sync', { timeout: 20_000 });
 
     if (canObserveDimming) {
@@ -264,7 +230,7 @@ test.describe('Live server (WP6 U1-U4)', () => {
     await expect(pillBar).not.toHaveAttribute('data-notice', 'sync', { timeout: 20_000 });
   });
 
-  test('U3: cloning a heavy asset streams real progress events to completion', async ({
+  test('cloning a heavy asset streams real progress events to completion', async ({
     electronApp,
     window,
   }) => {
@@ -282,14 +248,10 @@ test.describe('Live server (WP6 U1-U4)', () => {
     await prepareAddRepositoryForm(window, electronApp, repoName);
 
     // Record every percent the real clone-progress channel delivers to the
-    // renderer -- the exact bridge subscription useRepositorySubmission's
-    // onCloneProgress hook uses to drive the visible Progress bar/button
-    // label (AddRepositoryModal.tsx), captured directly so "advancing, not
-    // frozen/instant" doesn't depend on winning a race against Playwright's
-    // DOM-polling interval.
-    // `window` here is the Playwright Page (see connectToHarness's param),
-    // so these evaluate callbacks reach the page's global via globalThis
-    // rather than shadowing it with that same name (see card-anatomy.spec.ts).
+    // renderer -- the same bridge subscription that drives the visible Progress
+    // bar -- captured directly so the assertion doesn't race Playwright's DOM
+    // polling. These evaluate callbacks run in the page, so they reach its
+    // global via globalThis.
     await window.evaluate(() => {
       const samples: number[] = [];
       (
@@ -311,10 +273,8 @@ test.describe('Live server (WP6 U1-U4)', () => {
           .__cloneProgressSamples
     );
 
-    // Then: the repository actually landed, and the clone-progress channel
-    // genuinely streamed multiple real events over its lifetime (discovery,
-    // then completion) rather than the renderer receiving a single opaque
-    // "done" signal with no progress plumbing behind it.
+    // Then: the repository landed, and the channel streamed multiple real events
+    // (discovery, then completion) rather than a single opaque "done" signal.
     await expect(repoHeaderName(window, repoName)).toBeVisible();
     expect(
       samples.length,
@@ -325,13 +285,9 @@ test.describe('Live server (WP6 U1-U4)', () => {
       `expected the final tick to reach 100%, got: ${JSON.stringify(samples)}`
     ).toBe(100);
 
-    // Intentionally NOT asserted: a visibly advancing 1-99% bar. Probed
-    // directly against this harness, a 24-120MB local clone over loopback
-    // reports exactly three checkpoints -- discovery start (0%), discovery
-    // complete (0%), full completion (100%) -- with the whole byte transfer
-    // finishing between the last two in under 100ms. There is no intermediate
-    // tick to observe here; reproducing one would need real network latency
-    // or a payload large enough to run for seconds, neither worth this suite's
-    // runtime.
+    // A loopback clone reports only discovery (0%) and completion (100%)
+    // checkpoints, with the byte transfer finishing between them in under
+    // 100ms, so there is no intermediate 1-99% tick to observe. This does not
+    // assert an advancing bar.
   });
 });

@@ -1,25 +1,13 @@
-// W2 -- Edit, review, stage, commit, push. Maya tweaks a texture, adds a new
-// mesh, stages a subset, commits, and pushes; a fresh status afterward is
-// clean.
-// W3 -- Second thoughts before committing. Maya stages a whole folder, then
-// unstages one file before it lands in the commit; the rest still commit.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { withServer, seedAndClone, islandCavesFiles, abs } from '../support/world';
 
-// Given: Maya has a fresh clone of island-caves with one committed revision
-// When: she edits a tracked texture, adds a new mesh, stages both, commits,
-//       and pushes
-// Then: getFileStatus groups the new file as untracked and the edited one as
-//       unstaged before staging; both show staged after stageFiles; and a
-//       fresh status is clean after commit + push
-test('W2: edit, review, stage, commit, push leaves a clean status', async () => {
+test('edit, review, stage, commit, push leaves a clean status', async () => {
   await withServer(async ({ server, service }) => {
     const { clonePath } = await seedAndClone(server, service, 'island-caves', islandCavesFiles());
 
-    // Edit an existing texture, add a new mesh
     await writeFile(
       join(clonePath, 'textures', 'rock-diffuse.tga'),
       Buffer.from([0x54, 0x52, 0x55, 0x45, 0x01, 0x02, 0xaa, 0xbb])
@@ -59,11 +47,7 @@ test('W2: edit, review, stage, commit, push leaves a clean status', async () => 
   });
 });
 
-// Given: Maya has staged a whole folder of edits
-// When: she unstages one file before committing
-// Then: that file moves back to unstaged while the rest stay staged, and
-//       committing lands only the still-staged files
-test('W3: unstage one file before commit, the rest still land', async () => {
+test('unstage one file before commit, the rest still land', async () => {
   await withServer(async ({ server, service }) => {
     const { clonePath } = await seedAndClone(server, service, 'island-caves', islandCavesFiles());
 

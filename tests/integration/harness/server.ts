@@ -1,20 +1,7 @@
-// Spawns a hermetically isolated `loreserver` for the integration test suite.
-//
-// Isolation mechanism (investigated via `loreserver --help` and by extracting
-// the binary's embedded default.toml with `strings`/manual byte inspection):
-// a per-run `--config` TOML pins `[immutable_store.local].path` and
-// `[mutable_store.local].path` under a fresh temp dir, so each run's repos
-// live in their own tree instead of the binary's undocumented default
-// (`<tmp>/lore-server`). The same TOML sets `[server.quic].port` and
-// `[server.grpc].port` (they share one numeric port in the shipped default
-// too -- QUIC is UDP, gRPC is TCP, so this is safe) plus `[server.http].port`
-// to dynamically-allocated free ports, so custom ports DO work and multiple
-// servers can run in parallel. `TMPDIR`/`HOME` are additionally redirected
-// (for the server process and every `lore` CLI call) to catch state the
-// store-path keys don't cover -- confirmed empirically that the server's
-// self-signed cert pair is written under `<TMPDIR>/lore-server` regardless
-// of the store-path config, and that redirecting `HOME` for the `lore` CLI
-// does not break `repository create`/`list` against a remote server.
+// Spawns a hermetically isolated `loreserver`. A per-run `--config` TOML pins
+// the store paths to a fresh temp dir and binds the QUIC/gRPC/HTTP ports to
+// free ports, so runs stay isolated and can run in parallel. TMPDIR redirects
+// the server's self-signed cert pair; HOME redirects the `lore` CLI's config.
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { closeSync, openSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -29,22 +16,20 @@ import { ensureLoreBinaries } from './binaries';
 const execFileAsync = promisify(execFile);
 
 export interface LoreTestServer {
-  grpcUrl: string; // e.g. lore://127.0.0.1:<grpcPort>  (client/app connects here)
-  httpUrl: string; // e.g. http://127.0.0.1:<httpPort>  (/health_check lives here)
-  dataDir: string; // this run's isolated server storage dir
-  pid: number; // the spawned loreserver process id, for orphan checks
-  // Create an (empty) server-hosted repo; returns its clone URL (grpcUrl + '/' + name).
+  grpcUrl: string; // lore://127.0.0.1:<grpcPort>
+  httpUrl: string; // http://127.0.0.1:<httpPort> — hosts /health_check
+  dataDir: string;
+  pid: number;
+  // Create an empty server-hosted repo; returns its clone URL.
   createRepo(name: string): Promise<{ name: string; url: string }>;
-  // Run the cached `lore` CLI wired to THIS server's context (isolated env).
-  // Lets tests seed repos and act as a second client ("Devin").
+  // Run the cached `lore` CLI wired to this server's isolated env.
   lore(args: string[]): Promise<{ stdout: string; stderr: string }>;
   stop(): Promise<void>;
 }
 
-// The SDK's native FFI and the `lore` CLI both read one global Lore config
-// under $HOME; redirecting HOME/XDG_* at a throwaway dir keeps each test
-// process (and each launched app) hermetic. Shared by the integration world,
-// this server's own client env, and the live-server e2e setup.
+// Redirect HOME/XDG_* at a throwaway dir. The `lore` CLI and the SDK's FFI
+// both read one global config under $HOME; per-process isolation keeps
+// concurrent test processes from corrupting each other's reads.
 export function isolatedHomeEnv(homeDir: string): {
   HOME: string;
   XDG_CONFIG_HOME: string;
@@ -62,8 +47,8 @@ const HEALTH_CHECK_INTERVAL_MS = 100;
 const STOP_GRACE_MS = 5_000;
 const LOG_TAIL_CHARS = 4_000;
 
-// Safety net: if a test crashes without awaiting stop(), kill any loreserver
-// this process still has tracked rather than leaving an orphan behind.
+// Safety net: kill any still-tracked loreserver on process exit so a test that
+// crashes without awaiting stop() leaves no orphan behind.
 const trackedServers = new Set<ChildProcess>();
 let exitHandlerRegistered = false;
 
@@ -78,7 +63,7 @@ function registerExitSafetyNet(): void {
         try {
           child.kill('SIGKILL');
         } catch {
-          // best-effort: the process may already be gone
+          // process may already be gone
         }
       }
     }
@@ -117,8 +102,8 @@ export async function startLoreServer(opts?: { version?: string }): Promise<Lore
   const runDir = await mkdtemp(join(tmpdir(), 'lore-test-server-'));
   const configDir = join(runDir, 'config');
   const dataDir = join(runDir, 'store');
-  const serverTmpDir = join(runDir, 'tmp'); // isolates the server's self-signed cert pair
-  const homeDir = join(runDir, 'home'); // isolates the `lore` CLI's client-side local store
+  const serverTmpDir = join(runDir, 'tmp'); // holds the server's self-signed cert pair
+  const homeDir = join(runDir, 'home'); // holds the `lore` CLI's client-side store
   const logPath = join(runDir, 'server.log');
 
   await Promise.all([
@@ -196,7 +181,7 @@ export async function startLoreServer(opts?: { version?: string }): Promise<Lore
 
     closeLogFd();
     await rm(runDir, { recursive: true, force: true }).catch(() => {
-      // best-effort cleanup; leaving a temp dir behind is not fatal
+      // best-effort; a leftover temp dir is not fatal
     });
   };
 

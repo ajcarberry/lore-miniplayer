@@ -6,9 +6,6 @@ import { startLoreServer } from './server';
 
 const execFileAsync = promisify(execFile);
 
-// Given: no server has been started yet
-// When: startLoreServer() is called
-// Then: it resolves only once /health_check returns 200, with grpcUrl/httpUrl populated
 test('health gate: resolves only after /health_check returns 200', async () => {
   const server = await startLoreServer();
   try {
@@ -22,9 +19,6 @@ test('health gate: resolves only after /health_check returns 200', async () => {
   }
 });
 
-// Given: a running, hermetic server
-// When: createRepo('alpha') is called
-// Then: a subsequent repository list against the server includes 'alpha'
 test('create + list: createRepo is visible in a server-side repository list', async () => {
   const server = await startLoreServer();
   try {
@@ -39,10 +33,6 @@ test('create + list: createRepo is visible in a server-side repository list', as
   }
 });
 
-// Given: a server that created a repo, then was stopped
-// When: a second server is started fresh
-// Then: its repository list does NOT include the first server's repo -- proving
-//       each startLoreServer() run has its own isolated storage
 test("hermetic isolation: a second server does not see the first server's repos", async () => {
   const first = await startLoreServer();
   await first.createRepo('alpha');
@@ -57,9 +47,6 @@ test("hermetic isolation: a second server does not see the first server's repos"
   }
 });
 
-// Given: a server started (and thus a loreserver child process spawned)
-// When: stop() is awaited
-// Then: no loreserver process with that pid remains alive
 test('no orphans: stop() leaves no loreserver child process behind', async () => {
   const server = await startLoreServer();
   const pid = server.pid;

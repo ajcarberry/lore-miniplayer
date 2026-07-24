@@ -1,12 +1,3 @@
-// E2 -- Reset sync over a messy working copy. Maya has half-finished, never
-// staged local edits she wants to throw away and match the remote exactly.
-//
-// E3 -- Forced sync. Maya's dirty working copy and the remote have diverged
-// and a normal sync refuses; she forces it. Empirically distinguished
-// against the real server (see world.ts-driven probes in the report): a
-// plain sync over UNCOMMITTED local modifications throws
-// "Local modifications prevent synchronization" -- the real refusal case --
-// while both --reset and --force complete it and land on the remote state.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
@@ -16,10 +7,9 @@ import { withServer, seedAndClone, secondClient, islandCavesFiles } from '../sup
 
 const MESH_PATH = 'meshes/cave-entrance.mesh';
 
-// Given: Maya has a dirty, never-staged local edit
-// When: she runs a reset sync (no remote-side change involved)
-// Then: the working copy matches the remote exactly and her edit is gone
-test('E2: reset sync discards a dirty working copy and matches the remote', async () => {
+// A reset sync over a dirty, never-staged local edit discards the edit and
+// matches the remote exactly (no remote-side change involved).
+test('reset sync discards a dirty working copy and matches the remote', async () => {
   await withServer(async ({ server, service }) => {
     const { clonePath: mayaPath } = await seedAndClone(
       server,
@@ -55,14 +45,10 @@ test('E2: reset sync discards a dirty working copy and matches the remote', asyn
   });
 });
 
-// Given: Maya has a dirty, never-staged local edit AND Devin has pushed a
-//        different value for the same file
-// When: she runs a plain sync
-// Then: the real server refuses ("Local modifications prevent
-//       synchronization") and leaves her edit untouched
-// When: she then forces the sync
-// Then: it completes and the working copy matches the remote's target state
-test('E3: a plain sync refuses over dirty local edits; force completes it', async () => {
+// With a dirty local edit and a conflicting remote change to the same file, a
+// plain sync refuses ("Local modifications prevent synchronization") and
+// leaves the edit untouched; a forced sync completes and lands on the remote.
+test('a plain sync refuses over dirty local edits; force completes it', async () => {
   await withServer(async ({ server, service }) => {
     const { repo, clonePath: mayaPath } = await seedAndClone(
       server,

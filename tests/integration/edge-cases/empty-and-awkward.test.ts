@@ -1,9 +1,3 @@
-// E5 -- The empty repository. A brand-new repo with no revisions yet. Maya
-// clones it; every read must degrade gracefully (unknown-hash / empty
-// history) instead of throwing.
-//
-// E6 -- Awkward filenames. Spaces, unicode, and accented characters must
-// round-trip intact through stage/commit/push and a fresh clone.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readdir } from 'node:fs/promises';
@@ -11,11 +5,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { withServer, writeSeedFiles, abs } from '../support/world';
 
-// Given: a repository created on the server with no revisions at all
-// When: Maya clones it and reads status/branches/current-revision/graph/
-//       divergence
-// Then: every one of those handles "nothing here yet" without throwing
-test('E5: an empty repository degrades gracefully across every read', async () => {
+// A zero-revision repository: status, branches, current-revision, graph, and
+// divergence each handle "nothing here yet" without throwing.
+test('an empty repository degrades gracefully across every read', async () => {
   await withServer(async ({ server, service }) => {
     const repo = await server.createRepo('island-caves-2');
     const clonePath = await mkdtemp(join(tmpdir(), 'lore-empty-clone-'));
@@ -52,12 +44,10 @@ test('E5: an empty repository degrades gracefully across every read', async () =
   });
 });
 
-// Given: a repository seeded with files whose names carry spaces, unicode,
-//        and accented characters, nested under a unicode directory
-// When: they are staged, committed, and pushed, then read back via status
-//       and a fresh clone
-// Then: every path round-trips intact and categorizes correctly
-test('E6: awkward filenames round-trip through stage/commit/push and a fresh clone', async () => {
+// Filenames with spaces, unicode, and accented characters (including a unicode
+// directory) round-trip intact and categorize correctly through stage, commit,
+// push, status, and a fresh clone.
+test('awkward filenames round-trip through stage/commit/push and a fresh clone', async () => {
   await withServer(async ({ server, service }) => {
     const repo = await server.createRepo('awkward-names');
     const seedPath = await mkdtemp(join(tmpdir(), 'lore-awkward-seed-'));

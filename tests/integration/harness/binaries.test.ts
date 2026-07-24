@@ -16,11 +16,6 @@ async function expectedSdkVersion(): Promise<string> {
   return (JSON.parse(raw) as { version: string }).version;
 }
 
-// Given: an isolated, empty cache root (never the shared one other tests'
-// spawned servers depend on — this suite runs concurrently)
-// When: ensureLoreBinaries is called for the first time against that root
-// Then: it downloads and unpacks both binaries into the version-pinned cache
-//       path, and they are executable
 test('cold call downloads and caches executable loreserver + lore binaries', async () => {
   const isolatedCacheRoot = join(tmpdir(), `lore-bins-cold-test-${randomUUID()}`);
 
@@ -42,16 +37,9 @@ test('cold call downloads and caches executable loreserver + lore binaries', asy
   }
 });
 
-// Given: the real, shared cache that other concurrently-running integration
-// tests spawn `loreserver`/`lore` from — primed here (idempotent, additive
-// only — never deleted) rather than in the cold-call test above, so this
-// suite never races a delete against another file's spawned server
-// When: ensureLoreBinaries is called again against that shared cache
-// Then: it returns the same paths WITHOUT making any network request
 test('warm call reuses the shared cache and makes no network access', async () => {
-  // Prime the shared cache. A no-op if another concurrently-running test
-  // file already warmed it; safe either way since installs are additive
-  // (atomic rename into place) and nothing here is ever removed.
+  // Prime the shared cache. A no-op when already warmed, and safe to run
+  // concurrently: installs are additive atomic renames, nothing is removed.
   await ensureLoreBinaries();
 
   const originalFetch = globalThis.fetch;

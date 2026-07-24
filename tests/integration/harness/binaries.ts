@@ -1,6 +1,5 @@
-// Provisions version-pinned `loreserver` and `lore` binaries for the
-// integration test suite, downloading them once from GitHub Releases and
-// caching them on disk. Does NOT rely on anything on PATH.
+// Provisions version-pinned `loreserver` and `lore` binaries from GitHub
+// Releases, caching them on disk. Never relies on anything on PATH.
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { access, chmod, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
@@ -32,10 +31,9 @@ const ReleaseAssetSchema = z.object({ name: z.string(), url: z.string() });
 const ReleaseSchema = z.object({ assets: z.array(ReleaseAssetSchema) });
 
 /**
- * Resolves cached, executable binary paths; downloads+caches on a miss.
- * `cacheRoot` defaults to the shared on-disk cache — pass an isolated
- * directory (e.g. under `os.tmpdir()`) for tests that need to force a cold
- * download without disturbing binaries other concurrently-running tests rely on.
+ * Resolves cached, executable binary paths; downloads and caches on a miss.
+ * Pass an isolated `cacheRoot` to force a cold download without touching the
+ * shared cache.
  */
 export async function ensureLoreBinaries(
   version?: string,
@@ -200,7 +198,7 @@ async function installBinary(
     );
   }
   await chmod(extracted, 0o755);
-  // Rename within the cache root's filesystem so this is an atomic,
-  // last-writer-wins move even if a concurrent run installs the same binary.
+  // Rename within the cache root's filesystem: an atomic, last-writer-wins
+  // move even if a concurrent run installs the same binary.
   await rename(extracted, join(cacheDir, bin));
 }

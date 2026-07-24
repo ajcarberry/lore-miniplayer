@@ -1,12 +1,3 @@
-// E7 -- A heavy asset. A multi-megabyte binary file must clone with progress
-// that advances by BYTES once discovery completes, not just file count
-// (guards the byte-ratio branch of cloneProgressPercent on a non-trivial
-// payload).
-//
-// E8 -- Rapid-fire operations. Stage, commit, and push back-to-back, reading
-// status/divergence immediately after each cycle. No operation should read
-// state left over from the one before it (guards event-stream completion and
-// event.clone() retention across back-to-back calls).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
@@ -19,16 +10,11 @@ import { cloneProgressPercent } from '../../../src/main/services/lore-repository
 import { withServer, seedRepo, seedAndClone, abs } from '../support/world';
 import type { CloneProgress } from '../../../src/shared/types';
 
-// Given: a repository with two tiny files and one 48MB binary file (their
-//        combined size dwarfs a naive 2-of-3 file-count ratio)
-// When: the service clones it while a caller listens for cloneProgress, and
-//       a raw SDK clone separately captures a mid-transfer progress count
-// Then: the service's emitted progress reaches 100 for the right localPath,
-//       and feeding a real mid-transfer count (2 of 3 files complete, but
-//       under 1% of total bytes transferred) through cloneProgressPercent
-//       proves it followed the byte ratio, not the ~67% a file-count ratio
-//       would have produced
-test('E7: heavy-asset clone progress advances by bytes, not file count', async () => {
+// Cloning two tiny files plus one 48MB binary: the service's emitted progress
+// reaches 100 for the right localPath, and a real mid-transfer count (2 of 3
+// files done but under 1% of bytes) fed through cloneProgressPercent reads well
+// below the ~67% a file-count ratio would give, proving it follows byte ratio.
+test('heavy-asset clone progress advances by bytes, not file count', async () => {
   await withServer(async ({ server, service }) => {
     const files: Record<string, Buffer> = {
       'assets/tiny-a.bin': randomBytes(1024),
@@ -53,8 +39,8 @@ test('E7: heavy-asset clone progress advances by bytes, not file count', async (
     const lastProgress = progressEvents[progressEvents.length - 1];
     assert.equal(lastProgress?.percent, 100, `expected the final progress to reach 100, got: ${JSON.stringify(progressEvents)}`);
 
-    // Raw SDK clone into a second directory to capture a genuine mid-
-    // transfer count shape for the byte-vs-file-ratio assertion.
+    // Raw SDK clone to capture a genuine mid-transfer count for the
+    // byte-vs-file-ratio assertion below.
     const rawPath = await mkdtemp(join(tmpdir(), 'lore-heavy-raw-clone-'));
     const rawCounts: { fileComplete: number; fileCount: number; bytesTransferred: number; bytesTotal: number }[] = [];
     await lore
@@ -83,13 +69,10 @@ test('E7: heavy-asset clone progress advances by bytes, not file count', async (
   });
 });
 
-// Given: a clean clone of island-caves
-// When: three independent files are staged, committed, and pushed back-to-
-//       back with no delay between cycles, reading status + divergence
-//       immediately after each
-// Then: each cycle's status/divergence reflects only that cycle's state --
-//       no leaked untracked/staged entries and no stale divergence reading
-test('E8: rapid-fire stage/commit/push cycles leave no stale state between them', async () => {
+// Three files staged/committed/pushed back-to-back with no delay: each cycle's
+// status and divergence reflect only that cycle's state, with no leaked
+// untracked/staged entries and no stale divergence reading between cycles.
+test('rapid-fire stage/commit/push cycles leave no stale state between them', async () => {
   await withServer(async ({ server, service }) => {
     const { clonePath: mayaPath } = await seedAndClone(server, service, 'island-caves', {
       'meshes/cave-entrance.mesh': 'mesh-format-v1\nvertices: 1\n',

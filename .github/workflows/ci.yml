@@ -46,13 +46,9 @@ jobs:
       - name: Unit tests with coverage
         run: pnpm test:jest:coverage
 
-      # Real-server integration suite (tests/integration) + the WP6 live-server
-      # UI e2e subset both need actual `loreserver`/`lore` binaries. Only
-      # aarch64-apple-darwin has a published release asset AND working harness
-      # OS support (tests/integration/harness/binaries.ts has no Windows
-      # mapping), so this stays macOS-only rather than joining the matrix
-      # generally — matching local dev (arm64 macOS) is also the safe default
-      # per the release asset check.
+      # The integration suite and live-server e2e need real loreserver/lore
+      # binaries, which only aarch64-apple-darwin has both a release asset and
+      # harness OS support for, so these steps stay macOS-only.
       - name: Resolve Lore binary version + triple
         if: runner.os == 'macOS'
         id: lore-bins
@@ -99,7 +95,7 @@ jobs:
       # Harness server logs (tests/integration/harness/server.ts) live under
       # the OS temp dir and are normally deleted by the harness's own
       # stop()/afterAll cleanup, so this only catches the log on a crash that
-      # skipped that cleanup -- best-effort, hence if-no-files-found: ignore.
+      # skipped that cleanup, hence if-no-files-found: ignore.
       - name: Upload Playwright failure artifacts
         if: failure() && runner.os != 'Linux'
         uses: actions/upload-artifact@v4

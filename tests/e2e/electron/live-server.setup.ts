@@ -1,9 +1,6 @@
-// Shared setup for the WP6 UI-subset specs (live-server.spec.ts), which drive
-// the real Electron app against a live harness `loreserver` instead of
-// mocking it (see launch.ts's doc comment for why the rest of tests/e2e
-// avoids the real server). Reuses tests/integration/harness/server.ts's
-// startLoreServer() and tests/integration/support/world.ts's seeding helpers
-// verbatim — no harness/service internals are touched here.
+// Shared setup for the live-server specs: reuses the integration harness's
+// startLoreServer() and seeding helpers to drive the real Electron app against
+// a live `loreserver`.
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -14,24 +11,19 @@ export { startLoreServer } from '../../integration/harness/server';
 export type { LoreTestServer } from '../../integration/harness/server';
 export { seedRepo, secondClient, islandCavesFiles } from '../../integration/support/world';
 
-// The app's main process drives the SDK's native FFI directly (not the
-// `lore` CLI), so harness/server.ts's per-run HOME isolation for its `lore`
-// CLI calls never covers it. Left alone, the FFI reads/writes ONE real global
-// config file under the developer's actual $HOME -- the exact hermeticity gap
-// tests/integration/support/world.ts's ensureIsolatedFfiHome documents and
-// fixes for the integration suite. Give each launched app instance its own
-// throwaway HOME/XDG_* so these e2e runs never touch that file either.
+// The app's main process drives the SDK's native FFI directly, which the
+// harness's per-run HOME isolation (scoped to its `lore` CLI calls) does not
+// cover. Left alone, the FFI reads and writes a global config file under the
+// developer's real $HOME. Give each launched app its own throwaway HOME/XDG_*.
 export async function isolatedFfiHomeEnv(): Promise<Record<string, string>> {
   const homeDir = await mkdtemp(join(tmpdir(), 'lore-miniplayer-e2e-home-'));
   return isolatedHomeEnv(homeDir);
 }
 
-// Stub the main process's native directory picker so a test can drive
-// AddRepositoryModal's "Select base directory" control without a real OS
-// dialog (Playwright cannot interact with those) -- resolves it to `dirPath`
-// as though the user had picked that folder. Patches the shared `electron`
-// module object in the launched app's main process, so it must run before
-// the "Select base directory" button is clicked.
+// Stub the main process's native directory picker to resolve to `dirPath`,
+// because Playwright cannot interact with a real OS dialog. Patches the shared
+// `electron` module in the launched app, so it must run before the "Select base
+// directory" button is clicked.
 export async function stubDirectoryPicker(
   app: ElectronApplication,
   dirPath: string

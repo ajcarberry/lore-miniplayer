@@ -31,9 +31,7 @@ export interface LaunchedApp {
 // Launches the built app against an isolated temp userData dir. Pass
 // `userDataDir` (from a previous LaunchedApp) to relaunch against the same
 // profile; omit it to get a fresh one. `extraEnv` merges on top of the
-// inherited environment — the live-server specs use it to redirect HOME/XDG_*
-// so the app's in-process Lore SDK FFI never touches the developer's real
-// global Lore config (see tests/e2e/electron/live-server.setup.ts).
+// inherited environment.
 export async function launchApp(
   userDataDir?: string,
   extraEnv?: Record<string, string>

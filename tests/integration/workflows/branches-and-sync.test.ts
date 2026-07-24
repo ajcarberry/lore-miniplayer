@@ -1,10 +1,3 @@
-// W4 -- Switching branches. Maya is on main but her task lives on
-// feature/caves-lighting; she switches and the branch list follows.
-// W5 -- Catching up with a teammate. Devin pushes to main; Maya syncs and her
-// working copy (and history) advances to include his revision.
-// W6 -- "Am I up to date?" The divergence read is checked at each state:
-// clean-and-current -> inSync; after a local unpushed commit -> ahead; after
-// a teammate pushes and before Maya syncs -> behindOrDiverged.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, writeFile } from 'node:fs/promises';
@@ -12,12 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { withServer, seedRepo, seedAndClone, secondClient, islandCavesFiles } from '../support/world';
 
-// Given: island-caves has a second branch, feature/caves-lighting, created
-//        and pushed on the remote
-// When: Maya clones the repo (landing on main) and switches to it
-// Then: listBranches marks feature/caves-lighting current (and main still
-//       reports isDefault)
-test('W4: switch to a teammate-created branch', async () => {
+test('switch to a teammate-created branch', async () => {
   await withServer(async ({ server, service }) => {
     const repo = await seedRepo(server, 'island-caves', islandCavesFiles());
 
@@ -49,12 +37,7 @@ test('W4: switch to a teammate-created branch', async () => {
   });
 });
 
-// Given: Maya has a clean clone of island-caves on main
-// When: Devin (a second working copy) pushes a lighting fix to main, then
-//       Maya syncs
-// Then: Maya's current revision advances to Devin's pushed revision, and her
-//       local history contains it
-test('W5: catch up with a teammate via sync', async () => {
+test('catch up with a teammate via sync', async () => {
   await withServer(async ({ server, service }) => {
     const { repo, clonePath: mayaPath } = await seedAndClone(
       server,
@@ -82,11 +65,7 @@ test('W5: catch up with a teammate via sync', async () => {
   });
 });
 
-// Given: the W4/W5 arc -- clean-and-current, then a local unpushed commit,
-//        then a teammate push Maya hasn't synced
-// When: getBranchDivergence is read at each state
-// Then: it reports inSync, then ahead, then behindOrDiverged in turn
-test('W6: divergence reads inSync / ahead / behindOrDiverged across the arc', async () => {
+test('divergence reads inSync / ahead / behindOrDiverged across the arc', async () => {
   await withServer(async ({ server, service }) => {
     const { repo, clonePath: mayaPath } = await seedAndClone(
       server,

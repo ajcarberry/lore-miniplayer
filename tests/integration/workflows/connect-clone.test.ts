@@ -1,6 +1,3 @@
-// W1 -- First connect & clone. Maya opens the MiniPlayer, points it at the
-// studio server, sees island-caves in the repository list, clones it, and
-// ends up with a real working copy on disk.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp } from 'node:fs/promises';
@@ -9,12 +6,7 @@ import { join } from 'node:path';
 import { withServer, seedRepo, islandCavesFiles } from '../support/world';
 import type { CloneProgress } from '../../../src/shared/types';
 
-// Given: a studio server hosting a seeded 'island-caves' repository
-// When: Maya lists the server's repositories, then clones island-caves
-// Then: the list includes island-caves, the clone produces a real working
-//       copy (checkRepositoryStatus -> isLoreRepo), and at least one
-//       cloneProgress event was observed along the way
-test('W1: connect, list, and clone island-caves', async () => {
+test('connect, list, and clone island-caves', async () => {
   await withServer(async ({ server, service }) => {
     const repo = await seedRepo(server, 'island-caves', islandCavesFiles());
 

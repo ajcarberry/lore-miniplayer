@@ -1,12 +1,3 @@
-// E1 -- Diverged histories. Maya commits a texture change locally (unpushed).
-// Meanwhile Devin pushes a DIFFERENT, non-overlapping change to the same
-// branch. Maya's branch has genuinely diverged, not merely fallen behind.
-// getBranchDivergence must read behindOrDiverged (not ahead), and a plain
-// sync must not silently clobber Maya's local commit.
-//
-// E4 -- A merge conflict she has to see. Maya and Devin both edit the SAME
-// region of the SAME file; Devin pushes first. When Maya syncs, the conflict
-// must be surfaced, not swallowed as an ordinary staged change.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
@@ -14,15 +5,10 @@ import { join } from 'node:path';
 import { withServer, seedAndClone, secondClient, islandCavesFiles, abs } from '../support/world';
 import type { LoreFileStatus } from '../../../src/shared/types';
 
-// Given: Maya has committed (but not pushed) an edit to the texture, while
-//        Devin has pushed an unrelated edit to the mesh on the same branch
-// When: Maya reads divergence, then runs a plain sync
-// Then: divergence reads behindOrDiverged (real hashes differ and Maya's
-//       local history never saw Devin's hash); the sync completes without
-//       throwing and BOTH edits survive -- confirmed empirically against the
-//       real server: a non-conflicting divergence auto-merges cleanly rather
-//       than refusing or discarding either side
-test('E1: diverged (non-overlapping) histories read behindOrDiverged and a plain sync merges both sides', async () => {
+// A non-conflicting divergence (Maya's unpushed commit vs Devin's unrelated
+// pushed commit) reads behindOrDiverged, and a plain sync auto-merges both
+// sides rather than refusing or discarding either.
+test('diverged (non-overlapping) histories read behindOrDiverged and a plain sync merges both sides', async () => {
   await withServer(async ({ server, service }) => {
     const { repo, clonePath: mayaPath } = await seedAndClone(
       server,
@@ -74,26 +60,14 @@ test('E1: diverged (non-overlapping) histories read behindOrDiverged and a plain
   });
 });
 
-// Given: Maya and Devin both edit the SAME line of the SAME file; Devin
-//        pushes his commit first
-// When: Maya syncs
-// Then: the real server does not throw and does not silently overwrite --
-//       it produces a pending merge with the conflicting file left staged
-//       (confirmed empirically: the SDK's REPOSITORY_STATUS_FILE event
-//       carries flagConflict/flagConflictUnresolved = true for it, and the
-//       working copy gets ~mine/~theirs/~base sibling files). But
-//       getFileStatus() / LoreFileStatus never forward that flag to the
-//       app -- a conflicted file is indistinguishable from an ordinary
-//       staged file. This assertion documents the CORRECT behavior the app
-//       should have and is a known, reported FINDING (see report) -- it is
-//       expected to fail until getFileStatus (and LoreFileStatus) surface
-//       flagConflict.
-// Marked `todo`: this asserts the CORRECT behavior for a KNOWN, reported bug
-// (getFileStatus drops the SDK's flagConflict; LoreFileStatus has no conflict
-// field). node:test runs the body but reports a failure as todo, so it is
-// non-blocking. Remove the `{ todo }` option to turn it into a hard assertion
-// the moment the defect is fixed. See .claude/mission/log.md (WP5 finding).
-test('E4: an overlapping conflict must be visibly surfaced, not reported as a plain staged file', { todo: 'known bug: getFileStatus() drops flagConflict — conflicts are invisible to users (follow-up)' }, async () => {
+// KNOWN BUG. When Maya and Devin both edit the same region of the same file,
+// the SDK surfaces the pending merge (flagConflict / flagConflictUnresolved on
+// the REPOSITORY_STATUS_FILE event, plus ~mine/~theirs/~base sibling files),
+// but getFileStatus() and LoreFileStatus drop that flag, so a conflicted file
+// is indistinguishable from an ordinary staged file. This asserts the correct
+// behavior and is `todo` (non-blocking) until getFileStatus and LoreFileStatus
+// surface the conflict.
+test('an overlapping conflict must be visibly surfaced, not reported as a plain staged file', { todo: 'getFileStatus() drops the SDK conflict flag, so merge conflicts are invisible to users' }, async () => {
   await withServer(async ({ server, service }) => {
     const { repo, clonePath: mayaPath } = await seedAndClone(
       server,
@@ -134,18 +108,14 @@ test('E4: an overlapping conflict must be visibly surfaced, not reported as a pl
       `expected the conflicting file to appear staged (pending merge), got: ${JSON.stringify(statusAfter)}`
     );
 
-    // FINDING: src/main/services/lore-repository.ts getFileStatus() (around
-    // line 366-399) maps REPOSITORY_STATUS_FILE events to { path,
-    // isUntracked, isStaged } only, dropping flagConflict /
-    // flagConflictUnresolved entirely; LoreFileStatus (src/shared/types.ts
-    // line 101) has no conflict field at all. Expected: a conflicted file
-    // is distinguishable from an ordinary staged file. Actual: it is not --
-    // isConflicted is always undefined.
+    // getFileStatus() maps REPOSITORY_STATUS_FILE to { path, isUntracked,
+    // isStaged } only, and LoreFileStatus has no conflict field, so
+    // isConflicted is always undefined here.
     const conflictedWithFlag = conflictedFile as LoreFileStatus & { isConflicted?: boolean };
     assert.equal(
       conflictedWithFlag.isConflicted,
       true,
-      `FINDING: getFileStatus() does not surface the SDK's flagConflict for a pending merge ` +
+      `getFileStatus() does not surface the SDK's flagConflict for a pending merge ` +
         `conflict -- the file reads as an ordinary staged change. Expected isConflicted === true, ` +
         `got: ${JSON.stringify(conflictedFile)}`
     );

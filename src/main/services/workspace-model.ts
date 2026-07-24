@@ -1,15 +1,11 @@
 import { EventEmitter } from 'node:events';
-import * as path from 'node:path';
 import type { MainLogger } from '../ipc/logger';
 import type {
   AgentIntention,
-  AgentSessionState,
   AgentSessionStatus,
   BranchDivergence,
-  BranchGraph,
   FileDiffResult,
   LineStats,
-  LoreBranch,
   LoreFileStatusGroup,
   Repository,
   RevisionSummary,
@@ -20,12 +16,12 @@ import type {
   WorkspaceModelSnapshot,
 } from '../../shared/types';
 import { WorkspaceModelSnapshotSchema } from '../../shared/schemas';
+import { toSessionState } from './agent-observer';
 import type { AgentSessionRecord } from './agent-observer';
-import { composeMembers, resolveAnchorWorkspace } from './workspace-anchor';
-
-// Payload of the WorkspaceService 'lifecycle' event (a successful
-// provision/adoption or teardown), defined here as the model is its consumer.
-export type WorkspaceLifecycleEvent = Readonly<{ repositoryId: string; path: string }>;
+import type { WorkspaceRevisionStatus } from './lore-repository';
+import { hasConflict, isDirty } from './lore-status';
+import { samePath } from './path-utils';
+import { composeMembers, logDegrade, resolveAnchorWorkspace } from './workspace-anchor';
 
 // Low-frequency refresh cadence (ms) for the watched repository. Snapshots are
 // primarily event-driven (agent pushes, repository notifications); this timer
@@ -140,8 +136,10 @@ function deriveReasons(
 export interface WorkspaceModelDeps {
   readonly workspaces: {
     list(repositoryId: string): Promise<Workspace[]>;
-    on(event: 'lifecycle', listener: (event: WorkspaceLifecycleEvent) => void): unknown;
-    off(event: 'lifecycle', listener: (event: WorkspaceLifecycleEvent) => void): unknown;
+    // A bare signal (provision/adoption/teardown/forget completed) — the
+    // model only ever refreshes in response, so it carries no payload.
+    on(event: 'lifecycle', listener: () => void): unknown;
+    off(event: 'lifecycle', listener: () => void): unknown;
   };
   readonly observer: {
     listSessions(): AgentSessionRecord[];
@@ -152,13 +150,16 @@ export interface WorkspaceModelDeps {
     extract(transcriptPath: string): Promise<AgentIntention>;
   };
   readonly lore: {
-    getBranchDivergence(repositoryPath: string, branchName: string): Promise<BranchDivergence>;
     getFileStatus(repositoryPath: string): Promise<LoreFileStatusGroup>;
-    getBranchGraph(repositoryPath: string, branchName: string): Promise<BranchGraph>;
-    // Resolves the anchor workspace's current branch + revision (packet U3);
-    // it's a card-view checkout, not a self-reporting Lore instance.
-    listBranches(repositoryPath: string): Promise<LoreBranch[]>;
-    getCurrentRevision(repositoryPath: string): Promise<string>;
+    // One repositoryStatus({ revisionOnly: true }) call per card: current
+    // branch + revision (the anchor's identity, packet U3) and the SDK's own
+    // ahead/behind divergence flags (C25/C27).
+    getWorkspaceRevisionStatus(
+      repositoryPath: string
+    ): Promise<WorkspaceRevisionStatus | undefined>;
+    // The checkout branch's own newest revisions via revisionHistory's
+    // onlyBranch stop — no branch-graph assembly (C23).
+    getSessionCommits(repositoryPath: string, limit: number): Promise<RevisionSummary[]>;
     on(event: 'notification', listener: () => void): unknown;
     off(event: 'notification', listener: () => void): unknown;
   };
@@ -360,8 +361,8 @@ export class WorkspaceModelService extends EventEmitter {
 
     const [status, divergence, sessionCommits, dirtyStats, intention] = await Promise.all([
       this.safeStatus(workspace.path),
-      this.safeDivergence(workspace.path, workspace.branchName),
-      this.safeSessionCommits(workspace.path, workspace.branchName),
+      this.safeDivergence(workspace.path),
+      this.safeSessionCommits(workspace.path),
       this.safeDirtyStats(workspace.path),
       this.safeIntention(record),
     ]);
@@ -376,7 +377,7 @@ export class WorkspaceModelService extends EventEmitter {
       reviewableCommits: sessionCommits.length > 0,
     });
 
-    const session = record ? this.toSessionState(record) : undefined;
+    const session = record ? toSessionState(record) : undefined;
     const lastEventAt = record?.lastEventAt ?? provisionedAtMs(workspace) ?? 0;
 
     return {
@@ -424,50 +425,36 @@ export class WorkspaceModelService extends EventEmitter {
     return true;
   }
 
-  private toSessionState(record: AgentSessionRecord): AgentSessionState {
-    return {
-      sessionId: record.sessionId,
-      workspacePath: record.workspacePath,
-      status: record.status,
-      lastEventAt: record.lastEventAt,
-    };
-  }
-
   private async safeStatus(workspacePath: string): Promise<LoreFileStatusGroup> {
     try {
       return await this.deps.lore.getFileStatus(workspacePath);
     } catch (error) {
-      this.logDegrade('status', workspacePath, error);
+      logDegrade(this.log, 'status', workspacePath, error);
       return { untracked: [], unstaged: [], staged: [] };
     }
   }
 
-  private async safeDivergence(
-    workspacePath: string,
-    branchName: string
-  ): Promise<BranchDivergence> {
+  // The workspace checkout's remote divergence, straight from the SDK's
+  // status flags (C27) — every card's workspace has its branch checked out,
+  // so the current-branch answer is the right one. Degrades to 'unknown'.
+  private async safeDivergence(workspacePath: string): Promise<BranchDivergence> {
     try {
-      return await this.deps.lore.getBranchDivergence(workspacePath, branchName);
+      const status = await this.deps.lore.getWorkspaceRevisionStatus(workspacePath);
+      return status?.divergence ?? { state: 'unknown', latest: '', latestRemote: '' };
     } catch (error) {
-      this.logDegrade('divergence', workspacePath, error);
+      logDegrade(this.log, 'divergence', workspacePath, error);
       return { state: 'unknown', latest: '', latestRemote: '' };
     }
   }
 
   // Session commits = the branch's own revisions since it diverged from its
-  // parent (parent lineage excluded), newest-first, capped. Reuses the branch
-  // graph's public output rather than re-walking history.
-  private async safeSessionCommits(
-    workspacePath: string,
-    branchName: string
-  ): Promise<RevisionSummary[]> {
+  // parent (parent lineage excluded), newest-first, capped — the SDK's
+  // onlyBranch history walk answers this directly (C23).
+  private async safeSessionCommits(workspacePath: string): Promise<RevisionSummary[]> {
     try {
-      const graph = await this.deps.lore.getBranchGraph(workspacePath, branchName);
-      const parentHashes = new Set((graph.parent?.revisions ?? []).map(rev => rev.revision));
-      const own = graph.branch.revisions.filter(rev => !parentHashes.has(rev.revision));
-      return own.slice(0, SESSION_COMMITS_CAP);
+      return await this.deps.lore.getSessionCommits(workspacePath, SESSION_COMMITS_CAP);
     } catch (error) {
-      this.logDegrade('sessionCommits', workspacePath, error);
+      logDegrade(this.log, 'sessionCommits', workspacePath, error);
       return [];
     }
   }
@@ -476,7 +463,7 @@ export class WorkspaceModelService extends EventEmitter {
     try {
       return await this.deps.diff.workspaceDirtyStats(workspacePath);
     } catch (error) {
-      this.logDegrade('dirtyStats', workspacePath, error);
+      logDegrade(this.log, 'dirtyStats', workspacePath, error);
       return [];
     }
   }
@@ -490,31 +477,10 @@ export class WorkspaceModelService extends EventEmitter {
     try {
       return await this.deps.transcript.extract(record.transcriptPath);
     } catch (error) {
-      this.logDegrade('intention', record.workspacePath, error);
+      logDegrade(this.log, 'intention', record.workspacePath, error);
       return undefined;
     }
   }
-
-  private logDegrade(signal: string, workspacePath: string, error: unknown): void {
-    this.log.debug('Workspace signal degraded', {
-      operation: 'workspace-model:signal',
-      signal,
-      workspacePath,
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
-}
-
-function samePath(a: string, b: string): boolean {
-  return path.resolve(a) === path.resolve(b);
-}
-
-function isDirty(status: LoreFileStatusGroup): boolean {
-  return status.untracked.length + status.unstaged.length + status.staged.length > 0;
-}
-
-function hasConflict(status: LoreFileStatusGroup): boolean {
-  return [...status.untracked, ...status.unstaged, ...status.staged].some(file => file.conflict);
 }
 
 function aggregateStats(diffs: FileDiffResult[]): LineStats {

@@ -1,7 +1,7 @@
 // Mock the Lore SDK completely so tests never load the native FFI layer. The
 // enums subpath is NOT mocked — it is pure data and keeps event-tag
 // assertions accurate. The lore-repository service is injected as a plain
-// mock (status/commit/push/currentRevision), so it is not loaded here either.
+// mock (status/commit/switchBranch), so it is not loaded here either.
 jest.mock('@lore-vcs/sdk', () => {
   class LoreError extends Error {
     loreErrors: Array<{ tag: number; data: { errorType: number; errorInner: string } }> | undefined;
@@ -87,7 +87,9 @@ function installAheadSignal(
   mockLore.branchInfo.mockImplementation(
     (_globals: unknown, args: { branch?: string }) =>
       fluentMock({
-        events: [{ tag: LoreEventTag.BRANCH_INFO, data: { latest: tips[args.branch ?? ''] ?? '' } }],
+        events: [
+          { tag: LoreEventTag.BRANCH_INFO, data: { latest: tips[args.branch ?? ''] ?? '' } },
+        ],
       }) as never
   );
   mockLore.revisionHistory.mockImplementation(
@@ -132,9 +134,10 @@ describe('MergeService', () => {
     jest.clearAllMocks();
     lore_ = {
       getFileStatus: jest.fn(async () => statusGroup([])),
-      commit: jest.fn(async () => undefined),
+      // commit resolves the committed revision the SDK streams
+      // (REVISION_COMMIT_REVISION) — the service reads it from here.
+      commit: jest.fn(async () => 'merge-rev'),
       switchBranch: jest.fn(async () => undefined),
-      getCurrentRevision: jest.fn(async () => 'merge-rev'),
     } as unknown as jest.Mocked<LoreRepositoryService>;
     // Default: the source branch is ahead — its lineage carries a commit the
     // target lacks (the common case). Individual tests override for the
@@ -431,9 +434,9 @@ describe('MergeService', () => {
       mockLore.branchMergeStart.mockReturnValue(cleanTargetMerge() as never);
       mockLore.branchPush.mockReturnValue(fluentMock() as never);
       lore_.getFileStatus.mockResolvedValue(statusGroup([]));
-      // getCurrentRevision is read twice: the workspace merge-commit, then the
-      // landed revision on the target.
-      lore_.getCurrentRevision
+      // commit streams the revision twice: the workspace merge-commit, then
+      // the landed revision on the target.
+      lore_.commit
         .mockResolvedValueOnce('workspace-merge-rev')
         .mockResolvedValueOnce('landed-on-main-rev');
       await service.start(startRequest());
@@ -499,7 +502,7 @@ describe('MergeService', () => {
         .mockReturnValueOnce(fluentMock() as never) // start()
         .mockReturnValue(fluentMock({ error: loreError(9, 'server down') }) as never); // landing
       lore_.getFileStatus.mockResolvedValue(statusGroup([]));
-      lore_.getCurrentRevision.mockResolvedValue('workspace-merge-rev');
+      lore_.commit.mockResolvedValue('workspace-merge-rev');
       await service.start(startRequest());
 
       // When/Then: a typed error surfaces, reporting the intact workspace commit
@@ -521,7 +524,7 @@ describe('MergeService', () => {
       mockLore.branchMergeStart.mockReturnValue(cleanTargetMerge() as never);
       mockLore.branchPush.mockReturnValue(fluentMock() as never);
       lore_.getFileStatus.mockResolvedValue(statusGroup([]));
-      lore_.getCurrentRevision.mockResolvedValue('landed-on-main-rev');
+      lore_.commit.mockResolvedValue('landed-on-main-rev');
       const result = await service.complete({ repositoryPath: REPO });
       // Phase 1 (the source-branch commit) is skipped; only the phase-2
       // target-branch commit runs on the retry.
@@ -542,9 +545,8 @@ describe('MergeService', () => {
         .mockReturnValue(cleanTargetMerge() as never); // landing
       mockLore.branchMergeAbort.mockReturnValue(fluentMock() as never);
       lore_.getFileStatus.mockResolvedValue(statusGroup([]));
-      lore_.getCurrentRevision.mockResolvedValue('workspace-merge-rev');
       lore_.commit
-        .mockResolvedValueOnce(undefined) // phase 1: source-branch merge commit
+        .mockResolvedValueOnce('workspace-merge-rev') // phase 1: source-branch merge commit
         .mockRejectedValueOnce(new Error('index is dirty')); // phase 2: target commit
       await service.start(startRequest());
 
@@ -565,8 +567,7 @@ describe('MergeService', () => {
       mockLore.branchMergeStart.mockReturnValue(cleanTargetMerge() as never);
       mockLore.branchPush.mockReturnValue(fluentMock() as never);
       lore_.getFileStatus.mockResolvedValue(statusGroup([]));
-      lore_.commit.mockResolvedValue(undefined);
-      lore_.getCurrentRevision.mockResolvedValue('landed-on-main-rev');
+      lore_.commit.mockResolvedValue('landed-on-main-rev');
       const result = await service.complete({ repositoryPath: REPO });
       expect(result).toEqual({ revision: 'landed-on-main-rev' });
       // Phase 1 is skipped (already committed); only the target commit runs.
@@ -592,7 +593,7 @@ describe('MergeService', () => {
         ); // landing
       mockLore.branchMergeAbort.mockReturnValue(fluentMock() as never);
       lore_.getFileStatus.mockResolvedValue(statusGroup([]));
-      lore_.getCurrentRevision.mockResolvedValue('workspace-merge-rev');
+      lore_.commit.mockResolvedValue('workspace-merge-rev');
       await service.start(startRequest());
 
       // When/Then: completion errors, the target-side merge is aborted, and the

@@ -110,13 +110,6 @@ interface ParsedTranscript {
   versions: Set<string>;
 }
 
-// Newest-wins timestamps for the sidecar records (`ai-title`, `last-prompt`),
-// tracked across the parse so the latest record wins regardless of file order.
-interface SidecarState {
-  latestTitleMs: number;
-  latestLastPromptMs: number;
-}
-
 export class AgentTranscriptService {
   private readonly enabled: boolean;
   private readonly projectsRoot: string;
@@ -271,7 +264,6 @@ export class AgentTranscriptService {
       skippedLines: 0,
       versions: new Set<string>(),
     };
-    const sidecar: SidecarState = { latestTitleMs: -Infinity, latestLastPromptMs: -Infinity };
 
     for (const rawLine of content.split('\n')) {
       const line = rawLine.trim();
@@ -302,40 +294,35 @@ export class AgentTranscriptService {
           result.sessionId = sessionId;
         }
       }
-      this.dispatchRecord(record, result, sidecar);
+      this.dispatchRecord(record, result);
     }
 
     return result;
   }
 
   // Routes one parsed record to its field extractor. Kept separate from the
-  // per-line loop so each stays within the complexity budget.
-  private dispatchRecord(
-    record: Record<string, unknown>,
-    result: ParsedTranscript,
-    sidecar: SidecarState
-  ): void {
-    const at = parseTimestamp(record['timestamp']);
+  // per-line loop so each stays within the complexity budget. Transcripts are
+  // append-only chronological JSONL, so for the sidecar records (`ai-title`,
+  // `last-prompt`) plain last-assignment IS newest-wins.
+  private dispatchRecord(record: Record<string, unknown>, result: ParsedTranscript): void {
     switch (record['type']) {
       case 'user':
         this.consumeUserRecord(record, result);
         break;
       case 'assistant':
-        this.consumeAssistantRecord(record, result, at);
+        this.consumeAssistantRecord(record, result, parseTimestamp(record['timestamp']));
         break;
       case 'ai-title': {
         const title = asString(record['aiTitle']);
-        if (title !== undefined && at >= sidecar.latestTitleMs) {
+        if (title !== undefined) {
           result.title = title;
-          sidecar.latestTitleMs = at;
         }
         break;
       }
       case 'last-prompt': {
         const lastPrompt = asString(record['lastPrompt']);
-        if (lastPrompt !== undefined && at >= sidecar.latestLastPromptMs) {
+        if (lastPrompt !== undefined) {
           result.lastPrompt = lastPrompt;
-          sidecar.latestLastPromptMs = at;
         }
         break;
       }
@@ -482,18 +469,7 @@ function parseTimestamp(value: unknown): number {
 // The first `text` block's text from a content array, or undefined. tool_result
 // and thinking blocks are ignored.
 function firstTextBlock(content: unknown): string | undefined {
-  if (!Array.isArray(content)) {
-    return undefined;
-  }
-  for (const block of content) {
-    if (isRecord(block) && block['type'] === 'text') {
-      const text = asString(block['text']);
-      if (text !== undefined) {
-        return text;
-      }
-    }
-  }
-  return undefined;
+  return textBlocks(content)[0];
 }
 
 // All non-empty `text` block texts from a content array (thinking excluded).

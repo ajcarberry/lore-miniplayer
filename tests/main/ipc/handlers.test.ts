@@ -489,16 +489,16 @@ describe('lore repository happy paths', () => {
   });
 
   it('should commit through the service without pushing', async () => {
-    // Given: a successful commit
-    mockLoreRepositoryService.commit.mockResolvedValue(undefined);
+    // Given: a successful commit (the service resolves the committed revision)
+    mockLoreRepositoryService.commit.mockResolvedValue('rev-1');
 
     // When: committing
     const result = await invoke('lore:repository:commit', '/repo', 'A message');
 
-    // Then: the service is called and a void success returned
+    // Then: the service is called and the committed revision returned
     expect(mockLoreRepositoryService.commit).toHaveBeenCalledWith('/repo', 'A message');
     expect(mockLoreRepositoryService.push).not.toHaveBeenCalled();
-    expect(result).toEqual({ success: true, data: undefined });
+    expect(result).toEqual({ success: true, data: 'rev-1' });
   });
 
   it('should push through the service without committing', async () => {

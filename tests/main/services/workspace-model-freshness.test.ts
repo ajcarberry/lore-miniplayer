@@ -60,11 +60,10 @@ if (mode === 'commit') {
 lore.shutdown();`;
 
 function runMutator(repo: string, mode: 'commit' | 'switch', arg = ''): void {
-  execFileSync(
-    process.execPath,
-    ['--input-type=module', '-e', MUTATOR_SCRIPT, repo, mode, arg],
-    { stdio: 'ignore', cwd: process.cwd() }
-  );
+  execFileSync(process.execPath, ['--input-type=module', '-e', MUTATOR_SCRIPT, repo, mode, arg], {
+    stdio: 'ignore',
+    cwd: process.cwd(),
+  });
 }
 
 async function setupRepo(repo: string): Promise<void> {
@@ -91,7 +90,7 @@ describe('WorkspaceModelService freshness against an external process (B2)', () 
     const loreSvc = new LoreRepositoryService();
     const diff = new DiffService(loreSvc);
     // The anchor (card-view repo) is resolved live from the SDK via
-    // resolveAnchorWorkspace (listBranches / getCurrentRevision); only the
+    // resolveAnchorWorkspace (getWorkspaceRevisionStatus); only the
     // registry record it hangs off is stubbed (registry identity is not the
     // freshness concern). workspaces.list returns no siblings, so the single
     // card under test IS the live-read anchor.

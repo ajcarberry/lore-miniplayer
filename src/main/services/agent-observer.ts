@@ -58,6 +58,17 @@ export interface AgentSessionRecord {
   cwd?: string;
 }
 
+// The schema-visible projection of a session record (shared with the
+// workspace model, which surfaces the same four fields on its cards).
+export function toSessionState(record: AgentSessionRecord): AgentSessionState {
+  return {
+    sessionId: record.sessionId,
+    workspacePath: record.workspacePath,
+    status: record.status,
+    lastEventAt: record.lastEventAt,
+  };
+}
+
 export interface AgentObserverOptions {
   readonly port?: number;
   // Injectable clock for deterministic lastEventAt assertions in tests.
@@ -257,10 +268,11 @@ export class AgentObserverService extends EventEmitter {
         this.respond(res, 400);
         return;
       }
-      // Hooks are fire-and-forget: respond fast, process off the response path
-      // so a slow update never blocks the agent.
+      // Hooks are fire-and-forget: the 200 is written first, and processEvent
+      // is fully synchronous (map updates + one emit), so it can never delay
+      // the agent's request.
       this.respond(res, 200);
-      void Promise.resolve().then(() => this.processEvent(workspacePath, parsed));
+      this.processEvent(workspacePath, parsed);
     });
   }
 
@@ -343,16 +355,10 @@ export class AgentObserverService extends EventEmitter {
   }
 
   private emitState(record: AgentSessionRecord): void {
-    const state: AgentSessionState = {
-      sessionId: record.sessionId,
-      workspacePath: record.workspacePath,
-      status: record.status,
-      lastEventAt: record.lastEventAt,
-    };
     // Validate outbound like the push channels validate inbound.
     const push: AgentObservabilityPush = AgentObservabilityPushSchema.parse({
       kind: 'sessionState',
-      state,
+      state: toSessionState(record),
     });
     this.emit('push', push);
   }

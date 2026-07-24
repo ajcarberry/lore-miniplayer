@@ -1,7 +1,8 @@
-import * as path from 'node:path';
 import type { MainLogger } from '../ipc/logger';
 import { WorkspaceSchema } from '../../shared/schemas';
-import type { LoreBranch, Repository, Workspace } from '../../shared/types';
+import type { Repository, Workspace } from '../../shared/types';
+import type { WorkspaceRevisionStatus } from './lore-repository';
+import { samePath } from './path-utils';
 
 // Resolves the anchor workspace — the card-view repository Mission Control is
 // scoped to, surfaced as a listed member the same way a provisioned worktree
@@ -10,8 +11,10 @@ import type { LoreBranch, Repository, Workspace } from '../../shared/types';
 // workspace-lore-ops.ts for the same pattern in WorkspaceService).
 
 export interface AnchorLoreDeps {
-  listBranches(repositoryPath: string): Promise<LoreBranch[]>;
-  getCurrentRevision(repositoryPath: string): Promise<string>;
+  // One repositoryStatus({ revisionOnly: true }) call resolves the checkout's
+  // current branch AND revision together (C25) — the anchor is a card-view
+  // checkout, not a self-reporting Lore instance.
+  getWorkspaceRevisionStatus(repositoryPath: string): Promise<WorkspaceRevisionStatus | undefined>;
 }
 
 export interface AnchorDeps {
@@ -21,8 +24,9 @@ export interface AnchorDeps {
 
 // The card-view repository this Mission Control snapshot is scoped to
 // (`repositoryId` is its own id). Degrades to no anchor — never throws —
-// when the repository record is gone or its current branch cannot be
-// determined; the caller still renders the repository's provisioned members.
+// when the repository record is gone or its current branch/revision cannot
+// be determined; the caller still renders the repository's provisioned
+// members.
 export async function resolveAnchorWorkspace(
   log: MainLogger,
   deps: AnchorDeps,
@@ -32,17 +36,16 @@ export async function resolveAnchorWorkspace(
   if (!repo) {
     return undefined;
   }
-  const branchName = await safeCurrentBranch(log, deps.lore, repo.localPath);
-  if (branchName === undefined) {
+  const status = await safeRevisionStatus(log, deps.lore, repo.localPath);
+  if (!status || status.branchName.length === 0) {
     return undefined;
   }
-  const revision = await safeCurrentRevision(log, deps.lore, repo.localPath);
   return WorkspaceSchema.parse({
     instanceId: repo.id,
     path: repo.localPath,
-    branchName,
+    branchName: status.branchName,
     name: repo.name,
-    revision,
+    revision: status.revision,
     stale: false,
     repositoryId: repo.id,
     origin: repo.origin,
@@ -64,38 +67,30 @@ export function composeMembers(
   if (!anchor) {
     return workspaces;
   }
-  const anchorPath = path.resolve(anchor.path);
-  return [...workspaces.filter(w => path.resolve(w.path) !== anchorPath), anchor];
+  return [...workspaces.filter(w => !samePath(w.path, anchor.path)), anchor];
 }
 
-async function safeCurrentBranch(
+async function safeRevisionStatus(
   log: MainLogger,
   lore: AnchorLoreDeps,
   repositoryPath: string
-): Promise<string | undefined> {
+): Promise<WorkspaceRevisionStatus | undefined> {
   try {
-    const branches = await lore.listBranches(repositoryPath);
-    return branches.find(branch => branch.isCurrent)?.name;
+    return await lore.getWorkspaceRevisionStatus(repositoryPath);
   } catch (error) {
-    logDegrade(log, 'anchorBranch', repositoryPath, error);
+    logDegrade(log, 'anchorStatus', repositoryPath, error);
     return undefined;
   }
 }
 
-async function safeCurrentRevision(
+// Shared with WorkspaceModelService's safe* wrappers (it was extracted from
+// the model — see the module note above).
+export function logDegrade(
   log: MainLogger,
-  lore: AnchorLoreDeps,
-  repositoryPath: string
-): Promise<string> {
-  try {
-    return await lore.getCurrentRevision(repositoryPath);
-  } catch (error) {
-    logDegrade(log, 'anchorRevision', repositoryPath, error);
-    return '';
-  }
-}
-
-function logDegrade(log: MainLogger, signal: string, workspacePath: string, error: unknown): void {
+  signal: string,
+  workspacePath: string,
+  error: unknown
+): void {
   log.debug('Workspace signal degraded', {
     operation: 'workspace-model:signal',
     signal,

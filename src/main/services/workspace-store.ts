@@ -6,6 +6,7 @@ import type { MainLogger } from '../ipc/logger';
 import type { Repository } from '../../shared/types';
 import { RepositorySchema } from '../../shared/schemas';
 import { ACCENT_HUE_VALUES } from '../../shared/accent';
+import { samePath } from './path-utils';
 
 // The unified workspace registry (packet U1). One store class, one file
 // (`workspaces.json`, version 2) that holds BOTH card-view repositories and
@@ -107,28 +108,27 @@ export class WorkspaceRegistry {
 
   // Insert or replace by id (repository create/update).
   async upsertById(entry: Repository): Promise<void> {
-    const validated = RepositorySchema.parse(entry);
-    await this.enqueue(async () => {
-      await this.load();
-      const index = this.entries.findIndex(existing => existing.id === validated.id);
-      if (index === -1) {
-        this.entries.push(validated);
-      } else {
-        this.entries[index] = validated;
-      }
-      await this.save();
-    });
+    await this.upsertWhere(entry, (existing, validated) => existing.id === validated.id);
   }
 
   // Insert or replace by resolved localPath (workspace provision/adoption), so
   // re-provisioning the same directory never duplicates it.
   async upsertByLocalPath(entry: Repository): Promise<void> {
+    await this.upsertWhere(entry, (existing, validated) =>
+      samePath(existing.localPath, validated.localPath)
+    );
+  }
+
+  // The shared load → replace-or-push → save cycle behind both upserts; only
+  // the match predicate differs.
+  private async upsertWhere(
+    entry: Repository,
+    matches: (existing: Repository, validated: Repository) => boolean
+  ): Promise<void> {
     const validated = RepositorySchema.parse(entry);
     await this.enqueue(async () => {
       await this.load();
-      const index = this.entries.findIndex(existing =>
-        samePath(existing.localPath, validated.localPath)
-      );
+      const index = this.entries.findIndex(existing => matches(existing, validated));
       if (index === -1) {
         this.entries.push(validated);
       } else {
@@ -338,8 +338,4 @@ export function sameLoreRepo(
     return a.loreRepositoryId === b.loreRepositoryId;
   }
   return a.url === b.url;
-}
-
-function samePath(a: string, b: string): boolean {
-  return path.resolve(a) === path.resolve(b);
 }

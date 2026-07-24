@@ -30,12 +30,8 @@ import type {
   WorkspaceTeardownRequest,
   WorkspaceTeardownResult,
 } from '../../shared/types';
-import {
-  WorkspaceForgetRequestSchema,
-  WorkspaceProvisionRequestSchema,
-  WorkspaceTeardownRequestSchema,
-  WorkspaceSchema,
-} from '../../shared/schemas';
+import { WorkspaceSchema } from '../../shared/schemas';
+import { pathExists, samePath } from './path-utils';
 
 // Worktree directories are placed as a sibling of the repository's own
 // checkout, under `<repoName>-wt/<branch>` (design 2a). The suffix keeps the
@@ -104,7 +100,8 @@ export class WorkspaceService extends EventEmitter {
   // observer hooks, and return the tracked instance record. A clone failure
   // mid-flight cleans up the partial directory and never leaves an orphan.
   async provision(request: WorkspaceProvisionRequest): Promise<Workspace> {
-    const { repositoryId, branchName } = WorkspaceProvisionRequestSchema.parse(request);
+    // Validated at the IPC boundary (validators.ts); typed in-process here.
+    const { repositoryId, branchName } = request;
 
     const repo = await this.repositoryService.getById(repositoryId);
     if (!repo) {
@@ -136,14 +133,14 @@ export class WorkspaceService extends EventEmitter {
     workspacePath: string,
     branchName: string
   ): Promise<Workspace> {
-    if (await this.pathExists(workspacePath)) {
+    if (await pathExists(workspacePath)) {
       // Adoption (P18): a directory that already exists AND self-reports a
       // matching-branch instance is an orphaned workspace (e.g. provisioned by
       // the pre-fix flow that never persisted a registry entry). Heal it into
       // the registry instead of failing outright.
       const adopted = await this.adoptExisting(workspacePath, branchName, repo);
       if (adopted) {
-        this.emit('lifecycle', { repositoryId: repo.id, path: workspacePath });
+        this.emit('lifecycle');
         return adopted;
       }
       throw new Error(`Workspace directory already exists: ${workspacePath}`);
@@ -185,7 +182,7 @@ export class WorkspaceService extends EventEmitter {
     // Registry entry is written only after verification succeeds.
     const provisionedAt = new Date().toISOString();
     await this.upsertProvisioned(repo, workspacePath, branchName, provisionedAt);
-    this.emit('lifecycle', { repositoryId: repo.id, path: workspacePath });
+    this.emit('lifecycle');
     return this.toWorkspace(match, repo.id, 'provisioned', branchName, provisionedAt);
   }
 
@@ -229,9 +226,7 @@ export class WorkspaceService extends EventEmitter {
   // has no offline/SDK path (P1 finding d) — it is a recorded server ask,
   // reported as remoteBranchRemoved:false.
   async teardown(request: WorkspaceTeardownRequest): Promise<WorkspaceTeardownResult> {
-    const parsed = WorkspaceTeardownRequestSchema.parse(request);
-
-    const located = await this.locateWorkspace(parsed);
+    const located = await this.locateWorkspace(request);
     if (!located) {
       throw new Error('Workspace not found or not a tracked instance');
     }
@@ -249,7 +244,7 @@ export class WorkspaceService extends EventEmitter {
     // remove one, regardless of dirty/unpushed state; the caller must
     // explicitly confirm (force). Provisioned worktrees keep the existing
     // force-only-when-dirty behavior below.
-    if (entry.origin !== 'provisioned' && !parsed.force) {
+    if (entry.origin !== 'provisioned' && !request.force) {
       throw new Error('This is a repository checkout — closing it requires explicit confirmation');
     }
 
@@ -261,7 +256,7 @@ export class WorkspaceService extends EventEmitter {
     const guardRepoPath = entry.origin === 'provisioned' ? repo?.localPath : undefined;
     await assertSafeTeardownPath(workspacePath, guardRepoPath);
 
-    if (!parsed.force) {
+    if (!request.force) {
       // Only reachable for provisioned entries (attached/cloned ones already
       // threw above without force), so entry.branchName is present; the name
       // fallback keeps a degenerate entry fail-closed rather than crashing.
@@ -297,7 +292,7 @@ export class WorkspaceService extends EventEmitter {
       );
     }
 
-    this.emit('lifecycle', { repositoryId: repo?.id ?? '', path: workspacePath });
+    this.emit('lifecycle');
     return {
       workspaceId: instance?.instanceId ?? workspacePath,
       path: workspacePath,
@@ -313,8 +308,7 @@ export class WorkspaceService extends EventEmitter {
   // touches the worktree directory or the branch. The guarded, destructive
   // path is `teardown`; identification (id or path) is resolved the same way.
   async forget(request: WorkspaceForgetRequest): Promise<void> {
-    const parsed = WorkspaceForgetRequestSchema.parse(request);
-    const located = await this.locateWorkspace(parsed);
+    const located = await this.locateWorkspace(request);
     if (!located) {
       throw new Error('Workspace not found or not a tracked instance');
     }
@@ -323,7 +317,7 @@ export class WorkspaceService extends EventEmitter {
       operation: 'workspace:forget',
       workspacePath: located.entry.localPath,
     });
-    this.emit('lifecycle', { repositoryId: located.repo?.id ?? '', path: located.entry.localPath });
+    this.emit('lifecycle');
   }
 
   // Write Claude Code observer hooks into the workspace's settings.local.json.
@@ -349,7 +343,7 @@ export class WorkspaceService extends EventEmitter {
   async reinjectObserverHooks(): Promise<void> {
     const entries = await this.store.all();
     for (const entry of entries) {
-      if (entry.origin !== 'provisioned' || !(await this.pathExists(entry.localPath))) {
+      if (entry.origin !== 'provisioned' || !(await pathExists(entry.localPath))) {
         continue;
       }
       try {
@@ -493,8 +487,8 @@ export class WorkspaceService extends EventEmitter {
       const matches =
         'workspaceId' in parsed
           ? instance?.instanceId === parsed.workspaceId ||
-            this.samePath(entry.localPath, parsed.workspaceId)
-          : this.samePath(entry.localPath, parsed.path);
+            samePath(entry.localPath, parsed.workspaceId)
+          : samePath(entry.localPath, parsed.path);
       if (matches) {
         return { ...(repo ? { repo } : {}), entry, ...(instance ? { instance } : {}) };
       }
@@ -506,7 +500,7 @@ export class WorkspaceService extends EventEmitter {
   // shared store lists it). Undefined when the directory is gone or the query
   // fails — never throws (P18 enrichment contract).
   private async enrichEntry(entry: Repository): Promise<RawInstance | undefined> {
-    if (!(await this.pathExists(entry.localPath))) {
+    if (!(await pathExists(entry.localPath))) {
       return undefined;
     }
     return this.selfInstance(entry.localPath);
@@ -515,7 +509,7 @@ export class WorkspaceService extends EventEmitter {
   private async selfInstance(workspacePath: string): Promise<RawInstance | undefined> {
     try {
       const instances = await listInstances(workspacePath);
-      return instances.find(inst => this.samePath(inst.path, workspacePath));
+      return instances.find(inst => samePath(inst.path, workspacePath));
     } catch (error) {
       this.log.error('Failed to self-report workspace instance (treating as stale)', {
         error,
@@ -536,7 +530,7 @@ export class WorkspaceService extends EventEmitter {
   ): Promise<string | undefined> {
     const members = membersOfRepo(await this.store.all(), anchor);
     const sibling = members.find(
-      entry => entry.origin === 'provisioned' && !this.samePath(entry.localPath, excludePath)
+      entry => entry.origin === 'provisioned' && !samePath(entry.localPath, excludePath)
     );
     return sibling?.localPath;
   }
@@ -576,19 +570,6 @@ export class WorkspaceService extends EventEmitter {
       origin,
       ...(provisionedAt ? { provisionedAt } : {}),
     });
-  }
-
-  private samePath(a: string, b: string): boolean {
-    return path.resolve(a) === path.resolve(b);
-  }
-
-  private async pathExists(target: string): Promise<boolean> {
-    try {
-      await fs.access(target);
-      return true;
-    } catch {
-      return false;
-    }
   }
 
   private async safeRemoveDir(dir: string): Promise<void> {

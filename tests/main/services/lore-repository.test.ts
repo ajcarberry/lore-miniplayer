@@ -1320,19 +1320,47 @@ describe('LoreRepositoryService', () => {
   });
 
   describe('commit', () => {
-    it('should commit without pushing', async () => {
-      // Given: the commit resolves
-      mockLore.revisionCommit.mockReturnValue(fluentMock() as never);
+    it('should commit without pushing and return the streamed committed revision', async () => {
+      // Given: the commit resolves, streaming REVISION_COMMIT_REVISION with
+      // the committed revision details (hash, branch, parents)
+      mockLore.revisionCommit.mockReturnValue(
+        fluentMock({
+          events: [
+            {
+              tag: LoreEventTag.REVISION_COMMIT_REVISION,
+              data: {
+                repository: '019f6e085ebc76e0b055ac33144de5cf',
+                branch: 'e726318bbc3fd75ac8733a7e030cc35b',
+                revision: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2',
+                revisionNumber: 43,
+                parent: 'f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3b2a1f6e5',
+                parentOther: '0000000000000000000000000000000000000000',
+              },
+            },
+          ],
+        }) as never
+      );
 
       // When: committing
-      await service.commit('/path/to/repo', 'My commit message');
+      const revision = await service.commit('/path/to/repo', 'My commit message');
 
-      // Then: only revisionCommit is called, addressed via globals
+      // Then: only revisionCommit is called, addressed via globals, and the
+      // streamed revision is returned — no follow-up history read
       expect(mockLore.revisionCommit).toHaveBeenCalledWith(
         { repositoryPath: '/path/to/repo' },
         { message: 'My commit message' }
       );
+      expect(revision).toBe('a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2');
       expect(mockLore.branchPush).not.toHaveBeenCalled();
+      expect(mockLore.revisionHistory).not.toHaveBeenCalled();
+    });
+
+    it('degrades to an empty revision when the SDK streams no revision event', async () => {
+      // Given: a commit that resolves without a REVISION_COMMIT_REVISION event
+      mockLore.revisionCommit.mockReturnValue(fluentMock() as never);
+
+      // When/Then: the commit succeeds with an empty revision string
+      await expect(service.commit('/path/to/repo', 'My commit message')).resolves.toBe('');
     });
 
     it('should throw LoreOperationError when the commit fails', async () => {
@@ -1348,6 +1376,170 @@ describe('LoreRepositoryService', () => {
       await expect(promise).rejects.toThrow(LoreOperationError);
       await expect(promise).rejects.toThrow('Failed to commit changes');
       expect(mockLore.branchPush).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getWorkspaceRevisionStatus', () => {
+    // A REPOSITORY_STATUS_REVISION payload field-for-field from the SDK's
+    // LoreRepositoryStatusRevisionEventData type (type-derived, not captured).
+    function statusRevisionEventData(
+      overrides: Record<string, unknown> = {}
+    ): Record<string, unknown> {
+      return {
+        repository: '019f6e085ebc76e0b055ac33144de5cf',
+        branch: 'e726318bbc3fd75ac8733a7e030cc35b',
+        branchName: 'feature-a',
+        revision: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2',
+        revisionNumber: 42,
+        revisionStaged: '0000000000000000000000000000000000000000',
+        revisionMerged: '0000000000000000000000000000000000000000',
+        revisionMergedParentBranch: '0000000000000000000000000000000000000000',
+        revisionLocal: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2',
+        revisionLocalNumber: 42,
+        revisionRemote: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2',
+        revisionRemoteNumber: 42,
+        isLocalAhead: false,
+        isRemoteAhead: false,
+        remoteAvailable: true,
+        ...overrides,
+      };
+    }
+
+    function statusReturning(data: Record<string, unknown>): void {
+      mockLore.repositoryStatus.mockReturnValue(
+        fluentMock({ events: [{ tag: LoreEventTag.REPOSITORY_STATUS_REVISION, data }] }) as never
+      );
+    }
+
+    it('resolves branch, revision, and inSync divergence from one revisionOnly call', async () => {
+      // Given: a status event whose local and remote tips match
+      statusReturning(statusRevisionEventData());
+
+      // When: reading the workspace revision status
+      const status = await service.getWorkspaceRevisionStatus('/repo');
+
+      // Then: one revisionOnly repositoryStatus call resolves everything
+      expect(mockLore.repositoryStatus).toHaveBeenCalledWith(
+        { repositoryPath: '/repo' },
+        { revisionOnly: true }
+      );
+      expect(status?.branchName).toBe('feature-a');
+      expect(status?.revision).toBe('a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2');
+      expect(BranchDivergenceSchema.parse(status?.divergence).state).toBe('inSync');
+      // And: no branchInfo/history walk happened
+      expect(mockLore.branchInfo).not.toHaveBeenCalled();
+      expect(mockLore.revisionHistory).not.toHaveBeenCalled();
+    });
+
+    it('maps a local-only lead (isLocalAhead, not isRemoteAhead) to ahead', async () => {
+      statusReturning(
+        statusRevisionEventData({
+          revisionRemote: 'f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3b2a1f6e5',
+          isLocalAhead: true,
+        })
+      );
+
+      const status = await service.getWorkspaceRevisionStatus('/repo');
+      expect(status?.divergence.state).toBe('ahead');
+    });
+
+    it('maps a remote lead to behindOrDiverged (true divergence included)', async () => {
+      statusReturning(
+        statusRevisionEventData({
+          revisionRemote: 'f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3b2a1f6e5',
+          isLocalAhead: true,
+          isRemoteAhead: true,
+        })
+      );
+
+      const status = await service.getWorkspaceRevisionStatus('/repo');
+      expect(status?.divergence.state).toBe('behindOrDiverged');
+    });
+
+    it('fails closed to unknown when the remote tip is a zero hash (never pushed)', async () => {
+      statusReturning(
+        statusRevisionEventData({
+          revisionRemote: '0000000000000000000000000000000000000000',
+          revisionRemoteNumber: 0,
+          isLocalAhead: true,
+        })
+      );
+
+      const status = await service.getWorkspaceRevisionStatus('/repo');
+      expect(status?.divergence.state).toBe('unknown');
+    });
+
+    it('returns undefined when the SDK streams no revision event', async () => {
+      mockLore.repositoryStatus.mockReturnValue(fluentMock() as never);
+      await expect(service.getWorkspaceRevisionStatus('/repo')).resolves.toBeUndefined();
+    });
+
+    it('wraps SDK failures in LoreOperationError', async () => {
+      mockLore.repositoryStatus.mockReturnValue(
+        fluentMock({ error: loreError(5, 'store locked') }) as never
+      );
+
+      const promise = service.getWorkspaceRevisionStatus('/repo');
+      await expect(promise).rejects.toThrow(LoreOperationError);
+      await expect(promise).rejects.toThrow('Failed to read workspace revision status');
+    });
+  });
+
+  describe('getSessionCommits', () => {
+    it('walks only the current branch (onlyBranch) and enriches each entry', async () => {
+      // Given: the capped current-branch walk streams one entry, whose
+      // revisionInfo carries message + timestamp metadata
+      mockLore.revisionHistory.mockReturnValue(
+        fluentMock({
+          events: [
+            {
+              tag: LoreEventTag.REVISION_HISTORY_ENTRY,
+              data: { ...revisionHistoryEntryEventDataFixture },
+            },
+          ],
+        }) as never
+      );
+      mockLore.revisionInfo.mockReturnValue(
+        fluentMock({
+          events: [
+            { tag: LoreEventTag.METADATA, data: { ...revisionMessageMetadataFixture } },
+            { tag: LoreEventTag.METADATA, data: { ...revisionTimestampMetadataFixture } },
+          ],
+        }) as never
+      );
+
+      // When: reading the newest session commits
+      const commits = await service.getSessionCommits('/repo', 10);
+
+      // Then: the walk is unqualified (current revision) with the onlyBranch
+      // stop and the cap as its length
+      expect(mockLore.revisionHistory).toHaveBeenCalledWith(
+        { repositoryPath: '/repo' },
+        { length: 10, onlyBranch: true }
+      );
+      // And: the entry is enriched via revisionInfo on its full hash
+      expect(mockLore.revisionInfo).toHaveBeenCalledWith(
+        { repositoryPath: '/repo' },
+        { revision: revisionHistoryEntryEventDataFixture.revision }
+      );
+      expect(commits).toEqual([
+        {
+          revision: revisionHistoryEntryEventDataFixture.revision,
+          revisionNumber: revisionHistoryEntryEventDataFixture.revisionNumber,
+          message: 'Crystal subsurface pass',
+          timestamp: 1784352827564,
+        },
+      ]);
+    });
+
+    it('wraps a failed walk through the service error context', async () => {
+      mockLore.revisionHistory.mockReturnValue(
+        fluentMock({ error: loreError(2, 'no repository') }) as never
+      );
+
+      const promise = service.getSessionCommits('/repo', 10);
+      await expect(promise).rejects.toThrow(LoreOperationError);
+      await expect(promise).rejects.toThrow('Failed to walk session commits');
     });
   });
 

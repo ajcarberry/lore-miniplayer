@@ -1,6 +1,4 @@
-import * as path from 'node:path';
-import { lore, LoreError } from '@lore-vcs/sdk';
-import type { LoreFluentApi } from '@lore-vcs/sdk';
+import { lore } from '@lore-vcs/sdk';
 import { LoreEventTag, LoreFileAction } from '@lore-vcs/sdk/types/enums';
 import type {
   CompareTarget,
@@ -11,10 +9,16 @@ import type {
   LineStats,
   LoreFileStatusGroup,
 } from '../../shared/types';
-import { DiffRequestSchema } from '../../shared/schemas';
 import { isUnknownHash } from './branch-graph';
-import { collectEvents } from './lore-events';
 import type { LoreEventDataOf } from './lore-events';
+import {
+  OperationError,
+  branchTip,
+  operationHelpers,
+  toRepoAbsolutePath,
+  toRepoRelativePath,
+} from './lore-operation';
+import { allStatusFiles } from './lore-status';
 
 // Unified-diff patches over this many lines are stored/returned truncated
 // (head only); 4000 lines comfortably covers any single file that is still
@@ -25,15 +29,17 @@ import type { LoreEventDataOf } from './lore-events';
 // streamed hunks) regardless of size.
 export const PATCH_TRUNCATION_LINE_CAP = 4000;
 
-export class DiffOperationError extends Error {
-  constructor(
-    message: string,
-    public readonly errorType?: number
-  ) {
-    super(message);
+export class DiffOperationError extends OperationError {
+  constructor(message: string, errorType?: number) {
+    super(message, errorType);
     this.name = 'DiffOperationError';
   }
 }
+
+// Shared collect scaffold (see ./lore-operation), typed to this service's
+// error class.
+const ops = operationHelpers(DiffOperationError);
+const { collect } = ops;
 
 // Maps a Lore file action to the FileDiffResult schema's action vocabulary.
 // KEEP (no path change) is a content-only edit, i.e. 'modified'. COPY has no
@@ -123,27 +129,6 @@ export interface DiffRepositorySource {
 export class DiffService {
   constructor(private readonly repository: DiffRepositorySource) {}
 
-  private toOperationError(context: string, error: unknown): DiffOperationError {
-    if (error instanceof DiffOperationError) {
-      return error;
-    }
-    if (error instanceof LoreError) {
-      const firstError = error.loreErrors?.[0];
-      return new DiffOperationError(`${context}: ${error.message}`, firstError?.data.errorType);
-    }
-    const message = error instanceof Error ? error.message : String(error);
-    return new DiffOperationError(`${context}: ${message}`);
-  }
-
-  private collect<TTag extends LoreEventTag, T>(
-    operation: LoreFluentApi,
-    tag: TTag,
-    map: (data: LoreEventDataOf<TTag>) => T | undefined,
-    context: string
-  ): Promise<T[]> {
-    return collectEvents(operation, tag, map, error => this.toOperationError(context, error));
-  }
-
   // Resolves a compare-picker target to the revision string `fileDiff`
   // takes: a literal revision, '' for the working tree (P1 finding a —
   // omitting the revision compares the source against uncommitted edits),
@@ -155,13 +140,12 @@ export class DiffService {
       case 'workingTree':
         return '';
       case 'branchHead': {
-        const infos = await this.collect(
-          lore.branchInfo({ repositoryPath }, { branch: target.branch }),
-          LoreEventTag.BRANCH_INFO,
-          (data: LoreEventDataOf<LoreEventTag.BRANCH_INFO>) => data.latest,
+        const latest = await branchTip(
+          ops,
+          repositoryPath,
+          target.branch,
           `Failed to resolve branch '${target.branch}'`
         );
-        const latest = infos[infos.length - 1];
         if (!latest) {
           throw new DiffOperationError(`Branch '${target.branch}' has no known revision`);
         }
@@ -170,39 +154,23 @@ export class DiffService {
     }
   }
 
-  // The SDK resolves a relative path arg against the process CWD, NOT
-  // globalArgs.repositoryPath (known gotcha, first hit on fileStage — see
-  // lore-handlers.ts / merge-service.ts). A repo-relative path such as
-  // 'Content/Caves/pass_1.txt' would otherwise become
-  // '<app-cwd>/Content/Caves/pass_1.txt' and fileDiff rejects it as an
-  // invalid path. Every path handed to an SDK op must be repo-absolute.
-  // Idempotent for a path that is already absolute.
-  private toAbsolutePath(repositoryPath: string, filePath: string): string {
-    return path.isAbsolute(filePath) ? filePath : path.join(repositoryPath, filePath);
-  }
-
-  // fileDiff echoes back the (now absolute) path it was queried with, but the
-  // app/UI works only in repo-relative paths — strip the repository prefix on
-  // the way out. Idempotent for a path that is already relative.
-  private toRepoRelativePath(repositoryPath: string, filePath: string): string {
-    return path.isAbsolute(filePath) ? path.relative(repositoryPath, filePath) : filePath;
-  }
-
   private async diffRevisions(
     repositoryPath: string,
     sourceRevision: string,
     targetRevision: string,
     paths?: string[]
   ): Promise<FileDiffResult[]> {
-    const absolutePaths = paths?.map(p => this.toAbsolutePath(repositoryPath, p));
-    const raw = await this.collect(
+    // The SDK needs repo-absolute paths in, and echoes them back out — the
+    // app works repo-relative on both sides (see toRepoAbsolutePath).
+    const absolutePaths = paths?.map(p => toRepoAbsolutePath(repositoryPath, p));
+    const raw = await collect(
       lore.fileDiff(
         { repositoryPath },
         { sourceRevision, targetRevision, ...(absolutePaths ? { paths: absolutePaths } : {}) }
       ),
       LoreEventTag.FILE_DIFF,
       (data: LoreEventDataOf<LoreEventTag.FILE_DIFF>) => ({
-        path: this.toRepoRelativePath(repositoryPath, data.path),
+        path: toRepoRelativePath(repositoryPath, data.path),
         patch: data.patch,
         action: data.action,
       }),
@@ -215,7 +183,8 @@ export class DiffService {
   // CompareTarget sides to revisions and diffs them with fileDiff. The
   // working-tree side never needs the fileDump fallback (P1 finding a).
   async compare(request: DiffRequest): Promise<DiffResponse> {
-    const { repositoryPath, source, target, paths } = DiffRequestSchema.parse(request);
+    // Validated at the IPC boundary (validators.ts); typed in-process here.
+    const { repositoryPath, source, target, paths } = request;
     const [sourceRevision, targetRevision] = await Promise.all([
       this.resolveRevision(repositoryPath, source),
       this.resolveRevision(repositoryPath, target),
@@ -245,7 +214,7 @@ export class DiffService {
     diffs: FileDiffResult[]
   ): Promise<FileDiffResult[]> {
     const status = await this.repository.getFileStatus(repositoryPath);
-    const dirtyPaths = dedupePaths([...status.untracked, ...status.unstaged, ...status.staged]);
+    const dirtyPaths = dedupePaths(allStatusFiles(status));
     const enumerated = new Set(diffs.map(diff => diff.path));
     const untracked = new Set(status.untracked.map(file => file.path));
     const missing = dirtyPaths
@@ -271,7 +240,7 @@ export class DiffService {
   // working tree is clean.
   async workspaceDirtyStats(repositoryPath: string): Promise<FileDiffResult[]> {
     const status = await this.repository.getFileStatus(repositoryPath);
-    const dirtyPaths = dedupePaths([...status.untracked, ...status.unstaged, ...status.staged]);
+    const dirtyPaths = dedupePaths(allStatusFiles(status));
     if (dirtyPaths.length === 0) {
       return [];
     }

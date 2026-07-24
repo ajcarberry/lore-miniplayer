@@ -113,6 +113,30 @@ export async function getCurrentRevision(
   }
 }
 
+// The current checkout branch's own newest revisions, straight from the SDK:
+// an unqualified revisionHistory walk from the working copy's revision with
+// `onlyBranch` ("stop when reaching a different branch"), so the parent
+// lineage is excluded natively — no branch-graph assembly, and only `limit`
+// entries to enrich. Valid for the checkout's CURRENT branch (the workspace
+// cards' only case).
+export async function getSessionCommits(
+  deps: BranchGraphDeps,
+  repositoryPath: string,
+  limit: number
+): Promise<RevisionSummary[]> {
+  const raw = await collectEvents(
+    lore.revisionHistory({ repositoryPath }, { length: limit, onlyBranch: true }),
+    LoreEventTag.REVISION_HISTORY_ENTRY,
+    (data): RawRevision => ({
+      revision: data.revision,
+      revisionNumber: data.revisionNumber,
+      parent: data.parent,
+    }),
+    error => deps.wrapError('Failed to walk session commits', error)
+  );
+  return enrichAll(deps, repositoryPath, raw);
+}
+
 // Collect branchList entries reduced to the fields the graph needs. Both
 // local and remote listings are kept; pickBestEntry chooses between them.
 async function collectBranchEntries(

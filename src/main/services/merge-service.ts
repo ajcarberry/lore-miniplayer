@@ -1,11 +1,10 @@
-import { lore, LoreError } from '@lore-vcs/sdk';
-import type { LoreFluentApi } from '@lore-vcs/sdk';
+import { lore } from '@lore-vcs/sdk';
 import { LoreEventTag } from '@lore-vcs/sdk/types/enums';
-import * as path from 'node:path';
 import type { MainLogger } from '../ipc/logger';
 import type { LoreRepositoryService } from './lore-repository';
-import { collectEvents } from './lore-events';
 import type { LoreEventDataOf } from './lore-events';
+import { OperationError, branchTip, operationHelpers, toRepoAbsolutePath } from './lore-operation';
+import { allStatusFiles } from './lore-status';
 import type {
   LoreFileStatus,
   MergeAbortRequest,
@@ -17,27 +16,23 @@ import type {
   MergeStartRequest,
   MergeState,
 } from '../../shared/types';
-import {
-  MergeStartRequestSchema,
-  MergeResolveRequestSchema,
-  MergeAbortRequestSchema,
-  MergeCompleteRequestSchema,
-} from '../../shared/schemas';
 
-export class MergeOperationError extends Error {
-  constructor(
-    message: string,
-    public readonly errorType?: number
-  ) {
-    super(message);
+export class MergeOperationError extends OperationError {
+  constructor(message: string, errorType?: number) {
+    super(message, errorType);
     this.name = 'MergeOperationError';
   }
 }
 
-// How far back each branch's lineage is walked when deciding whether the source
-// branch has revisions the target lacks. Mirrors lore-repository's divergence
-// walk cap: bounded work, and a branch that diverged more than this many
-// revisions back has plenty to land regardless.
+// Shared run/collect scaffold (see ./lore-operation), typed to this service's
+// error class.
+const ops = operationHelpers(MergeOperationError);
+const { run, collect } = ops;
+
+// How far back the target branch's lineage is walked when deciding whether
+// the source branch has revisions the target lacks. Mirrors lore-repository's
+// divergence walk cap: bounded work, and a branch that diverged more than
+// this many revisions back has plenty to land regardless.
 const MERGE_HISTORY_WALK_LENGTH = 100;
 
 // The state retained per in-flight merge so resolve/complete can rebuild the
@@ -111,7 +106,8 @@ export class MergeService {
   // in-flight merge, and returns the composed MergeState. Refuses a second
   // concurrent merge for the same repository.
   async start(request: MergeStartRequest): Promise<MergeState> {
-    const { repositoryPath, sourceBranch, targetBranch } = MergeStartRequestSchema.parse(request);
+    // Validated at the IPC boundary (validators.ts); typed in-process here.
+    const { repositoryPath, sourceBranch, targetBranch } = request;
 
     if (this.activeMerges.has(repositoryPath)) {
       throw new MergeOperationError(
@@ -126,7 +122,7 @@ export class MergeService {
       targetBranch,
     });
 
-    const conflictPaths = await this.collect(
+    const conflictPaths = await collect(
       lore.branchMergeStart({ repositoryPath }, { branch: targetBranch, noCommit: true }),
       LoreEventTag.BRANCH_MERGE_CONFLICT_FILE,
       (data: LoreEventDataOf<LoreEventTag.BRANCH_MERGE_CONFLICT_FILE>) => data.path,
@@ -168,7 +164,7 @@ export class MergeService {
   // there is no separate unresolve step in the v1 flow. Refuses a path that is
   // not a conflict in the current merge, or a repository with no active merge.
   async resolve(request: MergeResolveRequest): Promise<MergeState> {
-    const { repositoryPath, path: filePath, resolution } = MergeResolveRequestSchema.parse(request);
+    const { repositoryPath, path: filePath, resolution } = request;
 
     const record = this.requireActiveMerge(repositoryPath);
     if (!record.conflictPaths.includes(filePath)) {
@@ -184,14 +180,14 @@ export class MergeService {
 
     // The resolve ops address files by their repo-ABSOLUTE path: a
     // repo-relative path is PATH_IGNOREd and silently leaves the file
-    // unresolved (P1e-addendum, probe 06b). The conflict path from
-    // BRANCH_MERGE_CONFLICT_FILE is repo-relative, so join it here.
-    const absPath = path.join(repositoryPath, filePath);
+    // unresolved (P1e-addendum, probe 06b; see toRepoAbsolutePath). The
+    // conflict path from BRANCH_MERGE_CONFLICT_FILE is repo-relative.
+    const absPath = toRepoAbsolutePath(repositoryPath, filePath);
     const op =
       resolution === 'mine'
         ? lore.branchMergeResolveMine({ repositoryPath }, { paths: [absPath] })
         : lore.branchMergeResolveTheirs({ repositoryPath }, { paths: [absPath] });
-    await this.run(op, `Failed to resolve '${filePath}' as ${resolution}`);
+    await run(op, `Failed to resolve '${filePath}' as ${resolution}`);
 
     return this.buildMergeState(repositoryPath, record);
   }
@@ -199,11 +195,11 @@ export class MergeService {
   // Abort an in-flight merge, restoring the checkout's pre-merge content (P1e)
   // and clearing the in-flight record so a new merge may be started.
   async abort(request: MergeAbortRequest): Promise<MergeAbortResponse> {
-    const { repositoryPath } = MergeAbortRequestSchema.parse(request);
+    const { repositoryPath } = request;
     this.requireActiveMerge(repositoryPath);
 
     this.log.info('Merge abort', { operation: 'merge:abort', repositoryPath });
-    await this.run(lore.branchMergeAbort({ repositoryPath }, {}), 'Failed to abort merge');
+    await run(lore.branchMergeAbort({ repositoryPath }, {}), 'Failed to abort merge');
 
     this.activeMerges.delete(repositoryPath);
     return { aborted: true };
@@ -217,7 +213,7 @@ export class MergeService {
   // a retry skips re-committing. Clears the record and returns the target's
   // landed revision on success.
   async complete(request: MergeCompleteRequest): Promise<MergeCompleteResponse> {
-    const { repositoryPath } = MergeCompleteRequestSchema.parse(request);
+    const { repositoryPath } = request;
     const record = this.requireActiveMerge(repositoryPath);
 
     // Phase 1: commit the resolved merge on the workspace (source) branch.
@@ -234,9 +230,12 @@ export class MergeService {
         repositoryPath,
         message: sourceMessage,
       });
-      await this.loreRepositoryService.commit(repositoryPath, sourceMessage);
-      record.committedRevision =
-        await this.loreRepositoryService.getCurrentRevision(repositoryPath);
+      // The commit op itself streams the committed revision (C24) — no
+      // follow-up history read.
+      record.committedRevision = await this.loreRepositoryService.commit(
+        repositoryPath,
+        sourceMessage
+      );
     }
 
     // Phase 2: land the workspace merge-commit on the target branch.
@@ -272,7 +271,7 @@ export class MergeService {
 
     await this.loreRepositoryService.switchBranch(repositoryPath, record.targetBranch);
     try {
-      const conflictFlags = await this.collect(
+      const conflictFlags = await collect(
         lore.branchMergeStart({ repositoryPath }, { branch: record.sourceBranch, noCommit: true }),
         LoreEventTag.BRANCH_MERGE_START_END,
         (data: LoreEventDataOf<LoreEventTag.BRANCH_MERGE_START_END>) => Boolean(data.hasConflicts),
@@ -281,7 +280,7 @@ export class MergeService {
       if (conflictFlags.some(Boolean)) {
         // Never expected (the source already contains the target); back out
         // the target-side merge so the checkout is left clean before restoring.
-        await this.run(
+        await run(
           lore.branchMergeAbort({ repositoryPath }, {}),
           'Failed to abort unexpected landing conflict'
         );
@@ -293,8 +292,8 @@ export class MergeService {
       const targetMessage = `Merge branch '${record.sourceBranch}' into '${record.targetBranch}'`;
       let landedRevision: string;
       try {
-        await this.loreRepositoryService.commit(repositoryPath, targetMessage);
-        landedRevision = await this.loreRepositoryService.getCurrentRevision(repositoryPath);
+        // The landing commit streams its own revision (C24).
+        landedRevision = await this.loreRepositoryService.commit(repositoryPath, targetMessage);
       } catch (error) {
         // The target checkout may still hold the pending noCommit merge; back
         // it out before the finally restores the source branch — otherwise the
@@ -312,7 +311,7 @@ export class MergeService {
         );
         throw error;
       }
-      await this.run(
+      await run(
         lore.branchPush({ repositoryPath }, { branch: record.targetBranch }),
         `Failed to push '${record.targetBranch}'`
       );
@@ -328,7 +327,7 @@ export class MergeService {
   // logged but never masks the original error being rethrown by the caller.
   private async abortMergeQuietly(repositoryPath: string, context: string): Promise<void> {
     try {
-      await this.run(lore.branchMergeAbort({ repositoryPath }, {}), context);
+      await run(lore.branchMergeAbort({ repositoryPath }, {}), context);
     } catch (abortError) {
       this.log.error(context, {
         error: abortError,
@@ -354,7 +353,7 @@ export class MergeService {
   private async buildMergeState(repositoryPath: string, record: ActiveMerge): Promise<MergeState> {
     const status = await this.loreRepositoryService.getFileStatus(repositoryPath);
     const statusByPath = new Map<string, LoreFileStatus>();
-    for (const file of [...status.untracked, ...status.unstaged, ...status.staged]) {
+    for (const file of allStatusFiles(status)) {
       statusByPath.set(file.path, file);
     }
 
@@ -394,13 +393,14 @@ export class MergeService {
   // own commits still need to land (P1-repro 07); conversely a branch whose tip
   // is already the target's has genuinely nothing to merge.
   //
-  // Computed by lineage diff rather than branchDiff: branchDiff is a CONTENT
-  // diff and reports nothing when the target hasn't moved (P1-repro 07), so it
-  // cannot see the branch's commits. Each branch tip comes from branchInfo
-  // (`latest`) and its lineage is walked by revision hash — the `branch` arg of
-  // revisionHistory is a dead end for the non-current target branch (see
-  // branch-graph.ts). Any revision on the source lineage absent from the
-  // target's means the branch is ahead.
+  // Computed by lineage membership rather than branchDiff: branchDiff is a
+  // CONTENT diff and reports nothing when the target hasn't moved (P1-repro
+  // 07), so it cannot see the branch's commits. Each branch tip comes from
+  // branchInfo (`latest`) and the target lineage is walked by revision hash —
+  // the `branch` arg of revisionHistory is a dead end for the non-current
+  // target branch (see branch-graph.ts). A lineage is an ancestor chain, so
+  // the source tip being absent from the target's lineage IS "the source has
+  // revisions to land" — no source-side walk needed (C26).
   private async sourceHasRevisionsToLand(
     repositoryPath: string,
     sourceBranch: string,
@@ -416,62 +416,29 @@ export class MergeService {
     if (sourceTip === targetTip) {
       return false;
     }
-    const [sourceLineage, targetLineage] = await Promise.all([
-      this.walkLineage(repositoryPath, sourceTip),
-      targetTip ? this.walkLineage(repositoryPath, targetTip) : Promise.resolve([]),
-    ]);
-    const targetRevisions = new Set(targetLineage);
-    return sourceLineage.some(revision => !targetRevisions.has(revision));
+    const targetLineage = targetTip ? await this.walkLineage(repositoryPath, targetTip) : [];
+    return !targetLineage.includes(sourceTip);
   }
 
   // The latest revision hash of a branch (its tip), or '' when unavailable.
   private async branchTip(repositoryPath: string, branch: string): Promise<string> {
-    const infos = await this.collect(
-      lore.branchInfo({ repositoryPath }, { branch }),
-      LoreEventTag.BRANCH_INFO,
-      (data: LoreEventDataOf<LoreEventTag.BRANCH_INFO>) => data.latest,
+    const tip = await branchTip(
+      ops,
+      repositoryPath,
+      branch,
       `Failed to read the tip of branch '${branch}'`
     );
-    return infos[infos.length - 1] ?? '';
+    return tip ?? '';
   }
 
   // Walk a branch lineage backward from a revision hash (newest-first), returning
   // the revision hashes, capped at MERGE_HISTORY_WALK_LENGTH.
   private async walkLineage(repositoryPath: string, revision: string): Promise<string[]> {
-    return this.collect(
+    return collect(
       lore.revisionHistory({ repositoryPath }, { revision, length: MERGE_HISTORY_WALK_LENGTH }),
       LoreEventTag.REVISION_HISTORY_ENTRY,
       (data: LoreEventDataOf<LoreEventTag.REVISION_HISTORY_ENTRY>) => data.revision,
       `Failed to walk revision lineage from '${revision}'`
     );
-  }
-
-  private async run(operation: LoreFluentApi, context: string): Promise<void> {
-    try {
-      await operation.waitAsync();
-    } catch (error) {
-      throw this.toOperationError(context, error);
-    }
-  }
-
-  private async collect<TTag extends LoreEventTag, T>(
-    operation: LoreFluentApi,
-    tag: TTag,
-    map: (data: LoreEventDataOf<TTag>) => T | undefined,
-    context: string
-  ): Promise<T[]> {
-    return collectEvents(operation, tag, map, error => this.toOperationError(context, error));
-  }
-
-  private toOperationError(context: string, error: unknown): MergeOperationError {
-    if (error instanceof MergeOperationError) {
-      return error;
-    }
-    if (error instanceof LoreError) {
-      const firstError = error.loreErrors?.[0];
-      return new MergeOperationError(`${context}: ${error.message}`, firstError?.data.errorType);
-    }
-    const message = error instanceof Error ? error.message : String(error);
-    return new MergeOperationError(`${context}: ${message}`);
   }
 }

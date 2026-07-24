@@ -10,15 +10,15 @@ import { WorkspaceModelSnapshotSchema } from '../../../src/shared/schemas';
 import type {
   AgentIntention,
   BranchDivergence,
-  BranchGraph,
   FileDiffResult,
-  LoreBranch,
   LoreFileStatusGroup,
   Repository,
+  RevisionSummary,
   Workspace,
   WorkspaceModelSnapshot,
 } from '../../../src/shared/types';
 import type { AgentSessionRecord } from '../../../src/main/services/agent-observer';
+import type { WorkspaceRevisionStatus } from '../../../src/main/services/lore-repository';
 
 const mockLog = { error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn() };
 const asLogger = mockLog as unknown as ConstructorParameters<typeof WorkspaceModelService>[0];
@@ -82,36 +82,22 @@ const IN_SYNC: BranchDivergence = { state: 'inSync', latest: 'x', latestRemote: 
 const AHEAD: BranchDivergence = { state: 'ahead', latest: 'x', latestRemote: 'y' };
 const BEHIND: BranchDivergence = { state: 'behindOrDiverged', latest: 'x', latestRemote: 'y' };
 
-function emptyGraph(): BranchGraph {
-  return {
-    current: 'x',
-    branch: { name: 'feature-a', revisions: [] },
-    mergesFromParent: [],
-    mergesToParent: [],
-  };
+// A REPOSITORY_STATUS_REVISION-shaped answer: current branch + revision +
+// SDK-computed divergence in one call (C25/C27).
+function revisionStatus(
+  divergence: BranchDivergence,
+  overrides: Partial<WorkspaceRevisionStatus> = {}
+): WorkspaceRevisionStatus {
+  return { branchName: 'feature-a', revision: divergence.latest, divergence, ...overrides };
 }
 
-// A graph whose branch lane carries two of its own commits plus a shared
-// parent revision (the parent lineage must be excluded from session commits).
-function graphWithOwnCommits(): BranchGraph {
-  return {
-    current: 'c2',
-    branch: {
-      name: 'feature-a',
-      revisions: [
-        { revision: 'c2', revisionNumber: 3, message: 'second', timestamp: 200 },
-        { revision: 'c1', revisionNumber: 2, message: 'first', timestamp: 100 },
-        { revision: 'p0', revisionNumber: 1, message: 'base', timestamp: 50 },
-      ],
-    },
-    parent: {
-      name: 'main',
-      branchPoint: 'p0',
-      revisions: [{ revision: 'p0', revisionNumber: 1, message: 'base', timestamp: 50 }],
-    },
-    mergesFromParent: [],
-    mergesToParent: [],
-  };
+// The branch's own commits since it forked (the SDK's onlyBranch history
+// walk), newest-first, enriched.
+function ownCommits(): RevisionSummary[] {
+  return [
+    { revision: 'c2', revisionNumber: 3, message: 'second', timestamp: 200 },
+    { revision: 'c1', revisionNumber: 2, message: 'first', timestamp: 100 },
+  ];
 }
 
 // --- fake dependencies ------------------------------------------------------
@@ -127,12 +113,12 @@ class FakeLore extends EventEmitter {
   getFileStatus = jest.fn(
     async (_repositoryPath: string): Promise<LoreFileStatusGroup> => CLEAN_STATUS
   );
-  getBranchDivergence = jest.fn(async (): Promise<BranchDivergence> => IN_SYNC);
-  getBranchGraph = jest.fn(async (): Promise<BranchGraph> => emptyGraph());
-  // Anchor-only signals (packet U3): resolving the card-view repo's current
-  // branch + revision. Unused unless a test configures a repository record.
-  listBranches = jest.fn(async (): Promise<LoreBranch[]> => []);
-  getCurrentRevision = jest.fn(async (): Promise<string> => '');
+  // One status call per card: branch + revision + divergence (C25/C27). Also
+  // resolves the anchor's identity when a test configures a repository record.
+  getWorkspaceRevisionStatus = jest.fn(async (): Promise<WorkspaceRevisionStatus | undefined> =>
+    revisionStatus(IN_SYNC)
+  );
+  getSessionCommits = jest.fn(async (): Promise<RevisionSummary[]> => []);
 }
 
 class FakeWorkspaces extends EventEmitter {
@@ -364,7 +350,7 @@ describe('WorkspaceModelService.snapshot — card data', () => {
   it('reports session commits as the branch own revisions, excluding parent lineage', async () => {
     const { model, lore, observer } = makeHarness([workspace()]);
     observer.sessions = [sessionRecord({ status: 'ended' })];
-    lore.getBranchGraph.mockResolvedValueOnce(graphWithOwnCommits());
+    lore.getSessionCommits.mockResolvedValueOnce(ownCommits());
 
     const card = onlyCard(await model.snapshot(REPO_ID));
     expect(card.sessionCommits.map(rev => rev.revision)).toEqual(['c2', 'c1']);
@@ -375,8 +361,8 @@ describe('WorkspaceModelService.snapshot — card data', () => {
   it('degrades a workspace whose Lore signals all throw to idle without failing', async () => {
     const { model, lore } = makeHarness([workspace()]);
     lore.getFileStatus.mockRejectedValueOnce(new Error('gone'));
-    lore.getBranchDivergence.mockRejectedValueOnce(new Error('gone'));
-    lore.getBranchGraph.mockRejectedValueOnce(new Error('gone'));
+    lore.getWorkspaceRevisionStatus.mockRejectedValueOnce(new Error('gone'));
+    lore.getSessionCommits.mockRejectedValueOnce(new Error('gone'));
 
     const card = onlyCard(await model.snapshot(REPO_ID));
     expect(card.attention.band).toBe('idle');
@@ -393,7 +379,7 @@ describe('WorkspaceModelService.snapshot — card data', () => {
 
   it('maps ahead divergence to an unpushed reason (hookless awaiting review)', async () => {
     const { model, lore } = makeHarness([workspace()]);
-    lore.getBranchDivergence.mockResolvedValueOnce(AHEAD);
+    lore.getWorkspaceRevisionStatus.mockResolvedValueOnce(revisionStatus(AHEAD));
 
     const card = onlyCard(await model.snapshot(REPO_ID));
     expect(card.attention.band).toBe('awaitingReview');
@@ -406,7 +392,7 @@ describe('WorkspaceModelService.snapshot — card data', () => {
     // A dirty tree pulls the finished agent into awaiting review, where the
     // behind/diverged divergence surfaces as its own reason.
     lore.getFileStatus.mockResolvedValueOnce(dirtyStatus());
-    lore.getBranchDivergence.mockResolvedValueOnce(BEHIND);
+    lore.getWorkspaceRevisionStatus.mockResolvedValueOnce(revisionStatus(BEHIND));
 
     const card = onlyCard(await model.snapshot(REPO_ID));
     expect(card.attention.band).toBe('awaitingReview');
@@ -777,11 +763,9 @@ describe('WorkspaceModelService.snapshot — anchor workspace (packet U3)', () =
   it('includes the anchor as a member marked isActive, alongside its provisioned worktrees', async () => {
     const { model, repository, lore } = makeHarness([workspace()]);
     repository.getById.mockResolvedValue(anchorRepo());
-    lore.listBranches.mockResolvedValue([
-      { name: 'feature-x', isDefault: false, isCurrent: false },
-      { name: 'main', isDefault: true, isCurrent: true },
-    ]);
-    lore.getCurrentRevision.mockResolvedValue('rev-anchor');
+    lore.getWorkspaceRevisionStatus.mockResolvedValue(
+      revisionStatus(IN_SYNC, { branchName: 'main', revision: 'rev-anchor' })
+    );
 
     const snapshot = await model.snapshot(REPO_ID);
     expect(snapshot.cards).toHaveLength(2);
@@ -809,16 +793,16 @@ describe('WorkspaceModelService.snapshot — anchor workspace (packet U3)', () =
   it('omits the anchor when its current branch cannot be resolved, without failing the snapshot', async () => {
     const { model, repository, lore } = makeHarness([workspace()]);
     repository.getById.mockResolvedValue(anchorRepo());
-    lore.listBranches.mockRejectedValue(new Error('boom'));
+    lore.getWorkspaceRevisionStatus.mockRejectedValue(new Error('boom'));
 
     const snapshot = await model.snapshot(REPO_ID);
     expect(snapshot.cards).toHaveLength(1);
   });
 
-  it('omits the anchor when no branch reports isCurrent', async () => {
+  it('omits the anchor when the status probe streams no revision event', async () => {
     const { model, repository, lore } = makeHarness([workspace()]);
     repository.getById.mockResolvedValue(anchorRepo());
-    lore.listBranches.mockResolvedValue([{ name: 'main', isDefault: true, isCurrent: false }]);
+    lore.getWorkspaceRevisionStatus.mockResolvedValue(undefined);
 
     const snapshot = await model.snapshot(REPO_ID);
     expect(snapshot.cards).toHaveLength(1);
@@ -827,7 +811,9 @@ describe('WorkspaceModelService.snapshot — anchor workspace (packet U3)', () =
   it('bands a dirty attached-origin anchor (no agent, no provisionedAt) from Lore signals alone', async () => {
     const { model, repository, lore } = makeHarness([]);
     repository.getById.mockResolvedValue(anchorRepo());
-    lore.listBranches.mockResolvedValue([{ name: 'main', isDefault: true, isCurrent: true }]);
+    lore.getWorkspaceRevisionStatus.mockResolvedValue(
+      revisionStatus(IN_SYNC, { branchName: 'main' })
+    );
     lore.getFileStatus.mockResolvedValue(dirtyStatus());
 
     const card = onlyCard(await model.snapshot(REPO_ID));
@@ -841,7 +827,9 @@ describe('WorkspaceModelService.snapshot — anchor workspace (packet U3)', () =
   it('bands a clean attached-origin anchor idle', async () => {
     const { model, repository, lore } = makeHarness([]);
     repository.getById.mockResolvedValue(anchorRepo());
-    lore.listBranches.mockResolvedValue([{ name: 'main', isDefault: true, isCurrent: true }]);
+    lore.getWorkspaceRevisionStatus.mockResolvedValue(
+      revisionStatus(IN_SYNC, { branchName: 'main' })
+    );
 
     const card = onlyCard(await model.snapshot(REPO_ID));
     expect(card.attention.band).toBe('idle');
@@ -850,7 +838,9 @@ describe('WorkspaceModelService.snapshot — anchor workspace (packet U3)', () =
   it('validates an anchor-including snapshot against the P2 schema', async () => {
     const { model, repository, lore } = makeHarness([workspace()]);
     repository.getById.mockResolvedValue(anchorRepo());
-    lore.listBranches.mockResolvedValue([{ name: 'main', isDefault: true, isCurrent: true }]);
+    lore.getWorkspaceRevisionStatus.mockResolvedValue(
+      revisionStatus(IN_SYNC, { branchName: 'main' })
+    );
 
     const snapshot = await model.snapshot(REPO_ID);
     expect(() => WorkspaceModelSnapshotSchema.parse(snapshot)).not.toThrow();

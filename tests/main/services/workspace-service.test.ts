@@ -225,10 +225,10 @@ describe('WorkspaceService', () => {
     loreRepositoryService = {
       switchBranch: jest.fn(async () => undefined),
       getFileStatus: jest.fn(async () => ({ untracked: [], unstaged: [], staged: [] })),
-      getBranchDivergence: jest.fn(async () => ({
-        state: 'inSync',
-        latest: 'a',
-        latestRemote: 'a',
+      getWorkspaceRevisionStatus: jest.fn(async () => ({
+        branchName: BRANCH,
+        revision: 'a',
+        divergence: { state: 'inSync', latest: 'a', latestRemote: 'a' },
       })),
       // Provision stamps the workspace's stable Lore id; default to none so
       // grouping falls back to url unless a test opts in.
@@ -1092,10 +1092,10 @@ describe('WorkspaceService', () => {
     it('refuses when the workspace has unpushed commits and force is false', async () => {
       // Given: a tracked workspace that is ahead of the remote
       await registeredWorkspace(true);
-      loreRepositoryService.getBranchDivergence.mockResolvedValue({
-        state: 'ahead',
-        latest: 'b',
-        latestRemote: 'a',
+      loreRepositoryService.getWorkspaceRevisionStatus.mockResolvedValue({
+        branchName: BRANCH,
+        revision: 'b',
+        divergence: { state: 'ahead', latest: 'b', latestRemote: 'a' },
       });
 
       // When/Then: teardown is refused
@@ -1109,10 +1109,10 @@ describe('WorkspaceService', () => {
       // Given: a tracked workspace whose branch is behindOrDiverged — its
       // local commits are not provably on the remote (remote moved on too)
       await registeredWorkspace(true);
-      loreRepositoryService.getBranchDivergence.mockResolvedValue({
-        state: 'behindOrDiverged',
-        latest: 'b',
-        latestRemote: 'c',
+      loreRepositoryService.getWorkspaceRevisionStatus.mockResolvedValue({
+        branchName: BRANCH,
+        revision: 'b',
+        divergence: { state: 'behindOrDiverged', latest: 'b', latestRemote: 'c' },
       });
 
       // When/Then: unforced teardown is refused and nothing is deleted
@@ -1128,10 +1128,10 @@ describe('WorkspaceService', () => {
       // pushed) and the branch tip has moved past its creation fork point:
       // committed-but-unpushed agent work
       await registeredWorkspace(true);
-      loreRepositoryService.getBranchDivergence.mockResolvedValue({
-        state: 'unknown',
-        latest: '',
-        latestRemote: '',
+      loreRepositoryService.getWorkspaceRevisionStatus.mockResolvedValue({
+        branchName: BRANCH,
+        revision: '',
+        divergence: { state: 'unknown', latest: '', latestRemote: '' },
       });
       mockLore.branchInfo.mockReturnValue(
         fluentMock({
@@ -1157,10 +1157,10 @@ describe('WorkspaceService', () => {
       // has no commits of its own (the fork revision came from the clone), so
       // nothing exists only locally
       await registeredWorkspace(true);
-      loreRepositoryService.getBranchDivergence.mockResolvedValue({
-        state: 'unknown',
-        latest: '',
-        latestRemote: '',
+      loreRepositoryService.getWorkspaceRevisionStatus.mockResolvedValue({
+        branchName: BRANCH,
+        revision: '',
+        divergence: { state: 'unknown', latest: '', latestRemote: '' },
       });
       mockLore.branchInfo.mockReturnValue(
         fluentMock({
@@ -1185,10 +1185,10 @@ describe('WorkspaceService', () => {
       // Given: unknown divergence and BRANCH_INFO streams nothing, so the
       // tip and fork point are unresolvable
       await registeredWorkspace(true);
-      loreRepositoryService.getBranchDivergence.mockResolvedValue({
-        state: 'unknown',
-        latest: '',
-        latestRemote: '',
+      loreRepositoryService.getWorkspaceRevisionStatus.mockResolvedValue({
+        branchName: BRANCH,
+        revision: '',
+        divergence: { state: 'unknown', latest: '', latestRemote: '' },
       });
 
       // When/Then: unforced teardown is refused rather than guessing
@@ -1429,10 +1429,10 @@ describe('WorkspaceService', () => {
         unstaged: [{ path: 'a.txt', isUntracked: false, isStaged: false, conflict: false }],
         staged: [],
       });
-      loreRepositoryService.getBranchDivergence.mockResolvedValue({
-        state: 'ahead',
-        latest: 'b',
-        latestRemote: 'a',
+      loreRepositoryService.getWorkspaceRevisionStatus.mockResolvedValue({
+        branchName: BRANCH,
+        revision: 'b',
+        divergence: { state: 'ahead', latest: 'b', latestRemote: 'a' },
       });
 
       // When/Then: forget still succeeds
@@ -1449,7 +1449,7 @@ describe('WorkspaceService', () => {
       );
     });
 
-    it('emits a lifecycle event carrying repositoryId + path on success', async () => {
+    it('emits a lifecycle event on success', async () => {
       // Given: a clean, tracked workspace
       fs.mkdirSync(workspaceDir, { recursive: true });
       stores.register('shared', { instanceId: 'inst-1', path: workspaceDir, branchName: BRANCH });
@@ -1461,7 +1461,7 @@ describe('WorkspaceService', () => {
       await service.forget({ workspaceId: 'inst-1' });
 
       // Then: a lifecycle event fires so the model refreshes immediately
-      expect(listener).toHaveBeenCalledWith({ repositoryId: repo.id, path: workspaceDir });
+      expect(listener).toHaveBeenCalledTimes(1);
     });
 
     it('forgets a non-anchor attached-origin sibling without touching its directory (amendment: Forget works regardless of origin)', async () => {
@@ -1499,7 +1499,7 @@ describe('WorkspaceService', () => {
   });
 
   describe('lifecycle events', () => {
-    it('emits a lifecycle event carrying repositoryId + path on successful provision', async () => {
+    it('emits a lifecycle event on successful provision', async () => {
       // Given: a clone that joins a shared store self-reporting this workspace
       stores.register('shared', {
         instanceId: 'inst-1',
@@ -1515,7 +1515,6 @@ describe('WorkspaceService', () => {
 
       // Then: a lifecycle event fires with the repository id and workspace path
       expect(listener).toHaveBeenCalledTimes(1);
-      expect(listener).toHaveBeenCalledWith({ repositoryId: repo.id, path: workspaceDir });
     });
 
     it('emits a lifecycle event when an existing workspace is adopted', async () => {
@@ -1535,7 +1534,6 @@ describe('WorkspaceService', () => {
 
       // Then: the lifecycle event still fires
       expect(listener).toHaveBeenCalledTimes(1);
-      expect(listener).toHaveBeenCalledWith({ repositoryId: repo.id, path: workspaceDir });
     });
 
     it('does not emit a lifecycle event when provision fails', async () => {
@@ -1555,7 +1553,7 @@ describe('WorkspaceService', () => {
       expect(listener).not.toHaveBeenCalled();
     });
 
-    it('emits a lifecycle event carrying repositoryId + path on successful teardown', async () => {
+    it('emits a lifecycle event on successful teardown', async () => {
       // Given: a clean, tracked workspace with a sibling in the shared store
       fs.mkdirSync(workspaceDir, { recursive: true });
       stores.register('shared', { instanceId: 'inst-1', path: workspaceDir, branchName: BRANCH });
@@ -1574,7 +1572,6 @@ describe('WorkspaceService', () => {
 
       // Then: a lifecycle event fires with the repository id and workspace path
       expect(listener).toHaveBeenCalledTimes(1);
-      expect(listener).toHaveBeenCalledWith({ repositoryId: repo.id, path: workspaceDir });
     });
 
     it('does not emit a lifecycle event when teardown fails (uncommitted changes)', async () => {

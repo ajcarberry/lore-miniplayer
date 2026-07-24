@@ -1,12 +1,13 @@
-import { lore, LoreError } from '@lore-vcs/sdk';
-import type { LoreFluentApi } from '@lore-vcs/sdk';
+import { lore } from '@lore-vcs/sdk';
 import { LoreEventTag } from '@lore-vcs/sdk/types/enums';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import type { MainLogger } from '../ipc/logger';
-import type { BranchDivergence, LoreFileStatusGroup, Repository } from '../../shared/types';
-import { collectEvents } from './lore-events';
+import type { LoreFileStatusGroup, Repository } from '../../shared/types';
 import type { LoreEventDataOf } from './lore-events';
+import { OperationError, operationHelpers } from './lore-operation';
+import type { WorkspaceRevisionStatus } from './lore-repository';
+import { isDirty } from './lore-status';
 import { isUnknownHash } from './branch-graph';
 import { sameLoreRepo } from './workspace-store';
 
@@ -59,51 +60,17 @@ export async function safeLoreRepositoryId(
   }
 }
 
-// Generic Lore SDK execution + error-wrapping helpers shared by WorkspaceService
-// operations (extracted so workspace-service.ts stays under the project's
-// max-lines limit; decompose per eslint.config.js's size-limit guidance).
+// WorkspaceService's typed operation error + run/collect helpers, derived from
+// the shared scaffold in ./lore-operation.
 
-export class WorkspaceOperationError extends Error {
-  constructor(
-    message: string,
-    public readonly errorType?: number
-  ) {
-    super(message);
+export class WorkspaceOperationError extends OperationError {
+  constructor(message: string, errorType?: number) {
+    super(message, errorType);
     this.name = 'WorkspaceOperationError';
   }
 }
 
-export function toOperationError(context: string, error: unknown): WorkspaceOperationError {
-  if (error instanceof WorkspaceOperationError) {
-    return error;
-  }
-  if (error instanceof LoreError) {
-    const firstError = error.loreErrors?.[0];
-    return new WorkspaceOperationError(`${context}: ${error.message}`, firstError?.data.errorType);
-  }
-  const message = error instanceof Error ? error.message : String(error);
-  return new WorkspaceOperationError(`${context}: ${message}`);
-}
-
-// Runs a fluent SDK operation, wrapping any failure as a WorkspaceOperationError.
-export async function run(operation: LoreFluentApi, context: string): Promise<void> {
-  try {
-    await operation.waitAsync();
-  } catch (error) {
-    throw toOperationError(context, error);
-  }
-}
-
-// Runs a fluent SDK operation and collects the events matching `tag`, wrapping
-// any failure as a WorkspaceOperationError.
-export async function collect<TTag extends LoreEventTag, T>(
-  operation: LoreFluentApi,
-  tag: TTag,
-  map: (data: LoreEventDataOf<TTag>) => T | undefined,
-  context: string
-): Promise<T[]> {
-  return collectEvents(operation, tag, map, error => toOperationError(context, error));
-}
+export const { toOperationError, run, collect } = operationHelpers(WorkspaceOperationError);
 
 // --- provision + teardown guards (moved from workspace-service.ts to keep it
 // under the project's max-lines limit) ---------------------------------------
@@ -142,32 +109,35 @@ export async function assertSafeTeardownPath(
 // The narrow slice of LoreRepositoryService the unsaved-work guard needs.
 interface UnsavedWorkProbe {
   getFileStatus(repositoryPath: string): Promise<LoreFileStatusGroup>;
-  getBranchDivergence(repositoryPath: string, branchName: string): Promise<BranchDivergence>;
+  getWorkspaceRevisionStatus(repositoryPath: string): Promise<WorkspaceRevisionStatus | undefined>;
 }
 
 // Teardown's unsaved-work guard (C52), failing closed: only an inSync branch
 // provably has every local commit on the remote. 'ahead' has unpushed commits
 // outright; 'behindOrDiverged' cannot prove the local tip is remote (true
 // divergence loses commits too); 'unknown' — typically a provisioned branch
-// never pushed, so no remote tip resolves — is allowed only when the branch
-// tip still sits at its creation fork point (a fresh branch with no commits
-// of its own: the fork revision came from the clone). A tip past the fork
-// point, or unresolvable evidence, counts as unpushed work.
+// never pushed, so no remote tip resolves, and also the fallback when the
+// status probe streams nothing — is allowed only when the branch tip still
+// sits at its creation fork point (a fresh branch with no commits of its own:
+// the fork revision came from the clone). A tip past the fork point, or
+// unresolvable evidence, counts as unpushed work. Divergence comes from one
+// repositoryStatus({ revisionOnly: true }) call (C27) — a teardown target is
+// its branch's own checkout, so the current-branch answer is the right one.
 export async function assertNoUnsavedWork(
   probe: UnsavedWorkProbe,
   workspacePath: string,
   branchName: string
 ): Promise<void> {
   const status = await probe.getFileStatus(workspacePath);
-  const dirtyCount = status.untracked.length + status.unstaged.length + status.staged.length;
-  if (dirtyCount > 0) {
+  if (isDirty(status)) {
     throw new Error('Workspace has uncommitted changes; pass force to remove it anyway');
   }
-  const divergence = await probe.getBranchDivergence(workspacePath, branchName);
-  if (divergence.state === 'inSync') {
+  const revisionStatus = await probe.getWorkspaceRevisionStatus(workspacePath);
+  const state = revisionStatus?.divergence.state ?? 'unknown';
+  if (state === 'inSync') {
     return;
   }
-  if (divergence.state !== 'unknown') {
+  if (state !== 'unknown') {
     throw new Error('Workspace has unpushed commits; pass force to remove it anyway');
   }
   const fork = await getBranchFork(workspacePath, branchName);

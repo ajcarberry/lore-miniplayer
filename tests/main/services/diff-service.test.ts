@@ -623,20 +623,8 @@ describe('DiffService', () => {
     });
   });
 
-  describe('compare — request validation', () => {
-    it('rejects a request missing a repositoryPath before calling the SDK', async () => {
-      // When: comparing with an invalid request
-      const promise = service.compare({
-        repositoryPath: '',
-        source: { kind: 'workingTree' },
-        target: { kind: 'workingTree' },
-      });
-
-      // Then: it throws before reaching fileDiff
-      await expect(promise).rejects.toThrow();
-      expect(mockLore.fileDiff).not.toHaveBeenCalled();
-    });
-  });
+  // Request validation lives at the IPC boundary (validators.ts, covered by
+  // tests/main/ipc/validators.test.ts) — the service takes typed requests.
 
   describe('computeLineStats', () => {
     it('counts + and - lines while ignoring the +++/--- file headers', () => {
@@ -683,7 +671,8 @@ describe('DiffService', () => {
             }),
             fileDiffEvent({
               path: 'mod.txt',
-              patch: '--- mod.txt@1\n+++ mod.txt\n@@ -2 +2 @@\n-bravo\n+BRAVO-EDIT\n@@ -3,0 +4 @@\n+DELTA\n',
+              patch:
+                '--- mod.txt@1\n+++ mod.txt\n@@ -2 +2 @@\n-bravo\n+BRAVO-EDIT\n@@ -3,0 +4 @@\n+DELTA\n',
               action: LoreFileAction.KEEP,
             }),
             fileDiffEvent({
@@ -691,7 +680,11 @@ describe('DiffService', () => {
               patch: '--- del.txt@1\n+++ /dev/null\n@@ -1,3 +0,0 @@\n-one\n-two\n-three\n',
               action: LoreFileAction.DELETE,
             }),
-            fileDiffEvent({ path: 'bin.png', patch: 'Binary files differ\n', action: LoreFileAction.KEEP }),
+            fileDiffEvent({
+              path: 'bin.png',
+              patch: 'Binary files differ\n',
+              action: LoreFileAction.KEEP,
+            }),
             fileDiffEvent({
               path: 'staged.txt',
               patch: '--- staged.txt@1\n+++ staged.txt\n@@ -1,0 +2 @@\n+STAGED-EDIT\n',
@@ -713,7 +706,13 @@ describe('DiffService', () => {
       expect(args).toEqual({
         sourceRevision: 'cur-rev',
         targetRevision: '',
-        paths: ['/repo/add.txt', '/repo/mod.txt', '/repo/del.txt', '/repo/bin.png', '/repo/staged.txt'],
+        paths: [
+          '/repo/add.txt',
+          '/repo/mod.txt',
+          '/repo/del.txt',
+          '/repo/bin.png',
+          '/repo/staged.txt',
+        ],
       });
       // branchInfo/branchDiff are no longer part of the card-stats path.
       expect(mockLore.branchInfo).not.toHaveBeenCalled();
@@ -734,7 +733,8 @@ describe('DiffService', () => {
         {
           path: 'mod.txt',
           action: 'modified',
-          patch: '--- mod.txt@1\n+++ mod.txt\n@@ -2 +2 @@\n-bravo\n+BRAVO-EDIT\n@@ -3,0 +4 @@\n+DELTA\n',
+          patch:
+            '--- mod.txt@1\n+++ mod.txt\n@@ -2 +2 @@\n-bravo\n+BRAVO-EDIT\n@@ -3,0 +4 @@\n+DELTA\n',
           binary: false,
           truncated: false,
           lineStats: { added: 2, removed: 1 },
@@ -866,7 +866,9 @@ describe('DiffService', () => {
         unstaged: [statusFile('mod.txt')],
         staged: [],
       });
-      mockLore.fileDiff.mockReturnValue(fluentMock({ error: loreError(6, 'diff failed') }) as never);
+      mockLore.fileDiff.mockReturnValue(
+        fluentMock({ error: loreError(6, 'diff failed') }) as never
+      );
 
       // When: computing the stats
       const promise = service.workspaceDirtyStats('/repo');

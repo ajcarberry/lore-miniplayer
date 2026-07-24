@@ -36,13 +36,11 @@ import { WorkspaceService } from '../../../src/main/services/workspace-service';
 import { WorkspaceModelService } from '../../../src/main/services/workspace-model';
 import { WorkspaceRegistry } from '../../../src/main/services/workspace-store';
 import type { WorkspaceModelDeps } from '../../../src/main/services/workspace-model';
-import type { LoreRepositoryService } from '../../../src/main/services/lore-repository';
 import type {
-  BranchDivergence,
-  BranchGraph,
-  LoreBranch,
-  LoreFileStatusGroup,
-} from '../../../src/shared/types';
+  LoreRepositoryService,
+  WorkspaceRevisionStatus,
+} from '../../../src/main/services/lore-repository';
+import type { LoreFileStatusGroup, RevisionSummary } from '../../../src/shared/types';
 import { RepositorySchema } from '../../../src/shared/schemas';
 
 const mockLore = lore as jest.Mocked<typeof lore>;
@@ -98,22 +96,15 @@ class FakeModelLore extends EventEmitter {
     unstaged: [],
     staged: [],
   }));
-  getBranchDivergence = jest.fn(async (): Promise<BranchDivergence> => ({
-    state: 'inSync',
-    latest: 'a',
-    latestRemote: 'a',
-  }));
-  getBranchGraph = jest.fn(async (_p: string, branchName: string): Promise<BranchGraph> => ({
-    current: 'x',
-    branch: { name: branchName, revisions: [] },
-    mergesFromParent: [],
-    mergesToParent: [],
-  }));
-  listBranches = jest.fn(async (repositoryPath: string): Promise<LoreBranch[]> => {
-    const current = this.currentBranchByPath.get(path.resolve(repositoryPath)) ?? 'main';
-    return [{ name: current, isDefault: current === 'main', isCurrent: true }];
-  });
-  getCurrentRevision = jest.fn(async (): Promise<string> => 'rev-anchor');
+  // One status call resolves branch + revision + divergence (C25/C27).
+  getWorkspaceRevisionStatus = jest.fn(
+    async (repositoryPath: string): Promise<WorkspaceRevisionStatus> => ({
+      branchName: this.currentBranchByPath.get(path.resolve(repositoryPath)) ?? 'main',
+      revision: 'rev-anchor',
+      divergence: { state: 'inSync', latest: 'a', latestRemote: 'a' },
+    })
+  );
+  getSessionCommits = jest.fn(async (): Promise<RevisionSummary[]> => []);
 }
 
 async function seedTwoAttached(demoPath: string, adfaPath: string): Promise<void> {

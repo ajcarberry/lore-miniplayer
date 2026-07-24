@@ -36,6 +36,24 @@ import type {
   ResolveUserNameResponse,
 } from '../shared/types';
 
+// Subscription factory for the one-way push channels from main. The returned
+// subscribe function wraps the callback so the IpcRendererEvent never crosses
+// the bridge, and returns an unsubscribe. Payloads cross as unknown and are
+// Zod-validated in the renderer before use.
+function makePushSubscription(
+  channel: string
+): (callback: (payload: unknown) => void) => () => void {
+  return callback => {
+    const listener = (_event: unknown, payload: unknown): void => {
+      callback(payload);
+    };
+    ipcRenderer.on(channel, listener);
+    return (): void => {
+      ipcRenderer.removeListener(channel, listener);
+    };
+  };
+}
+
 // Expose window control APIs
 contextBridge.exposeInMainWorld('electronAPI', {
   config: {
@@ -134,18 +152,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
           localPath
         ) as Promise<VoidResult>;
       },
-      // One-way push channel from main streaming clone progress; the
-      // payload crosses the bridge as unknown and is Zod-validated in the
-      // renderer before use.
-      onCloneProgress: (callback: (progress: unknown) => void): (() => void) => {
-        const listener = (_event: unknown, payload: unknown): void => {
-          callback(payload);
-        };
-        ipcRenderer.on('lore:repository:clone-progress', listener);
-        return (): void => {
-          ipcRenderer.removeListener('lore:repository:clone-progress', listener);
-        };
-      },
+      // One-way push channel from main streaming clone progress.
+      onCloneProgress: makePushSubscription('lore:repository:clone-progress'),
       sync: async (
         repositoryPath: string,
         targetBranch?: string,
@@ -182,17 +190,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
           repositoryPath
         ) as Promise<VoidResult>;
       },
-      // One-way push channel from main; the payload crosses the bridge as
-      // unknown and is Zod-validated in the renderer before use.
-      onNotification: (callback: (notification: unknown) => void): (() => void) => {
-        const listener = (_event: unknown, payload: unknown): void => {
-          callback(payload);
-        };
-        ipcRenderer.on('lore:notification', listener);
-        return (): void => {
-          ipcRenderer.removeListener('lore:notification', listener);
-        };
-      },
+      // One-way push channel from main.
+      onNotification: makePushSubscription('lore:notification'),
     },
     files: {
       getStatus: async (repositoryPath: string): Promise<Result<LoreFileStatusGroup>> => {
@@ -278,15 +277,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         repositoryId
       ) as Promise<VoidResult>;
     },
-    onSnapshot: (callback: (snapshot: unknown) => void): (() => void) => {
-      const listener = (_event: unknown, payload: unknown): void => {
-        callback(payload);
-      };
-      ipcRenderer.on(IPC_CHANNELS.workspaceModel.snapshot, listener);
-      return (): void => {
-        ipcRenderer.removeListener(IPC_CHANNELS.workspaceModel.snapshot, listener);
-      };
-    },
+    onSnapshot: makePushSubscription(IPC_CHANNELS.workspaceModel.snapshot),
   },
   // The review window's compare picker (design 2b).
   diff: {
@@ -310,15 +301,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         Result<ReviewOpenRequest>
       >;
     },
-    onContext: (callback: (request: unknown) => void): (() => void) => {
-      const listener = (_event: unknown, payload: unknown): void => {
-        callback(payload);
-      };
-      ipcRenderer.on(IPC_CHANNELS.review.context, listener);
-      return (): void => {
-        ipcRenderer.removeListener(IPC_CHANNELS.review.context, listener);
-      };
-    },
+    onContext: makePushSubscription(IPC_CHANNELS.review.context),
   },
   // The review window's merge workflow (design 2c): start a branch→main merge,
   // resolve conflicts accept-mine/accept-theirs per file, abort, or complete

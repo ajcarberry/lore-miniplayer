@@ -229,9 +229,64 @@ export function registerWindowHandlers(log: MainLogger): void {
 }
 
 // ---------------------------------------------------------------------------
+// Secondary windows (Mission Control, Review): normal, movable windows with
+// the app's own frameless TitleBar chrome — NOT the always-on-top ambient
+// pill. They share one chrome + security recipe, differing only in size,
+// title, and entry html.
+// ---------------------------------------------------------------------------
+
+export interface SecondaryWindowDeps {
+  readonly preloadPath: string;
+  readonly rendererDir: string;
+  readonly devServerUrl?: string;
+  // Security wiring stays with the caller (index.ts owns the logger + dev URL);
+  // applied to every window this factory creates, per security.ts.
+  readonly harden: (win: BrowserWindow) => void;
+}
+
+interface SecondaryWindowOptions {
+  readonly width: number;
+  readonly height: number;
+  readonly title: string;
+  readonly htmlFile: string;
+}
+
+// SECURITY: the webPreferences here (nodeIntegration off, contextIsolation +
+// sandbox on, webSecurity on, no insecure content) and the harden() call are
+// the renderer sandbox for every secondary window — asserted by the window
+// tests; do not weaken.
+function createSecondaryWindow(
+  deps: SecondaryWindowDeps,
+  options: SecondaryWindowOptions
+): BrowserWindow {
+  const win = new BrowserWindow({
+    width: options.width,
+    height: options.height,
+    frame: false,
+    title: options.title,
+    backgroundColor: '#f7f2e7',
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      preload: deps.preloadPath,
+    },
+  });
+  deps.harden(win);
+
+  if (deps.devServerUrl !== undefined) {
+    void win.loadURL(`${deps.devServerUrl}/${options.htmlFile}`);
+  } else {
+    void win.loadFile(path.join(deps.rendererDir, options.htmlFile));
+  }
+  return win;
+}
+
+// ---------------------------------------------------------------------------
 // Mission Control window (P10, design 2a): a secondary, single-instance window
-// scoped to the selected repository. It is NOT the always-on-top ambient pill —
-// it is a normal, movable window with the app's own frameless TitleBar chrome.
+// scoped to the selected repository.
 // ---------------------------------------------------------------------------
 
 // The subset of the workspace model this window drives: it warms the snapshot
@@ -245,13 +300,7 @@ export interface MissionControlModel {
   refreshNow(repositoryId: string): Promise<void>;
 }
 
-export interface MissionControlWindowDeps {
-  readonly preloadPath: string;
-  readonly rendererDir: string;
-  readonly devServerUrl?: string;
-  // Security wiring stays with the caller (index.ts owns the logger + dev URL);
-  // applied to every window this factory creates, per security.ts.
-  readonly harden: (win: BrowserWindow) => void;
+export interface MissionControlWindowDeps extends SecondaryWindowDeps {
   readonly model: MissionControlModel;
 }
 
@@ -291,28 +340,11 @@ export function registerMissionControlWindow(
       return;
     }
 
-    const win = new BrowserWindow({
-      width: MISSION_CONTROL_SIZE.width,
-      height: MISSION_CONTROL_SIZE.height,
-      frame: false,
+    const win = createSecondaryWindow(deps, {
+      ...MISSION_CONTROL_SIZE,
       title: 'Lore MiniPlayer — Mission Control',
-      backgroundColor: '#f7f2e7',
-      webPreferences: {
-        nodeIntegration: false,
-        contextIsolation: true,
-        sandbox: true,
-        webSecurity: true,
-        allowRunningInsecureContent: false,
-        preload: deps.preloadPath,
-      },
+      htmlFile: 'mission-control.html',
     });
-    deps.harden(win);
-
-    if (deps.devServerUrl !== undefined) {
-      void win.loadURL(`${deps.devServerUrl}/mission-control.html`);
-    } else {
-      void win.loadFile(path.join(deps.rendererDir, 'mission-control.html'));
-    }
 
     win.on('closed', () => {
       missionControlWindow = null;
@@ -358,14 +390,7 @@ export function registerMissionControlWindow(
 // wiring; one instance per workspace checkout (keyed by its path).
 // ---------------------------------------------------------------------------
 
-export interface ReviewWindowDeps {
-  readonly preloadPath: string;
-  readonly rendererDir: string;
-  readonly devServerUrl?: string;
-  // Security wiring stays with the caller (index.ts owns the logger + dev URL),
-  // applied to every window this factory creates, per security.ts.
-  readonly harden: (win: BrowserWindow) => void;
-}
+export type ReviewWindowDeps = SecondaryWindowDeps;
 
 // Design 2b content is 1180px wide; the window adds chrome padding.
 const REVIEW_WINDOW_SIZE = { width: 1220, height: 840 } as const;
@@ -373,8 +398,7 @@ const REVIEW_WINDOW_SIZE = { width: 1220, height: 840 } as const;
 // One review window per workspace checkout; module-scoped so re-opening the
 // same workspace focuses/re-targets rather than duplicating, and so the open
 // request can be handed back to the window on mount (requestContext).
-const reviewWindows = new Map<string, BrowserWindow>();
-const reviewRequests = new WeakMap<BrowserWindow, ReviewOpenRequest>();
+const reviewWindows = new Map<string, { win: BrowserWindow; request: ReviewOpenRequest }>();
 
 export function registerReviewWindow(log: MainLogger, deps: ReviewWindowDeps): void {
   ipcMain.on(IPC_CHANNELS.review.open, (_event, rawRequest: unknown): void => {
@@ -392,37 +416,19 @@ export function registerReviewWindow(log: MainLogger, deps: ReviewWindowDeps): v
     // Already open for this workspace: re-target the window's workflow/compare
     // and focus, rather than opening a duplicate (packet: one per workspace).
     const existing = reviewWindows.get(request.workspacePath);
-    if (existing && !existing.isDestroyed()) {
-      reviewRequests.set(existing, request);
-      existing.webContents.send(IPC_CHANNELS.review.context, request);
-      existing.focus();
+    if (existing && !existing.win.isDestroyed()) {
+      reviewWindows.set(request.workspacePath, { win: existing.win, request });
+      existing.win.webContents.send(IPC_CHANNELS.review.context, request);
+      existing.win.focus();
       return;
     }
 
-    const win = new BrowserWindow({
-      width: REVIEW_WINDOW_SIZE.width,
-      height: REVIEW_WINDOW_SIZE.height,
-      frame: false,
+    const win = createSecondaryWindow(deps, {
+      ...REVIEW_WINDOW_SIZE,
       title: `Review — ${request.branchName}`,
-      backgroundColor: '#f7f2e7',
-      webPreferences: {
-        nodeIntegration: false,
-        contextIsolation: true,
-        sandbox: true,
-        webSecurity: true,
-        allowRunningInsecureContent: false,
-        preload: deps.preloadPath,
-      },
+      htmlFile: 'review.html',
     });
-    deps.harden(win);
-    reviewRequests.set(win, request);
-    reviewWindows.set(request.workspacePath, win);
-
-    if (deps.devServerUrl !== undefined) {
-      void win.loadURL(`${deps.devServerUrl}/review.html`);
-    } else {
-      void win.loadFile(path.join(deps.rendererDir, 'review.html'));
-    }
+    reviewWindows.set(request.workspacePath, { win, request });
 
     win.on('closed', () => {
       reviewWindows.delete(request.workspacePath);
@@ -435,12 +441,9 @@ export function registerReviewWindow(log: MainLogger, deps: ReviewWindowDeps): v
   ipcMain.handle(
     IPC_CHANNELS.review.requestContext,
     (event: IpcMainInvokeEvent): Result<ReviewOpenRequest> => {
-      for (const win of reviewWindows.values()) {
+      for (const { win, request } of reviewWindows.values()) {
         if (!win.isDestroyed() && win.webContents === event.sender) {
-          const request = reviewRequests.get(win);
-          if (request) {
-            return success(request);
-          }
+          return success(request);
         }
       }
       return failure('No review context for this window');

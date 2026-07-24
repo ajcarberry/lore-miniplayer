@@ -8,6 +8,7 @@ import {
   getMissionControlWindow,
   registerReviewWindow,
 } from './ipc/window-handlers';
+import type { SecondaryWindowDeps } from './ipc/window-handlers';
 import { RepositoryService } from './services/repository';
 import { initializeLoreSdk, shutdownLoreSdk } from './services/lore-sdk';
 import { LoreRepositoryService } from './services/lore-repository';
@@ -266,22 +267,17 @@ app.whenReady().then(async () => {
   const missionControlDevServerUrl = app.isPackaged
     ? undefined
     : process.env['ELECTRON_RENDERER_URL'];
-  registerMissionControlWindow(log, {
+  const secondaryWindowDeps: SecondaryWindowDeps = {
     preloadPath: path.join(moduleDir, '../preload/preload.js'),
     rendererDir: path.join(moduleDir, '../renderer'),
     ...(missionControlDevServerUrl ? { devServerUrl: missionControlDevServerUrl } : {}),
     harden: win => hardenWebContents(win.webContents, log, missionControlDevServerUrl),
-    model: workspaceModel,
-  });
+  };
+  registerMissionControlWindow(log, { ...secondaryWindowDeps, model: workspaceModel });
   // Review window (P11, design 2b/2c). Opened per workspace from Mission
   // Control's Review / Commit / Merge actions with its targets + workflow
   // preloaded; same chrome and security wiring as Mission Control.
-  registerReviewWindow(log, {
-    preloadPath: path.join(moduleDir, '../preload/preload.js'),
-    rendererDir: path.join(moduleDir, '../renderer'),
-    ...(missionControlDevServerUrl ? { devServerUrl: missionControlDevServerUrl } : {}),
-    harden: win => hardenWebContents(win.webContents, log, missionControlDevServerUrl),
-  });
+  registerReviewWindow(log, secondaryWindowDeps);
   workspaceModel.on('snapshot', snapshot => {
     const win = getMissionControlWindow();
     if (!win || win.isDestroyed()) {

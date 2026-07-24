@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 import { useCallback } from 'react';
-import { notifications } from '@mantine/notifications';
+import { notifyError } from '../../utils/notify';
 import { useRepositories } from '../../hooks/useRepositories';
 import { useBranches } from '../../hooks/useBranches';
 import { useMissionControlSnapshot } from '../../hooks/useMissionControlSnapshot';
@@ -26,7 +26,7 @@ export function MissionControl(): ReactElement {
   const handleOpenTerminal = useCallback((path: string): void => {
     void window.electronAPI.window.openTerminal(path).then(result => {
       if (!result.success) {
-        notifications.show({ color: 'red', title: 'Open terminal failed', message: result.error });
+        notifyError('Open terminal failed', result.error);
       }
     });
   }, []);
@@ -34,7 +34,7 @@ export function MissionControl(): ReactElement {
   const handleMarkActive = useCallback((workspaceId: string): void => {
     void window.electronAPI.workspace.markActive({ workspaceId }).then(result => {
       if (!result.success) {
-        notifications.show({ color: 'red', title: 'Mark active failed', message: result.error });
+        notifyError('Mark active failed', result.error);
       }
     });
   }, []);
@@ -42,11 +42,7 @@ export function MissionControl(): ReactElement {
   const handleForget = useCallback((workspaceId: string): void => {
     void window.electronAPI.workspace.forget({ workspaceId }).then(result => {
       if (!result.success) {
-        notifications.show({
-          color: 'red',
-          title: 'Forget workspace failed',
-          message: result.error,
-        });
+        notifyError('Forget workspace failed', result.error);
       }
     });
   }, []);
@@ -54,7 +50,7 @@ export function MissionControl(): ReactElement {
   const handleTeardown = useCallback(async (workspaceId: string, force: boolean): Promise<void> => {
     const result = await window.electronAPI.workspace.teardown({ workspaceId, force });
     if (!result.success) {
-      notifications.show({ color: 'red', title: 'Close workspace failed', message: result.error });
+      notifyError('Close workspace failed', result.error);
       throw new Error(result.error);
     }
   }, []);
@@ -69,7 +65,7 @@ export function MissionControl(): ReactElement {
         branchName,
       });
       if (!result.success) {
-        notifications.show({ color: 'red', title: 'Provision failed', message: result.error });
+        notifyError('Provision failed', result.error);
         throw new Error(result.error);
       }
     },
@@ -86,7 +82,7 @@ export function MissionControl(): ReactElement {
     }
     const result = await window.electronAPI.missionControl.refresh(selectedRepo.id);
     if (!result.success) {
-      notifications.show({ color: 'red', title: 'Refresh failed', message: result.error });
+      notifyError('Refresh failed', result.error);
       throw new Error(result.error);
     }
   }, [selectedRepo]);

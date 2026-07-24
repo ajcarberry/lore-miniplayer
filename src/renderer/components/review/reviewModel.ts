@@ -83,6 +83,14 @@ export function totalLineStats(files: readonly ReviewFile[]): LineStats {
 
 export type DiffLineKind = 'context' | 'add' | 'del';
 
+// The added/removed background tones shared by the diff pane and the conflict
+// block's side columns: themeable CSS variables with the design-2b oklch
+// values as fallbacks, defined once so the two surfaces cannot drift.
+export const DIFF_TONE_BG = {
+  add: 'var(--diff-add, oklch(0.94 0.045 145))',
+  del: 'var(--diff-del, oklch(0.94 0.035 25))',
+} as const;
+
 export interface DiffLine {
   readonly kind: DiffLineKind;
   readonly text: string;

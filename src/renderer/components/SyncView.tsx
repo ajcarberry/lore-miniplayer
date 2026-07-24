@@ -249,7 +249,7 @@ export function SyncView({
         onToggleOpen={onToggleWorkingSetOpen}
         onToggleFile={onToggleFile}
         isLoading={fileStaging.isLoadingFiles}
-        {...(conflictRevisionNumber !== undefined ? { conflictRevisionNumber } : {})}
+        conflictRevisionNumber={conflictRevisionNumber}
       />
       {!showClone && (
         <HistorySection

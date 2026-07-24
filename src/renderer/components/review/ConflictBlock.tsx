@@ -2,7 +2,8 @@ import type { ReactElement } from 'react';
 import { Alert, Badge, Box, Button, Group, Text } from '@mantine/core';
 import { IconAlertTriangle } from '@tabler/icons-react';
 import type { FileDiffResult, MergeFileResolution } from '../../../shared/types';
-import { parseHunks } from './reviewModel';
+import { SectionLabel } from '../SectionLabel';
+import { DIFF_TONE_BG, parseHunks } from './reviewModel';
 
 export interface ConflictBlockProps {
   readonly path: string;
@@ -27,25 +28,14 @@ function SideColumn(props: {
 }): ReactElement {
   return (
     <Box style={{ flex: 1, minWidth: 0 }}>
-      <Text
-        size='xs'
-        fw={600}
-        c='dimmed'
-        px={10}
-        py={4}
-        tt='uppercase'
-        style={{ letterSpacing: '0.08em' }}
-      >
+      <SectionLabel px={10} py={4} letterSpacing='0.08em'>
         {props.title}
-      </Text>
+      </SectionLabel>
       <Box
         px={10}
         py={6}
         style={{
-          background:
-            props.tone === 'theirs'
-              ? 'var(--diff-del, oklch(0.94 0.035 25))'
-              : 'var(--diff-add, oklch(0.94 0.045 145))',
+          background: props.tone === 'theirs' ? DIFF_TONE_BG.del : DIFF_TONE_BG.add,
           minHeight: 44,
         }}
       >

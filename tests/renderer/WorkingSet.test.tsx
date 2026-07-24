@@ -17,6 +17,7 @@ function baseProps(overrides: Partial<WorkingSetProps> = {}): WorkingSetProps {
     onToggleOpen: jest.fn(),
     onToggleFile: jest.fn(),
     isLoading: false,
+    conflictRevisionNumber: undefined,
     ...overrides,
   };
 }

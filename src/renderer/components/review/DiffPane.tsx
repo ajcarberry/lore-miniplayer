@@ -2,7 +2,7 @@ import type { ReactElement } from 'react';
 import { Alert, Box, Center, Group, Stack, Text } from '@mantine/core';
 import { IconFileText } from '@tabler/icons-react';
 import type { DiffLineKind, ReviewFile } from './reviewModel';
-import { parseHunks } from './reviewModel';
+import { DIFF_TONE_BG, parseHunks } from './reviewModel';
 
 export interface DiffPaneProps {
   readonly file: ReviewFile | null;
@@ -12,8 +12,8 @@ export interface DiffPaneProps {
 }
 
 const LINE_BG: Record<DiffLineKind, string> = {
-  add: 'oklch(0.94 0.045 145)',
-  del: 'oklch(0.94 0.035 25)',
+  add: DIFF_TONE_BG.add,
+  del: DIFF_TONE_BG.del,
   context: 'transparent',
 };
 
@@ -36,6 +36,10 @@ export function DiffPane(props: DiffPaneProps): ReactElement {
       </Center>
     );
   }
+
+  // Parsed once per render — the emptiness check and the hunk map below share
+  // this, so a large capped patch is never parsed twice.
+  const hunks = file.binary ? [] : parseHunks(file.patch ?? '');
 
   return (
     <Stack gap={0} h='100%' style={{ overflow: 'hidden' }}>
@@ -61,12 +65,12 @@ export function DiffPane(props: DiffPaneProps): ReactElement {
               </Alert>
             </Box>
           )}
-          {parseHunks(file.patch ?? '').length === 0 ? (
+          {hunks.length === 0 ? (
             <Text px={18} py={12} size='sm' c='dimmed'>
               No textual changes to display.
             </Text>
           ) : (
-            parseHunks(file.patch ?? '').map(hunk => (
+            hunks.map(hunk => (
               <Box key={`${hunk.header}:${hunk.lines[0]?.lineNo ?? 0}`}>
                 <Box
                   px={18}

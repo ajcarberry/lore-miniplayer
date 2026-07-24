@@ -139,12 +139,14 @@ describe('MissionCard — pulseDot keyframes reach the Mission Control window', 
   // so the dot silently never pulsed here).
   const rendererDir = path.join(__dirname, '../../../src/renderer');
 
-  it('defines @keyframes pulseDot in globals.css, which the entry imports', () => {
+  it('defines @keyframes pulseDot in globals.css, which the entry imports (via the shared bootstrap)', () => {
     const globalsCss = fs.readFileSync(path.join(rendererDir, 'styles/globals.css'), 'utf8');
+    const bootstrap = fs.readFileSync(path.join(rendererDir, 'bootstrap.tsx'), 'utf8');
     const entry = fs.readFileSync(path.join(rendererDir, 'mission-control.tsx'), 'utf8');
 
     expect(globalsCss).toContain('@keyframes pulseDot');
-    expect(entry).toContain("import './styles/globals.css'");
+    expect(bootstrap).toContain("import './styles/globals.css'");
+    expect(entry).toContain("from './bootstrap'");
   });
 
   it('keeps a single definition — morph.css no longer duplicates the keyframes', () => {

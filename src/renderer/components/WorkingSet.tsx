@@ -20,9 +20,10 @@ export interface WorkingSetProps {
   readonly isLoading: boolean;
   // The revision the working set is conflicted against, for the "conflicts
   // with rN" row message — the branch's current tip, since no per-file
-  // conflict revision is threaded through the status payload (P6). Absent
-  // when the branch graph hasn't resolved a tip yet.
-  readonly conflictRevisionNumber?: number;
+  // conflict revision is threaded through the status payload (P6). Undefined
+  // when the branch graph hasn't resolved a tip yet. Declared `| undefined`
+  // (not optional) so callers pass it plainly, matching SyncView/MiniPlayer.
+  readonly conflictRevisionNumber: number | undefined;
 }
 
 // The dir span below renders with `truncate='start'` (Mantine sets CSS
@@ -52,7 +53,7 @@ function splitPath(path: string): { dir: string; filename: string } {
 interface FileRowProps {
   readonly file: WorkingSetFile;
   readonly onToggleFile: (path: string) => void;
-  readonly conflictRevisionNumber?: number;
+  readonly conflictRevisionNumber: number | undefined;
 }
 
 // An unresolved conflict (design 1c): the stage checkbox becomes a warning
@@ -182,7 +183,7 @@ export function WorkingSet({
                     key={file.path}
                     file={file}
                     onToggleFile={onToggleFile}
-                    {...(conflictRevisionNumber !== undefined ? { conflictRevisionNumber } : {})}
+                    conflictRevisionNumber={conflictRevisionNumber}
                   />
                 ))}
               </Stack>

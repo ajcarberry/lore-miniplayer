@@ -10,6 +10,8 @@ import {
   UnstyledButton,
 } from '@mantine/core';
 import { IconAlertTriangle } from '@tabler/icons-react';
+import { pluralize } from '../../utils/pluralize';
+import { SectionLabel } from '../SectionLabel';
 import type { ReviewFile } from './reviewModel';
 import { totalLineStats } from './reviewModel';
 
@@ -65,17 +67,9 @@ export function FileList(props: FileListProps): ReactElement {
         borderRight: '1px solid var(--hairline, rgba(43,36,22,.1))',
       }}
     >
-      <Text
-        size='xs'
-        fw={600}
-        tt='uppercase'
-        c='dimmed'
-        px='xs'
-        pb={4}
-        style={{ letterSpacing: '0.12em' }}
-      >
-        {`${files.length} ${files.length === 1 ? 'file' : 'files'} · +${total.added} −${total.removed} · stage for commit`}
-      </Text>
+      <SectionLabel px='xs' pb={4} letterSpacing='0.12em'>
+        {`${files.length} ${pluralize(files.length, 'file')} · +${total.added} −${total.removed} · stage for commit`}
+      </SectionLabel>
       <ScrollArea.Autosize mah='100%' style={{ flex: 1 }}>
         <Stack gap={2}>
           {files.map(file => {

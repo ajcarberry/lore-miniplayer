@@ -2,7 +2,6 @@ import type { ReactElement, ReactNode } from 'react';
 import { MantineProvider } from '@mantine/core';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { RightPanel } from '../../../src/renderer/components/review/RightPanel';
 import { ComparePicker } from '../../../src/renderer/components/review/ComparePicker';
 import { FileList } from '../../../src/renderer/components/review/FileList';
 import type { ReviewFile } from '../../../src/renderer/components/review/reviewModel';
@@ -26,18 +25,9 @@ function renderWithMantine(ui: ReactNode): void {
   render((<MantineProvider>{ui}</MantineProvider>) as ReactElement);
 }
 
-describe('RightPanel', () => {
-  it('renders the intention placeholder when no content is provided (P12 slot)', () => {
-    renderWithMantine(<RightPanel />);
-    expect(screen.getByText(/appears here beside the diff/)).toBeInTheDocument();
-  });
-
-  it('renders provided intention content and the session footer slot', () => {
-    renderWithMantine(<RightPanel session={<span>session 9f2c · $1.62</span>}>Asked</RightPanel>);
-    expect(screen.getByText('Asked')).toBeInTheDocument();
-    expect(screen.getByText('session 9f2c · $1.62')).toBeInTheDocument();
-  });
-});
+// RightPanel was folded into IntentionPanel (its placeholder branch was dead
+// in the app); the intention region, session footer, and degrade placeholder
+// are covered by tests/renderer/review/IntentionPanel.test.tsx.
 
 describe('FileList', () => {
   it('renders an empty stats label for a non-binary file that has no line stats', () => {

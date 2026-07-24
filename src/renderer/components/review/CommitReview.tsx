@@ -1,19 +1,21 @@
 import type { ReactElement } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Box, Group, Stack, Text } from '@mantine/core';
-import { notifications } from '@mantine/notifications';
+import { Box, Group, Stack } from '@mantine/core';
 import type {
   FileDiffResult,
   LoreFileStatusGroup,
+  Result,
   ReviewCompare,
   ReviewOpenRequest,
-  RevisionSummary,
 } from '../../../shared/types';
+import { notifyError } from '../../utils/notify';
 import { ComparePicker } from './ComparePicker';
 import { FileList } from './FileList';
 import { DiffPane } from './DiffPane';
 import { IntentionPanel } from './IntentionPanel';
 import { CommitBar } from './CommitBar';
+import { ReviewHeader } from './ReviewHeader';
+import { useReviewMeta } from './useReviewMeta';
 import { composeReviewFiles, compareTargetLabel } from './reviewModel';
 
 export interface CommitReviewProps {
@@ -21,10 +23,6 @@ export interface CommitReviewProps {
 }
 
 const EMPTY_STATUS: LoreFileStatusGroup = { untracked: [], unstaged: [], staged: [] };
-
-function notifyError(title: string, error: string): void {
-  notifications.show({ color: 'red', title, message: error });
-}
 
 // The review window's commit workflow (design 2b): the compare picker drives a
 // diff.compare over the workspace checkout, the file list stages/unstages via
@@ -38,9 +36,12 @@ export function CommitReview(props: CommitReviewProps): ReactElement {
   const [compare, setCompare] = useState<ReviewCompare>(request.compare);
   const [diffs, setDiffs] = useState<FileDiffResult[]>([]);
   const [status, setStatus] = useState<LoreFileStatusGroup>(EMPTY_STATUS);
-  const [revisions, setRevisions] = useState<RevisionSummary[]>([]);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
-  const [repositoryName, setRepositoryName] = useState<string | null>(null);
+  const { repositoryName, revisions } = useReviewMeta(
+    repositoryPath,
+    request.repositoryId,
+    request.branchName
+  );
   const [message, setMessage] = useState<string>('');
   const [committing, setCommitting] = useState(false);
   const [committed, setCommitted] = useState(false);
@@ -50,14 +51,20 @@ export function CommitReview(props: CommitReviewProps): ReactElement {
   // remount when the request changes (keyed in ReviewWindow), so no reset effect
   // is needed here.
 
-  const refreshStatus = useCallback(async (): Promise<void> => {
-    const result = await window.electronAPI.lore.files.getStatus(repositoryPath);
+  // The one status-result handler — the mount/compare effect and the
+  // callback-driven refreshes share it, so success/error handling lives in a
+  // single place.
+  const applyStatusResult = useCallback((result: Result<LoreFileStatusGroup>): void => {
     if (result.success) {
       setStatus(result.data);
     } else {
       notifyError('Could not load file status', result.error);
     }
-  }, [repositoryPath]);
+  }, []);
+
+  const refreshStatus = useCallback(async (): Promise<void> => {
+    applyStatusResult(await window.electronAPI.lore.files.getStatus(repositoryPath));
+  }, [repositoryPath, applyStatusResult]);
 
   // Refetch the diff (and status) whenever the compare selection changes. Both
   // fetches set state only inside their resolved promises (never synchronously
@@ -82,34 +89,14 @@ export function CommitReview(props: CommitReviewProps): ReactElement {
         }
       });
     void window.electronAPI.lore.files.getStatus(repositoryPath).then(result => {
-      if (cancelled) {
-        return;
-      }
-      if (result.success) {
-        setStatus(result.data);
-      } else {
-        notifyError('Could not load file status', result.error);
+      if (!cancelled) {
+        applyStatusResult(result);
       }
     });
     return (): void => {
       cancelled = true;
     };
-  }, [repositoryPath, compare]);
-
-  // Resolve the repo name for the eyebrow and load the branch revisions the
-  // compare picker offers.
-  useEffect(() => {
-    void window.electronAPI.repository.list().then(result => {
-      if (result.success) {
-        setRepositoryName(result.data.find(repo => repo.id === request.repositoryId)?.name ?? null);
-      }
-    });
-    void window.electronAPI.lore.branchGraph(repositoryPath, request.branchName).then(result => {
-      if (result.success) {
-        setRevisions(result.data.branch.revisions);
-      }
-    });
-  }, [repositoryPath, request.repositoryId, request.branchName]);
+  }, [repositoryPath, compare, applyStatusResult]);
 
   const files = useMemo(() => composeReviewFiles(diffs, status), [diffs, status]);
   const stagedCount = files.filter(file => file.staged).length;
@@ -162,31 +149,11 @@ export function CommitReview(props: CommitReviewProps): ReactElement {
 
   return (
     <Stack gap={0} style={{ flex: 1, minHeight: 0 }}>
-      <Group
-        px='md'
-        py='sm'
-        gap='sm'
-        wrap='nowrap'
-        style={{ borderBottom: '1px solid var(--hairline, rgba(43,36,22,.1))' }}
-      >
-        <Stack gap={0} style={{ minWidth: 0 }}>
-          <Text
-            component='h1'
-            ff='var(--font-disp)'
-            fw={600}
-            style={{ fontSize: 15, margin: 0 }}
-            truncate
-          >
-            {`Review — ${request.branchName}`}
-          </Text>
-          <Text size='xs' ff='var(--font-mono)' c='dimmed'>
-            {repositoryName ? `${repositoryName} · ${request.branchName}` : request.branchName}
-          </Text>
-        </Stack>
-        <Box ml='auto'>
-          <ComparePicker compare={compare} revisions={revisions} onChange={setCompare} />
-        </Box>
-      </Group>
+      <ReviewHeader
+        title={`Review — ${request.branchName}`}
+        eyebrow={repositoryName ? `${repositoryName} · ${request.branchName}` : request.branchName}
+        right={<ComparePicker compare={compare} revisions={revisions} onChange={setCompare} />}
+      />
 
       <Group gap={0} align='stretch' wrap='nowrap' style={{ flex: 1, minHeight: 0 }}>
         <Box w={250} style={{ minHeight: 0 }}>

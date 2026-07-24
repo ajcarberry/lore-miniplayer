@@ -13,6 +13,8 @@ import {
 } from '@mantine/core';
 import { IconChevronDown, IconPlus, IconRefresh } from '@tabler/icons-react';
 import type { Repository, Workspace, WorkspaceBand, WorkspaceCard } from '../../../shared/types';
+import { pluralize } from '../../utils/pluralize';
+import { SectionLabel } from '../SectionLabel';
 import { TitleBar } from '../TitleBar';
 import { MissionCard } from './MissionCard';
 import { IdleWorkspaceRow } from './IdleWorkspaceRow';
@@ -57,6 +59,21 @@ interface TeardownTarget {
   readonly isRepoCheckout: boolean;
 }
 
+// The shared busy-flag shape around the async view actions: raise the flag,
+// run, apply the success step, swallow the failure (the container surfaces
+// it), always clear the flag.
+function runWithBusy(
+  setBusy: (busy: boolean) => void,
+  run: Promise<void>,
+  onSuccess?: () => void
+): void {
+  setBusy(true);
+  void run
+    .then(() => onSuccess?.())
+    .catch(() => undefined)
+    .finally(() => setBusy(false));
+}
+
 // The Mission Control surface (design 2a), scoped to the selected repository:
 // header with repo switcher + provision entry, then the three bands. Purely
 // presentational — all side effects arrive as props so it is unit-testable.
@@ -91,31 +108,20 @@ export function MissionControlView(props: MissionControlViewProps): ReactElement
     if (!teardownTarget) {
       return;
     }
-    setIsTearingDown(true);
-    void props
-      .onTeardown(teardownTarget.workspace.instanceId, force)
-      .then(() => setTeardownTarget(null))
-      // Failure is surfaced by the container; keep the modal open to retry.
-      .catch(() => undefined)
-      .finally(() => setIsTearingDown(false));
+    // On failure the modal stays open to retry.
+    runWithBusy(
+      setIsTearingDown,
+      props.onTeardown(teardownTarget.workspace.instanceId, force),
+      () => setTeardownTarget(null)
+    );
   };
 
   const handleProvision = (branchName: string): void => {
-    setIsProvisioning(true);
-    void props
-      .onProvision(branchName)
-      .then(() => setProvisionOpen(false))
-      .catch(() => undefined)
-      .finally(() => setIsProvisioning(false));
+    runWithBusy(setIsProvisioning, props.onProvision(branchName), () => setProvisionOpen(false));
   };
 
   const handleRefresh = (): void => {
-    setIsRefreshing(true);
-    // Failure is surfaced by the container; just clear the loading state.
-    void props
-      .onRefresh()
-      .catch(() => undefined)
-      .finally(() => setIsRefreshing(false));
+    runWithBusy(setIsRefreshing, props.onRefresh());
   };
 
   return (
@@ -126,15 +132,9 @@ export function MissionControlView(props: MissionControlViewProps): ReactElement
           <Menu.Target>
             <UnstyledButton aria-label='Switch repository'>
               <Group gap={4}>
-                <Text
-                  size='xs'
-                  fw={600}
-                  tt='uppercase'
-                  c='var(--acc-deep)'
-                  style={{ letterSpacing: '0.14em' }}
-                >
+                <SectionLabel c='var(--acc-deep)' letterSpacing='0.14em'>
                   {selectedRepoGroup?.name ?? 'No repository'}
-                </Text>
+                </SectionLabel>
                 <IconChevronDown size={12} />
               </Group>
             </UnstyledButton>
@@ -153,7 +153,7 @@ export function MissionControlView(props: MissionControlViewProps): ReactElement
           </Menu.Dropdown>
         </Menu>
         <Text size='xs' c='dimmed' ff='var(--font-mono)'>
-          {`${cards.length} ${cards.length === 1 ? 'workspace' : 'workspaces'}`}
+          {`${cards.length} ${pluralize(cards.length, 'workspace')}`}
         </Text>
         <Tooltip label='Refresh workspaces'>
           <ActionIcon
@@ -192,15 +192,9 @@ export function MissionControlView(props: MissionControlViewProps): ReactElement
               }
               return (
                 <Stack key={band} gap='sm'>
-                  <Text
-                    size='xs'
-                    fw={600}
-                    tt='uppercase'
-                    c='dimmed'
-                    style={{ letterSpacing: '0.14em' }}
-                  >
+                  <SectionLabel letterSpacing='0.14em'>
                     {`${BAND_LABEL[band]} · ${bandCards.length}`}
-                  </Text>
+                  </SectionLabel>
                   {band === 'idle'
                     ? bandCards.map(card => (
                         <IdleWorkspaceRow
@@ -209,13 +203,7 @@ export function MissionControlView(props: MissionControlViewProps): ReactElement
                           isActive={card.isActive}
                           onOpenTerminal={props.onOpenTerminal}
                           onMarkActive={workspace => props.onMarkActive(workspace.instanceId)}
-                          onTeardown={workspace =>
-                            setTeardownTarget({
-                              workspace,
-                              requiresForce: false,
-                              isRepoCheckout: workspace.origin !== 'provisioned',
-                            })
-                          }
+                          onTeardown={() => handleTeardownCard(card)}
                           onForget={workspace => props.onForget(workspace.instanceId)}
                         />
                       ))

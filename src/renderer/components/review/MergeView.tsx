@@ -1,26 +1,22 @@
 import type { ReactElement } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Box, Center, Group, Loader, Stack } from '@mantine/core';
-import { notifications } from '@mantine/notifications';
 import type {
   FileDiffResult,
   MergeFileResolution,
   MergeState,
   ReviewOpenRequest,
-  RevisionSummary,
 } from '../../../shared/types';
+import { notifyError } from '../../utils/notify';
 import { AbortMergeModal } from './AbortMergeModal';
 import { MergeBar } from './MergeBar';
 import { MergeFileArea } from './MergeFileArea';
 import { MergeHeader } from './MergeHeader';
 import { MergeSidebar } from './MergeSidebar';
+import { useReviewMeta } from './useReviewMeta';
 
 export interface MergeViewProps {
   readonly request: ReviewOpenRequest;
-}
-
-function notifyError(title: string, error: string): void {
-  notifications.show({ color: 'red', title, message: error });
 }
 
 // The review window's merge workflow (design 2c). Truthful semantics: the merge
@@ -42,8 +38,11 @@ export function MergeView(props: MergeViewProps): ReactElement {
   const [starting, setStarting] = useState(true);
   const [startError, setStartError] = useState<string | null>(null);
   const [bothSides, setBothSides] = useState<Map<string, FileDiffResult>>(new Map());
-  const [revisions, setRevisions] = useState<RevisionSummary[]>([]);
-  const [repositoryName, setRepositoryName] = useState<string | null>(null);
+  const { repositoryName, revisions } = useReviewMeta(
+    repositoryPath,
+    request.repositoryId,
+    sourceBranch
+  );
   const [resolvingPath, setResolvingPath] = useState<string | null>(null);
   const [completing, setCompleting] = useState(false);
   const [completeError, setCompleteError] = useState<string | null>(null);
@@ -98,21 +97,6 @@ export function MergeView(props: MergeViewProps): ReactElement {
       cancelled = true;
     };
   }, [repositoryPath, sourceBranch, targetBranch]);
-
-  // Resolve the repo name for the eyebrow and load the merging commits (the
-  // source branch's revisions).
-  useEffect(() => {
-    void window.electronAPI.repository.list().then(result => {
-      if (result.success) {
-        setRepositoryName(result.data.find(repo => repo.id === request.repositoryId)?.name ?? null);
-      }
-    });
-    void window.electronAPI.lore.branchGraph(repositoryPath, sourceBranch).then(result => {
-      if (result.success) {
-        setRevisions(result.data.branch.revisions);
-      }
-    });
-  }, [repositoryPath, sourceBranch, request.repositoryId]);
 
   const mergedFiles = useMemo(
     () => (mergeState?.files ?? []).filter(file => file.state === 'merged'),

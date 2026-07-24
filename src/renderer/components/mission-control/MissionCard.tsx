@@ -1,7 +1,9 @@
 import type { ReactElement } from 'react';
-import { ActionIcon, Badge, Box, Button, Group, Paper, Stack, Text } from '@mantine/core';
-import { IconEyeOff, IconX } from '@tabler/icons-react';
+import { Badge, Box, Button, Group, Paper, Stack, Text } from '@mantine/core';
 import type { AgentTask, WorkspaceCard } from '../../../shared/types';
+import { pluralize } from '../../utils/pluralize';
+import { TASK_GLYPH } from '../../utils/taskGlyph';
+import { SectionLabel } from '../SectionLabel';
 import type { OpenReviewIntent } from './reviewIntent';
 import {
   deriveWorkspaceFlags,
@@ -10,6 +12,7 @@ import {
   formatElapsed,
   resolveCostUsd,
 } from './format';
+import { WorkspaceIdentity, WorkspaceRemovalActions } from './WorkspaceRowChrome';
 
 export interface MissionCardProps {
   readonly card: WorkspaceCard;
@@ -20,12 +23,6 @@ export interface MissionCardProps {
   // counterpart to onTeardown. Disabled for the active card, same as ✕.
   readonly onForget: (card: WorkspaceCard) => void;
 }
-
-const TASK_GLYPH: Record<AgentTask['status'], string> = {
-  done: '✓',
-  running: '▶',
-  pending: '○',
-};
 
 // A full Mission Control card (design 2a), used in the Awaiting review and In
 // progress bands. Awaiting-review cards carry the agent's summary + a
@@ -129,10 +126,6 @@ function CardHeader({
   readonly onTeardown: () => void;
   readonly onForget: () => void;
 }): ReactElement {
-  const activeTitle = isActive
-    ? 'This is the workspace you are currently in — close or forget another one instead'
-    : undefined;
-
   return (
     <Group gap={8} wrap='nowrap'>
       <Box
@@ -146,30 +139,7 @@ function CardHeader({
           ...(inProgress ? { animation: 'pulseDot 2s infinite' } : {}),
         }}
       />
-      {/* Mission Control is PRIMARILY keyed by workspace name — the
-          registry `name`, not the current branch — so the title is the
-          name; hover reveals the worktree directory (design 2a). */}
-      <Text
-        component='span'
-        ff='var(--font-mono)'
-        fw={600}
-        size='sm'
-        title={workspace.path}
-        style={{ borderBottom: '1px dashed var(--hair)', cursor: 'help' }}
-      >
-        {workspace.name}
-      </Text>
-      {/* Branch — a secondary identifier. Rendered unconditionally, even
-          when it reads the same as the name (e.g. a provisioned worktree),
-          for consistency. */}
-      <Text component='span' ff='var(--font-mono)' size='sm' c='dimmed'>
-        {`on ${workspace.branchName}`}
-      </Text>
-      {isActive && (
-        <Badge color='blue' variant='light' size='sm'>
-          active
-        </Badge>
-      )}
+      <WorkspaceIdentity workspace={workspace} isActive={isActive} />
       {dirty ? (
         <Badge color='yellow' variant='light' size='sm'>
           uncommitted
@@ -184,29 +154,12 @@ function CardHeader({
           {cost}
         </Text>
       )}
-      <ActionIcon
-        ml='auto'
-        size='sm'
-        variant='subtle'
-        color='gray'
-        aria-label={`Forget workspace ${workspace.branchName}`}
-        title={activeTitle ?? 'Forget (stop tracking, keep the files)'}
-        disabled={isActive}
-        onClick={onForget}
-      >
-        <IconEyeOff size={14} />
-      </ActionIcon>
-      <ActionIcon
-        size='sm'
-        variant='subtle'
-        color='gray'
-        aria-label={`Close workspace ${workspace.branchName}`}
-        title={activeTitle ?? 'Close workspace (removes the directory and archives the branch)'}
-        disabled={isActive}
-        onClick={onTeardown}
-      >
-        <IconX size={14} />
-      </ActionIcon>
+      <WorkspaceRemovalActions
+        workspace={workspace}
+        isActive={isActive}
+        onForget={onForget}
+        onTeardown={onTeardown}
+      />
     </Group>
   );
 }
@@ -225,14 +178,12 @@ function StatsAndCommits({
   return (
     <Group align='flex-start' gap='lg' grow>
       <Stack gap={2}>
-        <Text size='xs' tt='uppercase' fw={600} c='dimmed'>
-          {`Workspace · ${changedFileCount} ${changedFileCount === 1 ? 'file' : 'files'} · +${added} −${removed}`}
-        </Text>
+        <SectionLabel>
+          {`Workspace · ${changedFileCount} ${pluralize(changedFileCount, 'file')} · +${added} −${removed}`}
+        </SectionLabel>
       </Stack>
       <Stack gap={2}>
-        <Text size='xs' tt='uppercase' fw={600} c='dimmed'>
-          {`Session commits · ${sessionCommits.length}`}
-        </Text>
+        <SectionLabel>{`Session commits · ${sessionCommits.length}`}</SectionLabel>
         {sessionCommits.map(commit => {
           const age = formatCommitAge(commit.timestamp);
           return (
@@ -292,9 +243,7 @@ function TaskList({ tasks }: { readonly tasks: AgentTask[] }): ReactElement {
   const done = tasks.filter(task => task.status === 'done').length;
   return (
     <Stack gap={4}>
-      <Text size='xs' tt='uppercase' fw={600} c='dimmed'>
-        {`Tasks · ${done} of ${tasks.length}`}
-      </Text>
+      <SectionLabel>{`Tasks · ${done} of ${tasks.length}`}</SectionLabel>
       {tasks.map(task => (
         <Group key={task.subject} gap={7} wrap='nowrap' align='baseline'>
           <Text component='span' aria-hidden size='sm'>
@@ -319,9 +268,7 @@ function Commentary({ card }: { readonly card: WorkspaceCard }): ReactElement {
   const recent = [...(card.intention?.commentary ?? [])].slice(-2).reverse();
   return (
     <Stack gap={2} style={{ borderTop: '1px dashed var(--hair)', paddingTop: 8 }}>
-      <Text size='xs' tt='uppercase' fw={600} c='dimmed'>
-        Recent commentary
-      </Text>
+      <SectionLabel>Recent commentary</SectionLabel>
       {recent.map(entry => (
         <Text key={`${entry.at}-${entry.text}`} size='xs'>
           <Text component='span' ff='var(--font-mono)' c='dimmed' mr={6}>

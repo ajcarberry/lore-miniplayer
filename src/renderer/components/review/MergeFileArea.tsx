@@ -2,6 +2,7 @@ import type { ReactElement } from 'react';
 import { Alert, Group, ScrollArea, Stack, Text } from '@mantine/core';
 import { IconCheck } from '@tabler/icons-react';
 import type { FileDiffResult, MergeFileResolution, MergeFileState } from '../../../shared/types';
+import { SectionLabel } from '../SectionLabel';
 import { ConflictBlock } from './ConflictBlock';
 
 export interface MergeFileAreaProps {
@@ -42,9 +43,7 @@ export function MergeFileArea(props: MergeFileAreaProps): ReactElement {
 
         {mergedFiles.length > 0 && (
           <Stack gap={6}>
-            <Text size='xs' fw={600} tt='uppercase' c='dimmed' style={{ letterSpacing: '0.12em' }}>
-              Auto-merged files need no action
-            </Text>
+            <SectionLabel letterSpacing='0.12em'>Auto-merged files need no action</SectionLabel>
             {mergedFiles.map(file => (
               <Group key={file.path} gap={7} wrap='nowrap' px={4}>
                 <IconCheck size={14} color='oklch(0.5 0.1 150)' />

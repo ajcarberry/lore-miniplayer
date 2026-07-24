@@ -1,7 +1,8 @@
 import type { ReactElement } from 'react';
-import { Group, Stack, Text } from '@mantine/core';
+import { Box, Group, Stack, Text } from '@mantine/core';
 import type { AgentIntention, AgentTask } from '../../../shared/types';
-import { RightPanel } from './RightPanel';
+import { TASK_GLYPH } from '../../utils/taskGlyph';
+import { SectionLabel } from '../SectionLabel';
 import { useIntention } from './useIntention';
 
 export interface IntentionPanelProps {
@@ -9,26 +10,13 @@ export interface IntentionPanelProps {
   readonly workspacePath: string;
 }
 
-// Task status → glyph (design 2b): done / running / pending.
-const TASK_GLYPH: Record<AgentTask['status'], string> = {
-  done: '✓',
-  running: '▶',
-  pending: '○',
-};
-
 const TASK_GLYPH_COLOR: Record<AgentTask['status'], string> = {
   done: 'teal',
   running: 'var(--acc-deep, #7a5b1e)',
   pending: 'dimmed',
 };
 
-function SectionLabel({ children }: { readonly children: string }): ReactElement {
-  return (
-    <Text size='xs' fw={600} c='dimmed' tt='uppercase' style={{ letterSpacing: '0.08em' }}>
-      {children}
-    </Text>
-  );
-}
+const LABEL_SPACING = '0.08em';
 
 function TaskRow({ task }: { readonly task: AgentTask }): ReactElement {
   return (
@@ -54,7 +42,7 @@ function IntentionBody({ intention }: { readonly intention: AgentIntention }): R
     <Stack gap={18}>
       {intention.prompt && (
         <Stack gap={4} data-testid='intention-asked'>
-          <SectionLabel>Asked</SectionLabel>
+          <SectionLabel letterSpacing={LABEL_SPACING}>Asked</SectionLabel>
           <Text
             size='sm'
             fs='italic'
@@ -70,7 +58,9 @@ function IntentionBody({ intention }: { readonly intention: AgentIntention }): R
 
       {intention.tasks.length > 0 && (
         <Stack gap={6} data-testid='intention-tasks'>
-          <SectionLabel>{`Tasks (${doneCount} of ${intention.tasks.length})`}</SectionLabel>
+          <SectionLabel letterSpacing={LABEL_SPACING}>
+            {`Tasks (${doneCount} of ${intention.tasks.length})`}
+          </SectionLabel>
           <Stack gap={5}>
             {intention.tasks.map((task, index) => (
               // Tasks carry no stable id (P8's AgentIntention.tasks is position-ordered).
@@ -83,7 +73,7 @@ function IntentionBody({ intention }: { readonly intention: AgentIntention }): R
 
       {intention.summary && (
         <Stack gap={4} data-testid='intention-summary'>
-          <SectionLabel>{"Agent's account"}</SectionLabel>
+          <SectionLabel letterSpacing={LABEL_SPACING}>{"Agent's account"}</SectionLabel>
           <Text size='sm'>{intention.summary}</Text>
         </Stack>
       )}
@@ -107,12 +97,12 @@ function sessionFooter(intention: AgentIntention): ReactElement | undefined {
   );
 }
 
-// The review window's right pane content (design 2b, P12): sources the
-// workspace's AgentIntention from the workspace model snapshot (P9/P10 — the
-// richest existing IPC surface for it, see useIntention) and renders it
-// inside P11's RightPanel shell. Degrades to a diff-only placeholder when no
-// intention was recorded, and to only the sections a partial intention
-// actually carries otherwise — never a raw thinking stream.
+// The review window's right pane (design 2b, P12): the intention column.
+// Sources the workspace's AgentIntention from the workspace model snapshot
+// (P9/P10 — the richest existing IPC surface for it, see useIntention).
+// Degrades to a diff-only placeholder when no intention was recorded, and to
+// only the sections a partial intention actually carries otherwise — never a
+// raw thinking stream.
 export function IntentionPanel(props: IntentionPanelProps): ReactElement {
   const intention = useIntention(props.repositoryId, props.workspacePath);
   const hasContent =
@@ -120,14 +110,24 @@ export function IntentionPanel(props: IntentionPanelProps): ReactElement {
     (Boolean(intention.prompt) || intention.tasks.length > 0 || Boolean(intention.summary));
 
   return (
-    <RightPanel session={intention && hasContent ? sessionFooter(intention) : undefined}>
-      {hasContent && intention ? (
-        <IntentionBody intention={intention} />
-      ) : (
-        <Text size='sm' c='dimmed' data-testid='intention-placeholder'>
-          No agent session recorded.
-        </Text>
-      )}
-    </RightPanel>
+    <Stack
+      gap={14}
+      p='md'
+      h='100%'
+      style={{ borderLeft: '1px solid var(--hairline, rgba(43,36,22,.1))' }}
+    >
+      <Box style={{ flex: 1 }} data-testid='review-intention-region'>
+        {hasContent && intention ? (
+          <IntentionBody intention={intention} />
+        ) : (
+          <Text size='sm' c='dimmed' data-testid='intention-placeholder'>
+            No agent session recorded.
+          </Text>
+        )}
+      </Box>
+      <Box data-testid='review-session-footer'>
+        {intention && hasContent ? sessionFooter(intention) : undefined}
+      </Box>
+    </Stack>
   );
 }

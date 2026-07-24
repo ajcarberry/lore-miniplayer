@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react';
 import { Box, Divider, Group, Stack, Text } from '@mantine/core';
 import type { MergeFileState, RevisionSummary } from '../../../shared/types';
+import { SectionLabel } from '../SectionLabel';
 import { IntentionPanel } from './IntentionPanel';
 
 export interface MergeSidebarProps {
@@ -10,14 +11,6 @@ export interface MergeSidebarProps {
   readonly revisions: readonly RevisionSummary[];
   readonly conflictFiles: readonly MergeFileState[];
 }
-
-const SECTION_LABEL = {
-  size: 'xs',
-  fw: 600,
-  tt: 'uppercase',
-  c: 'dimmed',
-  style: { letterSpacing: '0.12em' },
-} as const;
 
 // The review window's merge sidebar (design 2c): the commits the merge brings
 // onto the target ("Merging commits"), the per-file conflicts ledger recording
@@ -30,7 +23,7 @@ export function MergeSidebar(props: MergeSidebarProps): ReactElement {
   return (
     <Stack gap={0} h='100%' style={{ borderLeft: '1px solid var(--hairline, rgba(43,36,22,.1))' }}>
       <Stack gap={6} p='md'>
-        <Text {...SECTION_LABEL}>Merging commits</Text>
+        <SectionLabel letterSpacing='0.12em'>Merging commits</SectionLabel>
         {revisions.length === 0 ? (
           <Text size='xs' c='dimmed'>
             No commits ahead of {targetBranch}.
@@ -52,7 +45,7 @@ export function MergeSidebar(props: MergeSidebarProps): ReactElement {
       <Divider />
 
       <Stack gap={6} p='md'>
-        <Text {...SECTION_LABEL}>Conflicts</Text>
+        <SectionLabel letterSpacing='0.12em'>Conflicts</SectionLabel>
         {conflictFiles.length === 0 ? (
           <Text size='xs' c='dimmed'>
             No conflicts.

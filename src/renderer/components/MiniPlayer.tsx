@@ -41,7 +41,8 @@ function pillAccent(repo: Repository | null): CSSProperties | undefined {
 // the branch list unless it was just a push, and queues an attribution
 // toast (design 1c) for the kinds that carry one — branchCreated/
 // branchDeleted are excluded so they never occupy the one-at-a-time queue
-// with a toast that can't render (see formatAttributionMessage).
+// with a toast that can't render (see formatAttributionMessage). Kept at
+// module scope so MiniPlayer stays within the max-lines-per-function budget.
 function handleRepositoryNotification(
   notification: RepositoryNotification,
   divergence: BranchDivergenceState,

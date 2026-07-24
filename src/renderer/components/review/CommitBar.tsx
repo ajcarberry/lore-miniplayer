@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react';
-import { Button, Group, Text, TextInput } from '@mantine/core';
+import { Button, TextInput } from '@mantine/core';
+import { ReviewBottomBar } from './ReviewBottomBar';
 
 export interface CommitBarProps {
   readonly stagedCount: number;
@@ -24,19 +25,9 @@ export function CommitBar(props: CommitBarProps): ReactElement {
   const canCommit = message.trim().length > 0 && stagedCount > 0 && !committing;
 
   return (
-    <Group
-      gap='sm'
-      px='md'
-      py='sm'
-      wrap='nowrap'
-      style={{
-        borderTop: '1px solid var(--hairline, rgba(43,36,22,.1))',
-        background: 'var(--paper-raised, #fbf7ec)',
-      }}
+    <ReviewBottomBar
+      tally={committed ? 'Committed — push to share' : `${stagedCount} of ${totalCount} staged`}
     >
-      <Text size='xs' ff='var(--font-mono)' c='dimmed' style={{ whiteSpace: 'nowrap' }}>
-        {committed ? 'Committed — push to share' : `${stagedCount} of ${totalCount} staged`}
-      </Text>
       <TextInput
         style={{ flex: 1 }}
         size='sm'
@@ -55,6 +46,6 @@ export function CommitBar(props: CommitBarProps): ReactElement {
           Commit
         </Button>
       )}
-    </Group>
+    </ReviewBottomBar>
   );
 }

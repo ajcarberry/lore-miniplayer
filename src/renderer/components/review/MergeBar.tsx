@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react';
-import { Button, Group, Text } from '@mantine/core';
+import { Button, Text } from '@mantine/core';
+import { ReviewBottomBar } from './ReviewBottomBar';
 
 export interface MergeBarProps {
   readonly conflictCount: number;
@@ -40,19 +41,7 @@ export function MergeBar(props: MergeBarProps): ReactElement {
       : `${resolvedCount} of ${conflictCount} conflicts resolved`;
 
   return (
-    <Group
-      gap='sm'
-      px='md'
-      py='sm'
-      wrap='nowrap'
-      style={{
-        borderTop: '1px solid var(--hairline, rgba(43,36,22,.1))',
-        background: 'var(--paper-raised, #fbf7ec)',
-      }}
-    >
-      <Text size='xs' ff='var(--font-mono)' c='dimmed' style={{ whiteSpace: 'nowrap' }}>
-        {tally}
-      </Text>
+    <ReviewBottomBar tally={tally}>
       <Text size='xs' c='dimmed' truncate style={{ flex: 1, minWidth: 0 }}>
         Merge commits land on {targetBranch} · branch can be closed from Mission Control after
       </Text>
@@ -75,6 +64,6 @@ export function MergeBar(props: MergeBarProps): ReactElement {
           {`Landed ${landedRevision} on ${targetBranch}`}
         </Text>
       )}
-    </Group>
+    </ReviewBottomBar>
   );
 }

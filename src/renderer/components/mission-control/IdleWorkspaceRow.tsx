@@ -1,7 +1,7 @@
 import type { ReactElement } from 'react';
-import { ActionIcon, Badge, Box, Button, Group, Text } from '@mantine/core';
-import { IconEyeOff, IconX } from '@tabler/icons-react';
+import { Box, Button, Group } from '@mantine/core';
 import type { Workspace } from '../../../shared/types';
+import { WorkspaceIdentity, WorkspaceRemovalActions } from './WorkspaceRowChrome';
 
 export interface IdleWorkspaceRowProps {
   readonly workspace: Workspace;
@@ -29,10 +29,6 @@ export function IdleWorkspaceRow({
   onMarkActive,
   onForget,
 }: IdleWorkspaceRowProps): ReactElement {
-  const activeTitle = isActive
-    ? 'This is the workspace you are currently in — close or forget another one instead'
-    : undefined;
-
   return (
     <Group
       gap={9}
@@ -51,24 +47,7 @@ export function IdleWorkspaceRow({
           border: '1.5px solid var(--ink-faint)',
         }}
       />
-      <Text
-        component='span'
-        ff='var(--font-mono)'
-        fw={600}
-        size='sm'
-        title={workspace.path}
-        style={{ borderBottom: '1px dashed var(--hair)', cursor: 'help' }}
-      >
-        {workspace.name}
-      </Text>
-      <Text component='span' ff='var(--font-mono)' size='sm' c='dimmed'>
-        {`on ${workspace.branchName}`}
-      </Text>
-      {isActive && (
-        <Badge color='blue' variant='light' size='sm'>
-          active
-        </Badge>
-      )}
+      <WorkspaceIdentity workspace={workspace} isActive={isActive} />
       <Box style={{ flex: 1 }} />
       <Button variant='subtle' size='compact-xs' onClick={() => onMarkActive(workspace)}>
         Mark active
@@ -76,28 +55,12 @@ export function IdleWorkspaceRow({
       <Button variant='default' size='compact-xs' onClick={() => onOpenTerminal(workspace.path)}>
         Open terminal
       </Button>
-      <ActionIcon
-        size='sm'
-        variant='subtle'
-        color='gray'
-        aria-label={`Forget workspace ${workspace.branchName}`}
-        title={activeTitle ?? 'Forget (stop tracking, keep the files)'}
-        disabled={isActive}
-        onClick={() => onForget(workspace)}
-      >
-        <IconEyeOff size={14} />
-      </ActionIcon>
-      <ActionIcon
-        size='sm'
-        variant='subtle'
-        color='gray'
-        aria-label={`Close workspace ${workspace.branchName}`}
-        title={activeTitle ?? 'Close workspace (removes the directory and archives the branch)'}
-        disabled={isActive}
-        onClick={() => onTeardown(workspace)}
-      >
-        <IconX size={14} />
-      </ActionIcon>
+      <WorkspaceRemovalActions
+        workspace={workspace}
+        isActive={isActive}
+        onForget={() => onForget(workspace)}
+        onTeardown={() => onTeardown(workspace)}
+      />
     </Group>
   );
 }

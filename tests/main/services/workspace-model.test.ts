@@ -857,6 +857,95 @@ describe('WorkspaceModelService.snapshot — anchor workspace (packet U3)', () =
   });
 });
 
+describe('WorkspaceModelService.refresh — serialization + coalescing (C58)', () => {
+  // A promise whose resolution the test scripts explicitly, so build duration
+  // (SDK latency) is fully controlled and interleavings are deterministic.
+  interface Deferred<T> {
+    readonly promise: Promise<T>;
+    readonly resolve: (value: T) => void;
+  }
+
+  function deferredValue<T>(): Deferred<T> {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>(res => {
+      resolve = res;
+    });
+    return { promise, resolve };
+  }
+
+  it('emits the freshest snapshot LAST when a slow older build overlaps a newer one', async () => {
+    // Given: every file-status read blocks on its own gate, so the test picks
+    // the completion order of overlapping builds.
+    const { model, observer, lore } = makeHarness([workspace()]);
+    const emitted: WorkspaceModelSnapshot[] = [];
+    model.on('snapshot', snapshot => emitted.push(snapshot));
+    const gates: Deferred<LoreFileStatusGroup>[] = [];
+    lore.getFileStatus.mockImplementation(async () => {
+      const gate = deferredValue<LoreFileStatusGroup>();
+      gates.push(gate);
+      return gate.promise;
+    });
+
+    // Build #1 starts while the agent session is still active…
+    observer.sessions = [sessionRecord({ status: 'active', lastEventAt: 1000 })];
+    model.watch(REPO_ID);
+    await flush(); // #1 has captured the active session, blocked on status
+
+    // …then the agent stops and a new trigger arrives while #1 is in flight.
+    observer.sessions = [sessionRecord({ status: 'stopped', lastEventAt: 2000 })];
+    observer.emit('push');
+    await flush();
+
+    // When: pending status reads resolve newest-first (SDK latency inversion:
+    // the build that observed the OLD state finishes AFTER the newer build).
+    for (let gate = gates.pop(); gate; gate = gates.pop()) {
+      gate.resolve(CLEAN_STATUS);
+      await flush();
+    }
+
+    // Then: the LAST snapshot the renderer receives reflects the stopped
+    // agent — never a stale inProgress card from the slower older build.
+    const last = emitted.at(-1);
+    expect(last).toBeDefined();
+    expect(onlyCard(last as WorkspaceModelSnapshot).session?.status).toBe('stopped');
+    expect(onlyCard(last as WorkspaceModelSnapshot).attention.band).toBe('idle');
+
+    model.unwatch();
+  });
+
+  it('coalesces a burst of triggers during an in-flight build into ONE trailing rebuild', async () => {
+    // Given: build #1 is blocked on the workspace listing
+    const { model, observer, listWorkspaces } = makeHarness([workspace()]);
+    const emitted: WorkspaceModelSnapshot[] = [];
+    model.on('snapshot', snapshot => emitted.push(snapshot));
+    const gates: Deferred<Workspace[]>[] = [];
+    listWorkspaces.mockImplementation(async () => {
+      const gate = deferredValue<Workspace[]>();
+      gates.push(gate);
+      return gate.promise;
+    });
+
+    model.watch(REPO_ID);
+    await flush();
+
+    // When: a burst of agent pushes lands while #1 is still in flight
+    for (let i = 0; i < 5; i += 1) {
+      observer.emit('push');
+    }
+    await flush();
+    for (let gate = gates.shift(); gate; gate = gates.shift()) {
+      gate.resolve([workspace()]);
+      await flush();
+    }
+
+    // Then: the burst drains to exactly one trailing rebuild after #1
+    expect(listWorkspaces).toHaveBeenCalledTimes(2); // initial + one trailing
+    expect(emitted).toHaveLength(2);
+
+    model.unwatch();
+  });
+});
+
 // Drain the microtask queue deeply so an async refresh() (list → per-card
 // Promise.all) settles before assertions, under both real and fake timers.
 async function flush(): Promise<void> {

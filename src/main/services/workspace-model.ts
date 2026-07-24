@@ -201,6 +201,15 @@ export class WorkspaceModelService extends EventEmitter {
 
   private watchedRepositoryId: string | null = null;
   private refreshTimer: ReturnType<typeof global.setInterval> | null = null;
+
+  // Serialization + coalescing state (C58): at most one snapshot build runs at
+  // a time; triggers landing mid-build set the dirty flag and fold into a
+  // single trailing rebuild. Snapshots therefore always emit in build-start
+  // order — a slow build that observed OLD state can never overwrite a newer
+  // snapshot — and the final emit always reflects the latest trigger.
+  private buildInFlight = false;
+  private buildQueued = false;
+
   private readonly onEvent = (): void => {
     void this.refresh();
   };
@@ -302,9 +311,29 @@ export class WorkspaceModelService extends EventEmitter {
 
   // --- internals ------------------------------------------------------------
 
-  // Rebuild and emit the watched repository's snapshot. Never throws into the
-  // event/timer callers: a failed build is logged and the tick skipped.
+  // Rebuild and emit the watched repository's snapshot, serialized: while a
+  // build is in flight a new trigger only marks the model dirty, and one
+  // trailing rebuild runs once the current build finishes (N mid-build
+  // triggers coalesce to one). Never throws into the event/timer callers.
   private async refresh(): Promise<void> {
+    if (this.buildInFlight) {
+      this.buildQueued = true;
+      return;
+    }
+    this.buildInFlight = true;
+    try {
+      do {
+        this.buildQueued = false;
+        await this.buildAndEmit();
+      } while (this.buildQueued);
+    } finally {
+      this.buildInFlight = false;
+    }
+  }
+
+  // One snapshot build + emit for the currently watched repository. A failed
+  // build is logged and the tick skipped.
+  private async buildAndEmit(): Promise<void> {
     const repositoryId = this.watchedRepositoryId;
     if (repositoryId === null) {
       return;

@@ -23,18 +23,18 @@ export default defineConfig({
     {
       name: 'electron',
       testDir: './tests/e2e/electron',
-      // The live-server suite runs in its own project so its worker state stays
+      // The live-* suite runs in its own project so its worker state stays
       // out of the pure-UI specs; a shared worker delays the next spec's
       // electronApp.firstWindow() past its timeout. The P-U1 isolation-model
       // diagnostic connects to a real loreserver too, so it is likewise kept out
       // of this worker — run it explicitly (`--grep "launch isolation model"`).
-      testIgnore: ['**/live-server.spec.ts', '**/*.diag.spec.ts'],
+      testIgnore: ['**/live-*.spec.ts', '**/*.diag.spec.ts'],
       use: {},
     },
     {
       name: 'electron-live-server',
       testDir: './tests/e2e/electron',
-      testMatch: '**/live-server.spec.ts',
+      testMatch: '**/live-*.spec.ts',
       use: {},
     },
     {

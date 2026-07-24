@@ -23,6 +23,17 @@ export default defineConfig({
     {
       name: 'electron',
       testDir: './tests/e2e/electron',
+      // The live-server suite drives a real loreserver + repeatedly launches
+      // and closes the app in one file; run it in its own project (below) so
+      // its worker state never bleeds into the pure-UI specs — sharing a worker
+      // delays the next spec's electronApp.firstWindow() past its timeout.
+      testIgnore: '**/live-server.spec.ts',
+      use: {},
+    },
+    {
+      name: 'electron-live-server',
+      testDir: './tests/e2e/electron',
+      testMatch: '**/live-server.spec.ts',
       use: {},
     },
   ],

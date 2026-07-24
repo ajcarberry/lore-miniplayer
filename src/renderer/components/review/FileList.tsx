@@ -67,7 +67,7 @@ export function FileList(props: FileListProps): ReactElement {
         borderRight: '1px solid var(--hairline, rgba(43,36,22,.1))',
       }}
     >
-      <SectionLabel px='xs' pb={4} letterSpacing='0.12em'>
+      <SectionLabel px='xs' pb={4} lts='0.12em'>
         {`${files.length} ${pluralize(files.length, 'file')} · +${total.added} −${total.removed} · stage for commit`}
       </SectionLabel>
       <ScrollArea.Autosize mah='100%' style={{ flex: 1 }}>

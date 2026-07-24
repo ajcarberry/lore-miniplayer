@@ -43,7 +43,7 @@ export function MergeFileArea(props: MergeFileAreaProps): ReactElement {
 
         {mergedFiles.length > 0 && (
           <Stack gap={6}>
-            <SectionLabel letterSpacing='0.12em'>Auto-merged files need no action</SectionLabel>
+            <SectionLabel lts='0.12em'>Auto-merged files need no action</SectionLabel>
             {mergedFiles.map(file => (
               <Group key={file.path} gap={7} wrap='nowrap' px={4}>
                 <IconCheck size={14} color='oklch(0.5 0.1 150)' />

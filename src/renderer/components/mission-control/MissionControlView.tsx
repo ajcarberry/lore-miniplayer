@@ -132,7 +132,7 @@ export function MissionControlView(props: MissionControlViewProps): ReactElement
           <Menu.Target>
             <UnstyledButton aria-label='Switch repository'>
               <Group gap={4}>
-                <SectionLabel c='var(--acc-deep)' letterSpacing='0.14em'>
+                <SectionLabel c='var(--acc-deep)' lts='0.14em'>
                   {selectedRepoGroup?.name ?? 'No repository'}
                 </SectionLabel>
                 <IconChevronDown size={12} />
@@ -192,7 +192,7 @@ export function MissionControlView(props: MissionControlViewProps): ReactElement
               }
               return (
                 <Stack key={band} gap='sm'>
-                  <SectionLabel letterSpacing='0.14em'>
+                  <SectionLabel lts='0.14em'>
                     {`${BAND_LABEL[band]} · ${bandCards.length}`}
                   </SectionLabel>
                   {band === 'idle'

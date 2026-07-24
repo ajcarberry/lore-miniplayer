@@ -1,7 +1,7 @@
 import type { MainLogger } from '../ipc/logger';
 import { WorkspaceSchema } from '../../shared/schemas';
 import type { Repository, Workspace } from '../../shared/types';
-import type { WorkspaceRevisionStatus } from './lore-repository';
+import type { WorkspaceRevisionStatus } from './lore-status';
 import { samePath } from './path-utils';
 
 // Resolves the anchor workspace — the card-view repository Mission Control is

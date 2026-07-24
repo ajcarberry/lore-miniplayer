@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { WorkspaceCard } from '../../shared/types';
 import { WorkspaceModelSnapshotSchema } from '../../shared/schemas';
-import { subscribeThenPull } from '../utils/ipc';
+import { logError } from '../utils/logging';
 
 interface RepoSnapshot {
   readonly repositoryId: string;
@@ -22,24 +22,39 @@ export function useMissionControlSnapshot(repositoryId: string | null): Workspac
     if (repositoryId === null) {
       return undefined;
     }
+    let cancelled = false;
+
     // Subscribe before watching so a snapshot emitted during watch() is not
-    // missed (the shared skeleton guarantees the ordering).
-    return subscribeThenPull({
-      subscribe: listener => window.electronAPI.missionControl.onSnapshot(listener),
-      parsePush: payload => {
-        const parsed = WorkspaceModelSnapshotSchema.safeParse(payload);
-        return parsed.success && parsed.data.repositoryId === repositoryId ? parsed.data : null;
-      },
-      onPush: data => setSnapshot({ repositoryId, cards: data.cards }),
-      pull: () => window.electronAPI.missionControl.watch(repositoryId),
-      onPull: data => {
-        if (data.repositoryId === repositoryId) {
-          setSnapshot({ repositoryId, cards: data.cards });
-        }
-      },
-      pullErrorMessage: 'Failed to watch workspace model',
-      pullErrorContext: { repositoryId, operation: 'useMissionControlSnapshot' },
+    // missed.
+    const removeListener = window.electronAPI.missionControl.onSnapshot(payload => {
+      const parsed = WorkspaceModelSnapshotSchema.safeParse(payload);
+      if (!parsed.success || parsed.data.repositoryId !== repositoryId) {
+        return;
+      }
+      setSnapshot({ repositoryId, cards: parsed.data.cards });
     });
+
+    void window.electronAPI.missionControl.watch(repositoryId).then(result => {
+      if (cancelled) {
+        return;
+      }
+      if (!result.success) {
+        logError('Failed to watch workspace model', {
+          error: result.error,
+          repositoryId,
+          operation: 'useMissionControlSnapshot',
+        });
+        return;
+      }
+      if (result.data.repositoryId === repositoryId) {
+        setSnapshot({ repositoryId, cards: result.data.cards });
+      }
+    });
+
+    return (): void => {
+      cancelled = true;
+      removeListener();
+    };
   }, [repositoryId]);
 
   // Only surface cards that belong to the currently-watched repository; a stale

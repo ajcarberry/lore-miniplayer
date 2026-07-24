@@ -18,7 +18,7 @@ import type {
 import { WorkspaceModelSnapshotSchema } from '../../shared/schemas';
 import { toSessionState } from './agent-observer';
 import type { AgentSessionRecord } from './agent-observer';
-import type { WorkspaceRevisionStatus } from './lore-repository';
+import type { WorkspaceRevisionStatus } from './lore-status';
 import { hasConflict, isDirty } from './lore-status';
 import { samePath } from './path-utils';
 import { composeMembers, logDegrade, resolveAnchorWorkspace } from './workspace-anchor';

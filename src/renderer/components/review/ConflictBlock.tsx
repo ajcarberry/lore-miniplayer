@@ -28,7 +28,7 @@ function SideColumn(props: {
 }): ReactElement {
   return (
     <Box style={{ flex: 1, minWidth: 0 }}>
-      <SectionLabel px={10} py={4} letterSpacing='0.08em'>
+      <SectionLabel px={10} py={4} lts='0.08em'>
         {props.title}
       </SectionLabel>
       <Box

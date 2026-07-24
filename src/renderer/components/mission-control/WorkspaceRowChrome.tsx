@@ -6,13 +6,6 @@ import type { Workspace } from '../../../shared/types';
 // Shared identity/removal chrome for the Mission Control card header and the
 // idle-band row, so the two surfaces cannot drift (design 2a + packet U3).
 
-// The active workspace's ✕/Forget are disabled with this explanation.
-export function activeWorkspaceTitle(isActive: boolean): string | undefined {
-  return isActive
-    ? 'This is the workspace you are currently in — close or forget another one instead'
-    : undefined;
-}
-
 // Mission Control is PRIMARILY keyed by workspace name — the registry `name`,
 // not the current branch — so the title is the name; hover reveals the
 // worktree directory. The branch is a secondary identifier, rendered
@@ -63,7 +56,10 @@ export function WorkspaceRemovalActions({
   readonly onForget: () => void;
   readonly onTeardown: () => void;
 }): ReactElement {
-  const activeTitle = activeWorkspaceTitle(isActive);
+  // The active workspace's ✕/Forget are disabled with this explanation.
+  const activeTitle = isActive
+    ? 'This is the workspace you are currently in — close or forget another one instead'
+    : undefined;
 
   return (
     <Group gap={8} wrap='nowrap' ml='auto'>

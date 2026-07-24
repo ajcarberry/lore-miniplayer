@@ -6,7 +6,7 @@ import type { MainLogger } from '../ipc/logger';
 import type { LoreFileStatusGroup, Repository } from '../../shared/types';
 import type { LoreEventDataOf } from './lore-events';
 import { OperationError, operationHelpers } from './lore-operation';
-import type { WorkspaceRevisionStatus } from './lore-repository';
+import type { WorkspaceRevisionStatus } from './lore-status';
 import { isDirty } from './lore-status';
 import { isUnknownHash } from './branch-graph';
 import { sameLoreRepo } from './workspace-store';
@@ -70,7 +70,7 @@ export class WorkspaceOperationError extends OperationError {
   }
 }
 
-export const { toOperationError, run, collect } = operationHelpers(WorkspaceOperationError);
+export const { run, collect } = operationHelpers(WorkspaceOperationError);
 
 // --- provision + teardown guards (moved from workspace-service.ts to keep it
 // under the project's max-lines limit) ---------------------------------------
@@ -149,7 +149,7 @@ export async function assertNoUnsavedWork(
 // The branch's local tip alongside its creation fork point (BRANCH_INFO's
 // branchPoint) — the unsaved-work guard's evidence for never-pushed branches.
 // Absent hashes degrade to '' (an unknown hash) so the guard fails closed.
-export async function getBranchFork(
+async function getBranchFork(
   repositoryPath: string,
   branchName: string
 ): Promise<{ latest: string; branchPoint: string }> {

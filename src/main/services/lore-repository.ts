@@ -36,7 +36,6 @@ import { OperationError, operationHelpers } from './lore-operation';
 import { readWorkspaceRevisionStatus, type WorkspaceRevisionStatus } from './lore-status';
 
 // Re-exported so consumers keep importing the type from the owning service.
-export type { WorkspaceRevisionStatus } from './lore-status';
 
 // How far back to walk local revision history when looking for the
 // remote's latest hash to determine ahead-vs-behindOrDiverged direction.

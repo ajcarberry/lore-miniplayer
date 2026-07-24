@@ -27,7 +27,6 @@ import type {
   AgentTaskSchema,
   AgentCommentaryEntrySchema,
   AgentIntentionSchema,
-  AgentObservabilityPushSchema,
   FileDiffActionSchema,
   LineStatsSchema,
   FileDiffResultSchema,
@@ -197,9 +196,6 @@ export type AgentTask = z.infer<typeof AgentTaskSchema>;
 export type AgentCommentaryEntry = z.infer<typeof AgentCommentaryEntrySchema>;
 
 export type AgentIntention = z.infer<typeof AgentIntentionSchema>;
-
-// The agent observer's 'push' payload (consumed in-main by the workspace model).
-export type AgentObservabilityPush = z.infer<typeof AgentObservabilityPushSchema>;
 
 export type FileDiffAction = z.infer<typeof FileDiffActionSchema>;
 

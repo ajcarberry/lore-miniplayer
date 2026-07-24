@@ -605,5 +605,36 @@ describe('MergeService', () => {
       expect(lore_.switchBranch).toHaveBeenLastCalledWith(REPO, SOURCE);
       expect(mockLore.branchPush).not.toHaveBeenCalled();
     });
+
+    it('surfaces the unexpected-conflict error even when the backout abort itself fails', async () => {
+      // Given: a clean workspace merge, a landing re-merge that unexpectedly
+      // conflicts, AND a backout abort that throws
+      mockLore.branchMergeStart
+        .mockReturnValueOnce(fluentMock() as never) // start()
+        .mockReturnValue(
+          fluentMock({
+            events: [
+              {
+                tag: LoreEventTag.BRANCH_MERGE_START_END,
+                data: { hasConflicts: true, signature: 'sig', stats: {} },
+              },
+              conflictFileEvent('conf.txt'),
+            ],
+          }) as never
+        ); // landing
+      mockLore.branchMergeAbort.mockReturnValue(
+        fluentMock({ error: loreError(9, 'abort exploded') }) as never
+      );
+      lore_.getFileStatus.mockResolvedValue(statusGroup([]));
+      lore_.commit.mockResolvedValue('workspace-merge-rev');
+      await service.start(startRequest());
+
+      // When/Then: the primary "Unexpected conflict landing" error still
+      // surfaces — the abort failure is logged, never thrown in its place
+      await expect(service.complete({ repositoryPath: REPO })).rejects.toThrow(
+        /Unexpected conflict landing/
+      );
+      expect(lore_.switchBranch).toHaveBeenLastCalledWith(REPO, SOURCE);
+    });
   });
 });

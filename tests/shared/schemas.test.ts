@@ -15,7 +15,6 @@ import {
   AgentSessionStateSchema,
   AgentTaskSchema,
   AgentIntentionSchema,
-  AgentObservabilityPushSchema,
   FileDiffResultSchema,
   CompareTargetSchema,
   MergeFileStateSchema,
@@ -801,44 +800,6 @@ describe('AgentTaskSchema and AgentIntentionSchema', () => {
   it('rejects an intention missing the tasks array', () => {
     // When: parsing without the required tasks field
     const result = AgentIntentionSchema.safeParse({ commentary: [] });
-
-    // Then: parsing fails
-    expect(result.success).toBe(false);
-  });
-});
-
-describe('AgentObservabilityPushSchema', () => {
-  it('accepts a sessionState push', () => {
-    // When: parsing a session-state update
-    const result = AgentObservabilityPushSchema.safeParse({
-      kind: 'sessionState',
-      state: {
-        sessionId: 'sess-1',
-        workspacePath: '/repos/a/.lore-instances/inst-1',
-        status: 'active',
-        lastEventAt: 1700000000000,
-      },
-    });
-
-    // Then: parsing succeeds
-    expect(result.success).toBe(true);
-  });
-
-  it('accepts an intention push', () => {
-    // When: parsing an intention update
-    const result = AgentObservabilityPushSchema.safeParse({
-      kind: 'intention',
-      workspacePath: '/repos/a/.lore-instances/inst-1',
-      intention: { tasks: [], commentary: [] },
-    });
-
-    // Then: parsing succeeds
-    expect(result.success).toBe(true);
-  });
-
-  it('rejects an unrecognized push kind', () => {
-    // When: parsing a push payload with an unknown discriminant
-    const result = AgentObservabilityPushSchema.safeParse({ kind: 'other' });
 
     // Then: parsing fails
     expect(result.success).toBe(false);

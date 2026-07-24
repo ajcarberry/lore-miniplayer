@@ -4,12 +4,7 @@ import { randomBytes } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import type { Socket } from 'node:net';
 import type { MainLogger } from '../ipc/logger';
-import { AgentObservabilityPushSchema } from '../../shared/schemas';
-import type {
-  AgentObservabilityPush,
-  AgentSessionState,
-  AgentSessionStatus,
-} from '../../shared/types';
+import type { AgentSessionState, AgentSessionStatus } from '../../shared/types';
 import type { WorkspaceObserverConfig } from './workspace-service';
 
 // Default loopback port the hook listener binds (research note "Recommended
@@ -79,8 +74,8 @@ export interface AgentObserverOptions {
 // agents in provisioned workspaces POST fire-and-forget hook events to
 // `http://127.0.0.1:<port>/hook/<workspaceToken>`; this service authenticates
 // the token, maps the event to an AgentSessionState, keeps it in memory, and
-// emits a schema-valid `AgentObservabilityPush` ('push') that the workspace
-// model consumes.
+// emits a bare 'push' signal that the workspace model consumes (it re-reads
+// session state via listSessions).
 //
 // Security posture (mission stakes high): bound to 127.0.0.1 only, never
 // 0.0.0.0; per-workspace tokens are 32 random bytes (unguessable); payload
@@ -319,7 +314,7 @@ export class AgentObserverService extends EventEmitter {
     };
     this.sessions.set(sessionId, record);
 
-    this.emitState(record);
+    this.emit('push');
   }
 
   // Event -> AgentSessionStatus (packet contract). Unknown events keep the
@@ -352,15 +347,6 @@ export class AgentObserverService extends EventEmitter {
         });
         return prior ?? 'active';
     }
-  }
-
-  private emitState(record: AgentSessionRecord): void {
-    // Validate outbound like the push channels validate inbound.
-    const push: AgentObservabilityPush = AgentObservabilityPushSchema.parse({
-      kind: 'sessionState',
-      state: toSessionState(record),
-    });
-    this.emit('push', push);
   }
 
   private respond(res: http.ServerResponse, statusCode: number): void {

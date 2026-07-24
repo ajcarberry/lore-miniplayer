@@ -18,7 +18,7 @@ import type {
   WorkspaceModelSnapshot,
 } from '../../../src/shared/types';
 import type { AgentSessionRecord } from '../../../src/main/services/agent-observer';
-import type { WorkspaceRevisionStatus } from '../../../src/main/services/lore-repository';
+import type { WorkspaceRevisionStatus } from '../../../src/main/services/lore-status';
 
 const mockLog = { error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn() };
 const asLogger = mockLog as unknown as ConstructorParameters<typeof WorkspaceModelService>[0];

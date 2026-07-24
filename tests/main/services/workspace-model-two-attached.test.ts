@@ -36,10 +36,8 @@ import { WorkspaceService } from '../../../src/main/services/workspace-service';
 import { WorkspaceModelService } from '../../../src/main/services/workspace-model';
 import { WorkspaceRegistry } from '../../../src/main/services/workspace-store';
 import type { WorkspaceModelDeps } from '../../../src/main/services/workspace-model';
-import type {
-  LoreRepositoryService,
-  WorkspaceRevisionStatus,
-} from '../../../src/main/services/lore-repository';
+import type { LoreRepositoryService } from '../../../src/main/services/lore-repository';
+import type { WorkspaceRevisionStatus } from '../../../src/main/services/lore-status';
 import type { LoreFileStatusGroup, RevisionSummary } from '../../../src/shared/types';
 import { RepositorySchema } from '../../../src/shared/schemas';
 

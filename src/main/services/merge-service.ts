@@ -280,10 +280,7 @@ export class MergeService {
       if (conflictFlags.some(Boolean)) {
         // Never expected (the source already contains the target); back out
         // the target-side merge so the checkout is left clean before restoring.
-        await run(
-          lore.branchMergeAbort({ repositoryPath }, {}),
-          'Failed to abort unexpected landing conflict'
-        );
+        await this.abortMergeQuietly(repositoryPath, 'Failed to abort unexpected landing conflict');
         throw new MergeOperationError(
           `Unexpected conflict landing '${record.sourceBranch}' on '${record.targetBranch}'`
         );

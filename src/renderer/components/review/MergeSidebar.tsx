@@ -23,7 +23,7 @@ export function MergeSidebar(props: MergeSidebarProps): ReactElement {
   return (
     <Stack gap={0} h='100%' style={{ borderLeft: '1px solid var(--hairline, rgba(43,36,22,.1))' }}>
       <Stack gap={6} p='md'>
-        <SectionLabel letterSpacing='0.12em'>Merging commits</SectionLabel>
+        <SectionLabel lts='0.12em'>Merging commits</SectionLabel>
         {revisions.length === 0 ? (
           <Text size='xs' c='dimmed'>
             No commits ahead of {targetBranch}.
@@ -45,7 +45,7 @@ export function MergeSidebar(props: MergeSidebarProps): ReactElement {
       <Divider />
 
       <Stack gap={6} p='md'>
-        <SectionLabel letterSpacing='0.12em'>Conflicts</SectionLabel>
+        <SectionLabel lts='0.12em'>Conflicts</SectionLabel>
         {conflictFiles.length === 0 ? (
           <Text size='xs' c='dimmed'>
             No conflicts.

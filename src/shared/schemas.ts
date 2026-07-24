@@ -260,17 +260,6 @@ export const AgentIntentionSchema = z.object({
   costUsd: z.number().nonnegative().optional(),
 });
 
-// The agent observer's 'push' payload (consumed in-main by the workspace
-// model): session and intention updates share one event, discriminated by kind.
-export const AgentObservabilityPushSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('sessionState'), state: AgentSessionStateSchema }),
-  z.object({
-    kind: z.literal('intention'),
-    workspacePath: z.string().min(1),
-    intention: AgentIntentionSchema,
-  }),
-]);
-
 // Per-file diff result (fileDiff / fileDump fallback), rendered in the
 // review window's center pane.
 export const FileDiffActionSchema = z.enum(['added', 'modified', 'deleted', 'moved']);

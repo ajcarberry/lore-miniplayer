@@ -233,9 +233,6 @@ export class WorkspaceService extends EventEmitter {
     const { repo, entry, instance } = located;
     // The registry is the source of truth for the path; the branch name comes
     // from the registry too, so a missing/stale live instance can't strand it.
-    // Only a provisioned entry carries a branch of its own (C51): an
-    // attached/cloned entry's display name must never be used as one — it
-    // could collide with a real branch in the shared store.
     const workspacePath = entry.localPath;
     const branchName = entry.branchName;
 
@@ -257,9 +254,7 @@ export class WorkspaceService extends EventEmitter {
     await assertSafeTeardownPath(workspacePath, guardRepoPath);
 
     if (!request.force) {
-      // Only reachable for provisioned entries (attached/cloned ones already
-      // threw above without force), so entry.branchName is present; the name
-      // fallback keeps a degenerate entry fail-closed rather than crashing.
+      // Provisioned-only path; the name fallback keeps a degenerate entry fail-closed.
       await assertNoUnsavedWork(
         this.loreRepositoryService,
         workspacePath,

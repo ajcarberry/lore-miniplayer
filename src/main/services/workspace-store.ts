@@ -77,31 +77,21 @@ export class WorkspaceRegistry {
   // --- reads -----------------------------------------------------------------
 
   async all(): Promise<Repository[]> {
-    return this.enqueue(async () => {
-      await this.load();
-      return [...this.entries];
-    });
+    return this.synced(async () => [...this.entries]);
   }
 
   async findById(id: string): Promise<Repository | undefined> {
-    return this.enqueue(async () => {
-      await this.load();
-      return this.entries.find(entry => entry.id === id);
-    });
+    return this.synced(async () => this.entries.find(entry => entry.id === id));
   }
 
   async findByLocalPath(localPath: string): Promise<Repository | undefined> {
-    return this.enqueue(async () => {
-      await this.load();
-      return this.entries.find(entry => samePath(entry.localPath, localPath));
-    });
+    return this.synced(async () =>
+      this.entries.find(entry => samePath(entry.localPath, localPath))
+    );
   }
 
   async findByUrl(url: string): Promise<Repository[]> {
-    return this.enqueue(async () => {
-      await this.load();
-      return this.entries.filter(entry => entry.url === url);
-    });
+    return this.synced(async () => this.entries.filter(entry => entry.url === url));
   }
 
   // --- writes ----------------------------------------------------------------
@@ -126,8 +116,7 @@ export class WorkspaceRegistry {
     matches: (existing: Repository, validated: Repository) => boolean
   ): Promise<void> {
     const validated = RepositorySchema.parse(entry);
-    await this.enqueue(async () => {
-      await this.load();
+    await this.synced(async () => {
       const index = this.entries.findIndex(existing => matches(existing, validated));
       if (index === -1) {
         this.entries.push(validated);
@@ -139,8 +128,7 @@ export class WorkspaceRegistry {
   }
 
   async removeById(id: string): Promise<boolean> {
-    return this.enqueue(async () => {
-      await this.load();
+    return this.synced(async () => {
       const before = this.entries.length;
       this.entries = this.entries.filter(entry => entry.id !== id);
       const removed = this.entries.length < before;
@@ -152,8 +140,7 @@ export class WorkspaceRegistry {
   }
 
   async removeByLocalPath(localPath: string): Promise<void> {
-    await this.enqueue(async () => {
-      await this.load();
+    await this.synced(async () => {
       this.entries = this.entries.filter(entry => !samePath(entry.localPath, localPath));
       await this.save();
     });
@@ -161,10 +148,7 @@ export class WorkspaceRegistry {
 
   // Round-robin accent hue for the next entry (matches the legacy repo store).
   async nextAccentHue(): Promise<number> {
-    return this.enqueue(async () => {
-      await this.load();
-      return accentHueForIndex(this.entries.length);
-    });
+    return this.synced(async () => accentHueForIndex(this.entries.length));
   }
 
   // --- serialization ---------------------------------------------------------
@@ -179,6 +163,15 @@ export class WorkspaceRegistry {
       () => undefined
     );
     return run;
+  }
+
+  // Every public operation's shared preamble: run `fn` serialized on the
+  // queue, with the registry freshly loaded from disk first.
+  private synced<T>(fn: () => Promise<T>): Promise<T> {
+    return this.enqueue(async () => {
+      await this.load();
+      return fn();
+    });
   }
 
   // --- load + migration ------------------------------------------------------

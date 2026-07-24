@@ -39,7 +39,7 @@ export interface WorkspaceRevisionStatus {
 // walk, valid for the checkout's CURRENT branch. Unknown hashes fail closed
 // to 'unknown' (matching deriveDivergence); differing tips without a provable
 // local-only lead read as behindOrDiverged.
-export function deriveDivergenceFromFlags(info: {
+function deriveDivergenceFromFlags(info: {
   latest: string;
   latestRemote: string;
   isLocalAhead: boolean;

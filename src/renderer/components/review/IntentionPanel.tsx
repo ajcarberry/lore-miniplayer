@@ -42,7 +42,7 @@ function IntentionBody({ intention }: { readonly intention: AgentIntention }): R
     <Stack gap={18}>
       {intention.prompt && (
         <Stack gap={4} data-testid='intention-asked'>
-          <SectionLabel letterSpacing={LABEL_SPACING}>Asked</SectionLabel>
+          <SectionLabel lts={LABEL_SPACING}>Asked</SectionLabel>
           <Text
             size='sm'
             fs='italic'
@@ -58,7 +58,7 @@ function IntentionBody({ intention }: { readonly intention: AgentIntention }): R
 
       {intention.tasks.length > 0 && (
         <Stack gap={6} data-testid='intention-tasks'>
-          <SectionLabel letterSpacing={LABEL_SPACING}>
+          <SectionLabel lts={LABEL_SPACING}>
             {`Tasks (${doneCount} of ${intention.tasks.length})`}
           </SectionLabel>
           <Stack gap={5}>
@@ -73,7 +73,7 @@ function IntentionBody({ intention }: { readonly intention: AgentIntention }): R
 
       {intention.summary && (
         <Stack gap={4} data-testid='intention-summary'>
-          <SectionLabel letterSpacing={LABEL_SPACING}>{"Agent's account"}</SectionLabel>
+          <SectionLabel lts={LABEL_SPACING}>{"Agent's account"}</SectionLabel>
           <Text size='sm'>{intention.summary}</Text>
         </Stack>
       )}

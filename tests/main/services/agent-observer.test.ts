@@ -4,20 +4,19 @@
 // research note's verified Claude Code hook fields (session_id,
 // hook_event_name, notification_type, transcript_path, cwd, tool_name).
 import * as http from 'node:http';
-import { AgentObserverService } from '../../../src/main/services/agent-observer';
-import { AgentObservabilityPushSchema, AgentSessionStateSchema } from '../../../src/shared/schemas';
-import type { AgentObservabilityPush } from '../../../src/shared/types';
+import { AgentObserverService, toSessionState } from '../../../src/main/services/agent-observer';
+import { AgentSessionStateSchema } from '../../../src/shared/schemas';
 
 const mockLog = { error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn() };
 
 const WORKSPACE_A = '/tmp/repo-wt/feature-a';
 const WORKSPACE_B = '/tmp/repo-wt/feature-b';
 
-// Wait for the next 'push' payload the service emits (state updates are
+// Wait for the next bare 'push' signal the service emits (state updates are
 // processed after the HTTP response, so tests await the emit, not the fetch).
-function nextPush(service: AgentObserverService): Promise<AgentObservabilityPush> {
+function nextPush(service: AgentObserverService): Promise<void> {
   return new Promise(resolve => {
-    service.once('push', (payload: AgentObservabilityPush) => resolve(payload));
+    service.once('push', () => resolve());
   });
 }
 
@@ -154,15 +153,14 @@ describe('AgentObserverService', () => {
       const pushed = nextPush(service);
       const { status: httpStatus } = await postHook(service, token, payload(event));
       expect(httpStatus).toBe(200);
-      const push = await pushed;
-      expect(push.kind).toBe('sessionState');
-      if (push.kind === 'sessionState') {
-        expect(push.state.status).toBe(status);
-        expect(push.state.workspacePath).toBe(WORKSPACE_A);
-        expect(push.state.sessionId).toBe('sess-1');
-        // Outbound payload is schema-valid.
-        expect(() => AgentObservabilityPushSchema.parse(push)).not.toThrow();
-        expect(() => AgentSessionStateSchema.parse(push.state)).not.toThrow();
+      await pushed;
+      const [session] = service.listSessions();
+      expect(session?.status).toBe(status);
+      expect(session?.workspacePath).toBe(WORKSPACE_A);
+      expect(session?.sessionId).toBe('sess-1');
+      // The session's schema-visible projection is schema-valid.
+      if (session) {
+        expect(() => AgentSessionStateSchema.parse(toSessionState(session))).not.toThrow();
       }
     });
 
@@ -174,10 +172,8 @@ describe('AgentObserverService', () => {
         token,
         payload({ hook_event_name: 'SessionStart', cwd: '/somewhere/else' })
       );
-      const push = await pushed;
-      if (push.kind === 'sessionState') {
-        expect(push.state.workspacePath).toBe(WORKSPACE_A);
-      }
+      await pushed;
+      expect(service.listSessions()[0]?.workspacePath).toBe(WORKSPACE_A);
     });
   });
 

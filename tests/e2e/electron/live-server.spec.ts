@@ -5,7 +5,7 @@ import {
   startLoreServer,
   seedRepo,
   secondClient,
-  islandCavesFiles,
+  sampleFiles,
   isolatedFfiHomeEnv,
   stubDirectoryPicker,
   createCloneBaseDir,
@@ -117,19 +117,19 @@ test.describe('Live server', () => {
     electronApp,
     window,
   }) => {
-    const repoName = 'u1-island-caves';
-    const emptyRepoName = 'u4-empty-repo';
-    await seedRepo(testServer!, repoName, islandCavesFiles());
+    const repoName = 'repo1';
+    const emptyRepoName = 'repo4';
+    await seedRepo(testServer!, repoName, sampleFiles());
     await testServer!.createRepo(emptyRepoName); // no revisions
 
     // Both narratives share one launched session -- cloning a real repository,
     // then opening a brand-new empty one -- like a user adding a second
     // repository without relaunching.
 
-    // Given: Maya connects to the live studio server
+    // Given: user1 connects to the server
     await connectToHarness(window);
 
-    // When: she picks island-caves from the server's real repository list and
+    // When: user1 picks repo1 from the server's repository list and
     // clones it
     await addAndCloneRepository(window, electronApp, repoName);
 
@@ -139,7 +139,7 @@ test.describe('Live server', () => {
     await expect(window.getByText('Sync', { exact: true })).toBeVisible();
     await expect(window.getByText('No history yet')).not.toBeVisible();
 
-    // When: Maya also adds a brand-new empty repo
+    // When: user1 also adds a brand-new empty repo
     await addAndCloneRepository(window, electronApp, emptyRepoName);
 
     // Then: the card shows the empty repository cloned onto disk, with a plain
@@ -162,8 +162,8 @@ test.describe('Live server', () => {
     electronApp,
     window,
   }) => {
-    const repoName = 'u2-sync-pill';
-    const repo = await seedRepo(testServer!, repoName, islandCavesFiles());
+    const repoName = 'repo2';
+    const repo = await seedRepo(testServer!, repoName, sampleFiles());
 
     await connectToHarness(window);
     await addAndCloneRepository(window, electronApp, repoName);
@@ -194,9 +194,9 @@ test.describe('Live server', () => {
     // the push, otherwise the push could race ahead of it.
     await window.waitForTimeout(500);
 
-    // When: Devin (a second client) pushes a change to the same branch.
-    const devin = await secondClient(testServer!, repo.url, 'devin-u2');
-    await devin.commitAndPush(
+    // When: user2 (a second client) pushes a change to the same branch.
+    const user2 = await secondClient(testServer!, repo.url, 'user2');
+    await user2.commitAndPush(
       { 'textures/rock-diffuse.tga': Buffer.from([0x54, 0x52, 0x55, 0x45, 0xaa, 0x01]) },
       'Lighting fix'
     );
@@ -222,7 +222,7 @@ test.describe('Live server', () => {
       });
     }
 
-    // When: Maya syncs
+    // When: user1 syncs
     await window.locator('.morph-pill').click(); // re-expand
     await window.getByText('Sync', { exact: true }).click();
 
@@ -234,7 +234,7 @@ test.describe('Live server', () => {
     electronApp,
     window,
   }) => {
-    const repoName = 'u3-heavy-asset';
+    const repoName = 'repo3';
     // Several multi-MB binary assets (~24MB total).
     const heavyAssetFiles = Object.fromEntries(
       Array.from({ length: 8 }, (_, index) => [

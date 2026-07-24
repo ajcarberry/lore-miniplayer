@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { LoreOperationError } from '../../../src/main/services/lore-repository';
-import { withServer, seedAndClone, secondClient, islandCavesFiles } from '../support/world';
+import { withServer, seedAndClone, secondClient, sampleFiles } from '../support/world';
 
 const MESH_PATH = 'meshes/cave-entrance.mesh';
 
@@ -11,32 +11,32 @@ const MESH_PATH = 'meshes/cave-entrance.mesh';
 // matches the remote exactly (no remote-side change involved).
 test('reset sync discards a dirty working copy and matches the remote', async () => {
   await withServer(async ({ server, service }) => {
-    const { clonePath: mayaPath } = await seedAndClone(
+    const { clonePath: user1Path } = await seedAndClone(
       server,
       service,
-      'island-caves',
-      islandCavesFiles()
+      'repo1',
+      sampleFiles()
     );
 
-    const originalContent = await readFile(join(mayaPath, MESH_PATH), 'utf8');
-    await writeFile(join(mayaPath, MESH_PATH), 'HALF-FINISHED SCRATCH EDIT, never staged\n');
+    const originalContent = await readFile(join(user1Path, MESH_PATH), 'utf8');
+    await writeFile(join(user1Path, MESH_PATH), 'HALF-FINISHED SCRATCH EDIT, never staged\n');
 
-    const dirtyStatus = await service.getFileStatus(mayaPath);
+    const dirtyStatus = await service.getFileStatus(user1Path);
     assert.ok(
       dirtyStatus.unstaged.some(file => file.path === MESH_PATH),
       `expected the dirty edit to show up unstaged, got: ${JSON.stringify(dirtyStatus)}`
     );
 
-    await service.syncRepository(mayaPath, undefined, { reset: true });
+    await service.syncRepository(user1Path, undefined, { reset: true });
 
-    const contentAfter = await readFile(join(mayaPath, MESH_PATH), 'utf8');
+    const contentAfter = await readFile(join(user1Path, MESH_PATH), 'utf8');
     assert.equal(
       contentAfter,
       originalContent,
       "expected the working copy to match the remote's content, local edit discarded"
     );
 
-    const statusAfter = await service.getFileStatus(mayaPath);
+    const statusAfter = await service.getFileStatus(user1Path);
     assert.deepEqual(
       statusAfter,
       { untracked: [], unstaged: [], staged: [] },
@@ -50,22 +50,22 @@ test('reset sync discards a dirty working copy and matches the remote', async ()
 // leaves the edit untouched; a forced sync completes and lands on the remote.
 test('a plain sync refuses over dirty local edits; force completes it', async () => {
   await withServer(async ({ server, service }) => {
-    const { repo, clonePath: mayaPath } = await seedAndClone(
+    const { repo, clonePath: user1Path } = await seedAndClone(
       server,
       service,
-      'island-caves',
-      islandCavesFiles()
+      'repo1',
+      sampleFiles()
     );
 
     const dirtyContent = 'HALF-FINISHED SCRATCH EDIT, never staged\n';
-    await writeFile(join(mayaPath, MESH_PATH), dirtyContent);
+    await writeFile(join(user1Path, MESH_PATH), dirtyContent);
 
-    const devin = await secondClient(server, repo.url, 'devin');
-    const devinMesh = 'mesh-format-v1\nvertices: 500\n';
-    await devin.commitAndPush({ [MESH_PATH]: devinMesh }, "Devin's remote change");
+    const user2 = await secondClient(server, repo.url, 'user2');
+    const user2Mesh = 'mesh-format-v1\nvertices: 500\n';
+    await user2.commitAndPush({ [MESH_PATH]: user2Mesh }, "user2's remote change");
 
     await assert.rejects(
-      service.syncRepository(mayaPath),
+      service.syncRepository(user1Path),
       (error: unknown) => {
         assert.ok(error instanceof LoreOperationError, 'expected a LoreOperationError');
         assert.match(
@@ -78,22 +78,22 @@ test('a plain sync refuses over dirty local edits; force completes it', async ()
       'expected a plain sync to refuse over dirty local edits that conflict with the incoming change'
     );
 
-    const contentAfterRefusal = await readFile(join(mayaPath, MESH_PATH), 'utf8');
+    const contentAfterRefusal = await readFile(join(user1Path, MESH_PATH), 'utf8');
     assert.equal(
       contentAfterRefusal,
       dirtyContent,
-      "expected the refused sync to leave Maya's dirty edit untouched"
+      "expected the refused sync to leave user1's dirty edit untouched"
     );
 
     await assert.doesNotReject(
-      service.syncRepository(mayaPath, undefined, { force: true }),
+      service.syncRepository(user1Path, undefined, { force: true }),
       'expected a forced sync to complete where a plain sync refused'
     );
 
-    const contentAfterForce = await readFile(join(mayaPath, MESH_PATH), 'utf8');
+    const contentAfterForce = await readFile(join(user1Path, MESH_PATH), 'utf8');
     assert.equal(
       contentAfterForce,
-      devinMesh,
+      user2Mesh,
       "expected the forced sync to land on the remote's content"
     );
   });

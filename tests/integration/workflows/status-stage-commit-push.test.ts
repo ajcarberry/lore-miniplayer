@@ -2,11 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { withServer, seedAndClone, islandCavesFiles, abs } from '../support/world';
+import { withServer, seedAndClone, sampleFiles, abs } from '../support/world';
 
 test('edit, review, stage, commit, push leaves a clean status', async () => {
   await withServer(async ({ server, service }) => {
-    const { clonePath } = await seedAndClone(server, service, 'island-caves', islandCavesFiles());
+    const { clonePath } = await seedAndClone(server, service, 'repo1', sampleFiles());
 
     await writeFile(
       join(clonePath, 'textures', 'rock-diffuse.tga'),
@@ -49,7 +49,7 @@ test('edit, review, stage, commit, push leaves a clean status', async () => {
 
 test('unstage one file before commit, the rest still land', async () => {
   await withServer(async ({ server, service }) => {
-    const { clonePath } = await seedAndClone(server, service, 'island-caves', islandCavesFiles());
+    const { clonePath } = await seedAndClone(server, service, 'repo1', sampleFiles());
 
     await writeFile(
       join(clonePath, 'textures', 'moss-diffuse.tga'),

@@ -9,7 +9,7 @@ import { withServer, writeSeedFiles, abs } from '../support/world';
 // divergence each handle "nothing here yet" without throwing.
 test('an empty repository degrades gracefully across every read', async () => {
   await withServer(async ({ server, service }) => {
-    const repo = await server.createRepo('island-caves-2');
+    const repo = await server.createRepo('repo1');
     const clonePath = await mkdtemp(join(tmpdir(), 'lore-empty-clone-'));
 
     await assert.doesNotReject(
@@ -49,7 +49,7 @@ test('an empty repository degrades gracefully across every read', async () => {
 // push, status, and a fresh clone.
 test('awkward filenames round-trip through stage/commit/push and a fresh clone', async () => {
   await withServer(async ({ server, service }) => {
-    const repo = await server.createRepo('awkward-names');
+    const repo = await server.createRepo('repo1');
     const seedPath = await mkdtemp(join(tmpdir(), 'lore-awkward-seed-'));
     await service.cloneRepository(repo.url, seedPath);
 

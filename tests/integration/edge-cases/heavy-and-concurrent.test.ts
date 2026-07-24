@@ -21,7 +21,7 @@ test('heavy-asset clone progress advances by bytes, not file count', async () =>
       'assets/tiny-b.bin': randomBytes(1024),
       'assets/huge.bin': randomBytes(48 * 1024 * 1024),
     };
-    const repo = await seedRepo(server, 'heavy-assets', files);
+    const repo = await seedRepo(server, 'repo1', files);
 
     const progressEvents: CloneProgress[] = [];
     service.on('cloneProgress', (progress: CloneProgress) => {
@@ -74,28 +74,28 @@ test('heavy-asset clone progress advances by bytes, not file count', async () =>
 // untracked/staged entries and no stale divergence reading between cycles.
 test('rapid-fire stage/commit/push cycles leave no stale state between them', async () => {
   await withServer(async ({ server, service }) => {
-    const { clonePath: mayaPath } = await seedAndClone(server, service, 'island-caves', {
+    const { clonePath: user1Path } = await seedAndClone(server, service, 'repo1', {
       'meshes/cave-entrance.mesh': 'mesh-format-v1\nvertices: 1\n',
     });
 
     const fileNames = ['assets/rapid-a.bin', 'assets/rapid-b.bin', 'assets/rapid-c.bin'];
 
     for (const relPath of fileNames) {
-      const fullPath = join(mayaPath, relPath);
+      const fullPath = join(user1Path, relPath);
       await mkdir(dirname(fullPath), { recursive: true });
       await writeFile(fullPath, randomBytes(64));
-      await service.stageFiles(mayaPath, [abs(mayaPath, relPath)]);
-      await service.commit(mayaPath, `Add ${relPath}`);
-      await service.push(mayaPath);
+      await service.stageFiles(user1Path, [abs(user1Path, relPath)]);
+      await service.commit(user1Path, `Add ${relPath}`);
+      await service.push(user1Path);
 
-      const status = await service.getFileStatus(mayaPath);
+      const status = await service.getFileStatus(user1Path);
       assert.deepEqual(
         status,
         { untracked: [], unstaged: [], staged: [] },
         `expected a clean status immediately after pushing ${relPath}, got: ${JSON.stringify(status)}`
       );
 
-      const divergence = await service.getBranchDivergence(mayaPath, 'main');
+      const divergence = await service.getBranchDivergence(user1Path, 'main');
       assert.equal(
         divergence.state,
         'inSync',

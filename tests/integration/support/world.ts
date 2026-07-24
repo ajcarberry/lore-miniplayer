@@ -107,7 +107,7 @@ export interface SecondClient {
 export async function secondClient(
   server: LoreTestServer,
   repoUrl: string,
-  name = 'devin'
+  name = 'user2'
 ): Promise<SecondClient> {
   const workdir = await mkdtemp(join(tmpdir(), `lore-${name}-`));
   await server.lore(['clone', repoUrl, workdir]);
@@ -124,7 +124,7 @@ export async function secondClient(
 
 // A small text mesh manifest and a binary texture: realistic asset shapes
 // without large fixtures.
-export function islandCavesFiles(): SeedFiles {
+export function sampleFiles(): SeedFiles {
   return {
     'meshes/cave-entrance.mesh': 'mesh-format-v1\nvertices: 128\nfaces: 64\n',
     'textures/rock-diffuse.tga': Buffer.from([

@@ -7,14 +7,14 @@ import { withServer, seedAndClone } from './support/world';
 
 test('service smoke: clone + list against a live server', async () => {
   await withServer(async ({ server, service }) => {
-    const { repo, clonePath } = await seedAndClone(server, service, 'smoke', {
+    const { repo, clonePath } = await seedAndClone(server, service, 'repo1', {
       'hello.txt': 'hello from the integration smoke test\n',
     });
 
     const remoteRepos = await service.listRemoteRepositories(server.grpcUrl);
     assert.ok(
-      remoteRepos.some(entry => entry.name === 'smoke' && entry.url === repo.url),
-      `expected 'smoke' in remote repository list, got: ${JSON.stringify(remoteRepos)}`
+      remoteRepos.some(entry => entry.name === 'repo1' && entry.url === repo.url),
+      `expected 'repo1' in remote repository list, got: ${JSON.stringify(remoteRepos)}`
     );
 
     const branches = await service.listBranches(clonePath);

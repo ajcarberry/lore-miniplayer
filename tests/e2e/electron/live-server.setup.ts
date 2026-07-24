@@ -9,7 +9,7 @@ import { isolatedHomeEnv } from '../../integration/harness/server';
 
 export { startLoreServer } from '../../integration/harness/server';
 export type { LoreTestServer } from '../../integration/harness/server';
-export { seedRepo, secondClient, islandCavesFiles } from '../../integration/support/world';
+export { seedRepo, secondClient, sampleFiles } from '../../integration/support/world';
 
 // The app's main process drives the SDK's native FFI directly, which the
 // harness's per-run HOME isolation (scoped to its `lore` CLI calls) does not

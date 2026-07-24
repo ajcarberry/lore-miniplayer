@@ -25,14 +25,25 @@ export default defineConfig({
       testDir: './tests/e2e/electron',
       // The live-server suite runs in its own project so its worker state stays
       // out of the pure-UI specs; a shared worker delays the next spec's
-      // electronApp.firstWindow() past its timeout.
-      testIgnore: '**/live-server.spec.ts',
+      // electronApp.firstWindow() past its timeout. The P-U1 isolation-model
+      // diagnostic connects to a real loreserver too, so it is likewise kept out
+      // of this worker — run it explicitly (`--grep "launch isolation model"`).
+      testIgnore: ['**/live-server.spec.ts', '**/*.diag.spec.ts'],
       use: {},
     },
     {
       name: 'electron-live-server',
       testDir: './tests/e2e/electron',
       testMatch: '**/live-server.spec.ts',
+      use: {},
+    },
+    {
+      // P-U1 isolation-model reliability check. Its own project (like
+      // electron-live-server) so its real-FFI launches never share a worker with
+      // the pure-UI specs. On-demand: `playwright test --project=electron-diag`.
+      name: 'electron-diag',
+      testDir: './tests/e2e/electron',
+      testMatch: '**/*.diag.spec.ts',
       use: {},
     },
   ],

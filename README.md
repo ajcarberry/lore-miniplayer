@@ -157,11 +157,11 @@ The repository tracks a minimal [Claude Code](https://claude.com/claude-code) se
 ### Testing Tools
 - **Jest**: Fast feedback loops, component testing, mocking, and testing JavaScript/TypeScript logic. 
 - **Playwright**: Testing real user workflows across the entire application.
-- **Real-server integration suite**: Runs the app's Lore operations against a real, locally spawned `loreserver` instead of mocks — service-layer flows plus a UI subset. See [docs/testing/integration-suite.md](docs/testing/integration-suite.md) and the [scenario catalog](docs/testing/scenario-catalog.md).
+- **Real-server tests**: Exercise the app's Lore operations against a real, locally spawned `loreserver` instead of mocks, in two layers — a **service-layer** suite (`pnpm test:integration`, `node:test` via `tsx`) and a **comprehensive UI** suite that drives the real app end to end (the Playwright `electron-live-server` project). See [docs/testing/integration-suite.md](docs/testing/integration-suite.md) and the [scenario catalog](docs/testing/scenario-catalog.md).
 
 > **Note:** The Playwright E2E suite launches the built Electron app from `out/`, so it needs a build (`pnpm build`) — the e2e scripts run one automatically. `pnpm test:play:codegen` records against a Vite dev server for authoring new tests.
 
-> **Note:** The real-server integration suite (`pnpm test:integration`) runs on **macOS and Linux only** and downloads the pinned `loreserver`/`lore` binaries from GitHub Releases on first run (cached under `.lore-test-cache/`, so later runs are offline). Set `GITHUB_TOKEN` to avoid API rate limits on a cold download. It is a separate step from `pnpm claude:pre-commit`.
+> **Note:** The real-server tests run on **macOS and Linux only** and download the pinned `loreserver`/`lore` binaries from GitHub Releases on first run (cached under `.lore-test-cache/`, so later runs are offline; set `GITHUB_TOKEN` to avoid API rate limits on a cold download; they skip on Windows). The **service-layer** suite (`pnpm test:integration`) is a step of its own; the **live-server UI** suite runs as part of the Playwright e2e — so it is included in `pnpm test:play` and in `pnpm claude:pre-commit`.
 
 ### Testing Commands
 | Command | Description |

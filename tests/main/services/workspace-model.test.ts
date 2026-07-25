@@ -1,3 +1,13 @@
+// The harness injects every dependency, so the SDK is never called — but the
+// import chain (workspace-model → lore-status) still evaluates it. Mock it
+// like the sibling suites: loading the REAL module twice in one Jest worker
+// (e.g. after workspace-model-freshness ran there) re-registers its FFI types
+// and dies with "Duplicate type name".
+jest.mock('@lore-vcs/sdk', () => ({
+  LoreError: class LoreError extends Error {},
+  lore: {},
+}));
+
 import { EventEmitter } from 'node:events';
 import {
   WorkspaceModelService,

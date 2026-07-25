@@ -4,6 +4,12 @@ import { MissionControlView } from '../../../src/renderer/components/mission-con
 import type { MissionControlViewProps } from '../../../src/renderer/components/mission-control/MissionControlView';
 import { makeCard, makeRepository, makeWorkspace, renderWithMantine } from './fixtures';
 
+// The repo-switcher Menu opens through a floating-ui positioning pass; under
+// heavy parallel test load that occasionally exceeds Jest's default 5s test
+// timeout even though the interaction is correct — same headroom as
+// MiniPlayer's picker tests.
+jest.setTimeout(15000);
+
 const OTHER_REPO_ID = '22222222-2222-4222-8222-222222222222';
 
 function threeBands() {
@@ -85,7 +91,11 @@ describe('MissionControlView — repo switcher', () => {
     );
 
     await user.click(screen.getByRole('button', { name: 'Switch repository' }));
-    await user.click(await screen.findByRole('menuitem', { name: 'brackwater' }));
+    // hidden:true + extended timeout: floating-ui transitions the dropdown
+    // through display:none while positioning under parallel test load.
+    await user.click(
+      await screen.findByRole('menuitem', { name: 'brackwater', hidden: true }, { timeout: 8000 })
+    );
 
     expect(onSelectRepository).toHaveBeenCalledWith(OTHER_REPO_ID);
   });

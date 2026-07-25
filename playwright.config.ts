@@ -23,10 +23,15 @@ if (focusProjectRequested) {
 
 export default defineConfig({
   testDir: './tests/e2e',
-  fullyParallel: false, // Run serially - each test launches its own Electron instance
+  fullyParallel: false, // Fallback for projects that don't opt into parallelism below (electron-diag's single sequential-launch test; electron-focus's real-OS-focus assertions, which stay workers:1)
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: 1, // Single worker to prevent focus races between concurrent Electron windows
+  // Upper bound on total worker processes across all projects. Concurrent Electron
+  // instances no longer race each other: since P1, test-mode windows launch hidden
+  // (no dock/activation), and every launch already gets an isolated userData dir,
+  // isolated HOME, and OS-assigned loreserver/CDP ports (see launch.ts) — so parallel
+  // launches are independent throwaway universes. CI machines are 2-core.
+  workers: process.env.CI ? 2 : 3,
 
   // Reap any suite Electron trees left by a previously aborted run before we
   // start, and guarantee none outlive the run at the end. Scoped strictly to
@@ -54,12 +59,16 @@ export default defineConfig({
       // diagnostic connects to a real loreserver too, so it is likewise kept out
       // of this worker — run it explicitly (`--grep "launch isolation model"`).
       testIgnore: ['**/live-*.spec.ts', '**/*.diag.spec.ts', '**/window-behavior-focus.spec.ts'],
+      fullyParallel: true,
+      workers: process.env.CI ? 2 : 3,
       use: {},
     },
     {
       name: 'electron-live-server',
       testDir: './tests/e2e/electron',
       testMatch: '**/live-*.spec.ts',
+      fullyParallel: true,
+      workers: process.env.CI ? 2 : 3,
       use: {},
     },
     {

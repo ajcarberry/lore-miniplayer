@@ -10,6 +10,18 @@ import { killProcessTree } from './support/reaper';
 // argv contains this exact path.
 export const APP_MAIN = path.join(process.cwd(), 'out/main/index.js');
 
+// Silent by default: every launch boots the app with no visible window and no
+// dock icon, so a run never flashes UI or steals the developer's focus (see the
+// LORE_MINIPLAYER_E2E_HIDDEN branch in src/main/index.ts). Debug escape hatch:
+// LORE_MINIPLAYER_E2E_SHOW=1 in the runner's environment restores the visible
+// behavior for the whole run.
+// The flag is cleared rather than omitted in show mode, so an inherited value
+// can't defeat the switch.
+function hiddenModeEnv(): Record<string, string> {
+  const show = process.env['LORE_MINIPLAYER_E2E_SHOW'] === '1';
+  return { LORE_MINIPLAYER_E2E_HIDDEN: show ? '' : '1' };
+}
+
 // A fresh, isolated userData directory per launch (or shared across a
 // relaunch pair, when the caller needs the on-disk config to survive) so e2e
 // runs never read or write the real user's ~/Library/Application
@@ -42,7 +54,7 @@ export async function launchApp(
   const dir = userDataDir ?? createTempUserDataDir();
   const app = await electron.launch({
     args: [APP_MAIN],
-    env: { ...process.env, ...extraEnv, LORE_MINIPLAYER_USER_DATA: dir },
+    env: { ...process.env, ...extraEnv, ...hiddenModeEnv(), LORE_MINIPLAYER_USER_DATA: dir },
   });
   return { app, userDataDir: dir };
 }

@@ -115,8 +115,11 @@ so most CI runs restore the cache instead of downloading. See
    paths with `abs()`.
 4. Add the scenario to the [Scenario catalog](./scenario-catalog.md).
 
-For a UI-level scenario, add a test to `tests/e2e/electron/live-server.spec.ts`.
-Note the ~3-real-launch ceiling per worker documented in that file.
+For a UI-level scenario, add a test to the matching `tests/e2e/electron/live-*.spec.ts`
+file (repositories, working-set, sync-branches, reset-and-mgmt, or the notices/
+progress `live-server.spec.ts`) using the page-object helpers in
+`tests/e2e/electron/support/ui.ts`. Give each test a unique repo name (one server
+is shared per file) and add the scenario to the [Scenario catalog](./scenario-catalog.md).
 
 ## Troubleshooting
 
@@ -127,6 +130,8 @@ Note the ~3-real-launch ceiling per worker documented in that file.
 - **`loreserver did not become healthy`.** The harness prints the server log
   tail with the error. A stale cache can cause this — `rm -rf .lore-test-cache`
   and retry.
-- **A test hangs on the first UI launch.** The Electron app's real FFI launch is
-  occasionally slow to produce the first window; the live-server specs use
-  `retries: 1` for this. See `tests/e2e/electron/live-server.spec.ts`.
+- **A UI test hangs then passes on retry.** The app's main process intermittently
+  does not emit its window within 30s on launch (`firstWindow()` timeout) — a
+  known product-side issue (see the Scenario catalog's "Known findings"). The
+  live-`*` specs use `retries: 1` to absorb it; the harness bounds `app.close()`
+  (`closeAppBounded`) so a slow SDK shutdown can't hang teardown.

@@ -112,16 +112,77 @@ Failure modes and boundary conditions.
 
 ## Live-server UI end-to-end
 
-The UI subset drives the real Electron app (renderer → IPC → main-process service
-→ live `loreserver`). Runs on macOS/Linux; see
-`tests/e2e/electron/live-server.spec.ts`.
+These drive the **real Electron app** (renderer → IPC → main-process service →
+live `loreserver`), asserting what a user sees. Run on macOS/Linux via the
+`electron-live-server` Playwright project (needs `pnpm build`):
 
-- **Clone a real repository into the card, then open an empty one** — cloning a
-  seeded repo and a brand-new empty repo both land in the card with the right
-  transport row and history state.
-- **A teammate push surfaces the sync-needed pill, and clears on sync** — a
-  `user2` push drives the collapsed pill's notice pulse through the full
-  divergence → notification → pill pipeline, and syncing clears it.
-- **Cloning a heavy asset streams real progress events to completion** — the
-  clone-progress channel delivers multiple real ticks to the renderer, ending
-  at 100%.
+```bash
+pnpm build
+pnpm exec playwright test --project=electron-live-server
+```
+
+The suite runs one worker with `retries: 1` — see [Known findings](#known-findings)
+for the residual app-launch flake the retry absorbs. A separate
+`launch-isolation.diag.spec.ts` (project `electron-diag`) is an on-demand launch
+reliability check.
+
+Repositories & workspaces (`live-repositories.spec.ts`)
+- **Clone from the remote list** — connect, pick a repo from the live list, clone;
+  the card shows the repo, a normal transport row, and history.
+- **Add an existing on-disk workspace** — pick a directory that is already a Lore
+  repo; the modal flips to existing-mode and tracks it without cloning.
+- **List and switch between multiple workspaces** — add two repos, the picker lists
+  both, selecting one makes it the active card.
+
+Working set & the commit → push loop (`live-working-set.spec.ts`)
+- **Edit, add, stage, commit, push** — an edited file shows 'M' and a new file 'A',
+  both unstaged; the pill/card uncommitted notifiers fire; staging + commit then
+  raise the unpushed notifiers (pill glyph + card Push "To push"); push leaves a
+  clean status, "Up to date", and a new history revision.
+- **Unstage one file before commit** — only the still-staged file lands; the
+  unstaged one stays in the working set.
+
+Sync, branches, revisions (`live-sync-branches.spec.ts`)
+- **Behind remote → sync** — a `user2` push raises the collapsed pill's sync notice
+  AND the card's accented "Behind remote" Sync cell; syncing clears both to
+  "Current".
+- **Switch branches** — the branch switcher lists a published feature branch;
+  switching moves the header to it.
+- **Sync to a specific revision** — with several revisions, syncing to `@1` moves
+  the working copy off the tip and the Sync caption reads "Older revision".
+
+Reset, repo management, shortcuts (`live-reset-and-mgmt.spec.ts`)
+- **Reset a dirty workspace** — a scratch edit shows dirty (working-set row + pill
+  uncommitted glyph); Reset → confirm clears it and discards the on-disk edit.
+- **Remove a repository from the app** — deleting via the edit modal removes it
+  from the repo picker (the server repo is untouched).
+- **Open-in-explorer / open-terminal shortcuts** — each footer shortcut invokes its
+  IPC (`repository:open-in-explorer` / `window:open-terminal`) with the repo path
+  (stubbed — asserts the invocation, no external app launches).
+
+Notices & progress (`live-server.spec.ts`)
+- **Empty repository shows a clean no-history state** — a zero-revision repo lands
+  with "No history yet" and no stuck loader.
+- **An active sync notice suspends the window unfocused dim** — through the full
+  live pipeline (the pill notice basics are covered above; the mocked plumbing is
+  in `window-behavior.spec.ts`).
+- **Heavy-asset clone streams real progress to completion** — multiple real clone
+  ticks reach the renderer, ending at 100%.
+
+## Known findings
+
+Behaviors the suite documents but does not paper over (assert actual behavior, or
+mark `todo`, and file a follow-up):
+
+- **Intermittent app-launch hang.** The app's main process occasionally does not
+  emit its window within 30s on launch (`firstWindow()` timeout), independent of
+  the test harness — a product-side `src/main` issue (SDK/FFI init). Absorbed for
+  now by `retries: 1`; filed as a follow-up.
+- **Notifier surfaces disagree pre-stage.** The pill's "uncommitted" glyph fires on
+  the total dirty-file count, but the card's Commit cell accents only when
+  something is *staged* — so with unstaged changes the pill signals and the card
+  does not (`live-working-set.spec.ts` asserts the actual behavior).
+- **Slow blocking shutdown.** `will-quit` runs a synchronous unbounded
+  `lore.shutdown()` that can make app quit slow; the e2e harness bounds close
+  (`closeAppBounded`) so it can't hang teardown.
+- **Conflict visibility** (service-layer) — see the E4 `todo` above.

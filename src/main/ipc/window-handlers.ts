@@ -21,8 +21,14 @@ const UNFOCUSED_OPACITY = 0.7;
 
 let noticeActive = false;
 
+// Pure decision extracted from applyFocusOpacity so the dim/notice matrix has
+// fast local unit coverage with no Electron imports required to test it.
+export function computeFocusOpacity(state: { focused: boolean; noticeActive: boolean }): number {
+  return state.noticeActive || state.focused ? FOCUSED_OPACITY : UNFOCUSED_OPACITY;
+}
+
 function applyFocusOpacity(win: BrowserWindow): void {
-  win.setOpacity(noticeActive || win.isFocused() ? FOCUSED_OPACITY : UNFOCUSED_OPACITY);
+  win.setOpacity(computeFocusOpacity({ focused: win.isFocused(), noticeActive }));
 }
 
 export function attachFocusDimming(win: BrowserWindow): void {

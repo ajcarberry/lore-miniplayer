@@ -1,11 +1,11 @@
-// Spawns a hermetically isolated `loreserver`. A per-run `--config` TOML pins
-// the store paths to a fresh temp dir and binds the QUIC/gRPC/HTTP ports to
-// free ports, so runs stay isolated and can run in parallel. TMPDIR redirects
-// the server's self-signed cert pair; HOME redirects the `lore` CLI's config.
+// Spawns a hermetically isolated `loreserver`. A per-run config dir pins the
+// store paths to a fresh temp dir and binds QUIC/gRPC/HTTP to free ports, so
+// runs stay isolated and parallelizable. TMPDIR redirects the server's
+// self-signed cert pair; HOME redirects the `lore` CLI's config.
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { closeSync, openSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { createServer } from 'node:net';
+import { createServer, type Server } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -70,24 +70,39 @@ function registerExitSafetyNet(): void {
   });
 }
 
-async function getFreePort(): Promise<number> {
+// Bind a probe to an OS-chosen loopback port, tracking it in `probes` so the
+// caller can hold it open (guaranteeing distinct ports) and close it later.
+async function reserveFreePort(probes: Server[]): Promise<number> {
+  const probe = createServer();
+  probe.unref();
+  probes.push(probe);
   return await new Promise((resolvePort, reject) => {
-    const probe = createServer();
-    probe.unref();
     probe.on('error', reject);
     probe.listen(0, '127.0.0.1', () => {
       const address = probe.address();
       if (address === null || typeof address === 'string') {
-        probe.close();
         reject(new Error('Failed to allocate a free port for the test loreserver'));
         return;
       }
-      const { port } = address;
-      probe.close(() => {
-        resolvePort(port);
-      });
+      resolvePort(address.port);
     });
   });
+}
+
+// Reserve two distinct loopback ports. Both probes stay bound until both ports
+// are chosen, so the OS never returns the same one twice; a short race remains
+// between closing the probes and the server binding, inherent to pre-allocation.
+async function getFreePortPair(): Promise<{ grpcPort: number; httpPort: number }> {
+  const probes: Server[] = [];
+  try {
+    const grpcPort = await reserveFreePort(probes);
+    const httpPort = await reserveFreePort(probes);
+    return { grpcPort, httpPort };
+  } finally {
+    await Promise.all(
+      probes.map(probe => new Promise<void>(resolveClose => probe.close(() => resolveClose())))
+    );
+  }
 }
 
 async function readLogTail(logPath: string): Promise<string> {
@@ -113,8 +128,7 @@ export async function startLoreServer(opts?: { version?: string }): Promise<Lore
     mkdir(homeDir, { recursive: true }),
   ]);
 
-  const grpcPort = await getFreePort();
-  const httpPort = await getFreePort();
+  const { grpcPort, httpPort } = await getFreePortPair();
   const grpcUrl = `lore://127.0.0.1:${grpcPort}`;
   const httpUrl = `http://127.0.0.1:${httpPort}`;
 

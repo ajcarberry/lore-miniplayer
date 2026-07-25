@@ -218,18 +218,10 @@ app.whenReady().then(async () => {
   });
 });
 
-// No `will-quit` SDK shutdown: `lore.shutdown()` is a SYNCHRONOUS FFI call that
-// blocks the main thread up to a fixed ~10s native drain timeout while streaming
-// (notification/status) threads join — measured hitting 10001ms on quits after
-// live server activity. Blocking quit that long slowed teardown past the e2e
-// bound, which SIGKILLed the tree (macOS "quit unexpectedly" dialogs) and left an
-// orphan that could poison the next launch's firstWindow(). A synchronous FFI
-// call cannot be time-bounded from JS (it blocks the event loop, so no
-// timer/app.exit race can fire), and the SDK's own file logging is flushed
-// incrementally (operation logs are on disk before quit; shutdown only appends
-// its self-teardown lines), so the OS reclaiming native threads/sockets/memory on
-// process exit is both sufficient and non-destructive. shutdownLoreSdk() is kept
-// (and unit-tested) for any future in-process teardown, just not wired to quit.
+// Quit does not call lore.shutdown(): it is a synchronous FFI call that blocks
+// the main thread for a fixed ~10s native drain and cannot be time-bounded from
+// JS. The SDK flushes its file logs incrementally, so the OS reclaiming native
+// threads, sockets, and memory on process exit is both sufficient and safe.
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

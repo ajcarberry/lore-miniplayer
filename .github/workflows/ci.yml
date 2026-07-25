@@ -46,9 +46,9 @@ jobs:
       - name: Unit tests with coverage
         run: pnpm test:jest:coverage
 
-      # The integration suite and live-server e2e need real loreserver/lore
-      # binaries, which only aarch64-apple-darwin has both a release asset and
-      # harness OS support for, so these steps stay macOS-only.
+      # The integration suite and live-server e2e download and run real
+      # loreserver/lore binaries, so they need a runner with a matching release
+      # asset and a display. Keep them macOS-only.
       - name: Resolve Lore binary version + triple
         if: runner.os == 'macOS'
         id: lore-bins

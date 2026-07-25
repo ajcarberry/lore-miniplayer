@@ -10,11 +10,9 @@ export interface World {
   service: LoreRepositoryService;
 }
 
-// LoreRepositoryService drives the SDK's FFI in-process, which reads and writes
-// one global config under $HOME. Concurrent test processes cloning at once
-// corrupt each other's reads of that shared file, so redirect HOME/XDG_* for
-// this process once. Each `node --test` file is its own OS process, so this
-// never leaks across concurrently-running test files.
+// The SDK's in-process FFI reads and writes one global config under $HOME, so
+// concurrent test files would corrupt each other's reads. Redirect HOME/XDG_*
+// once per process; each `node --test` file is its own process, so nothing leaks.
 let ffiHomeReady: Promise<void> | undefined;
 
 async function ensureIsolatedFfiHome(): Promise<void> {

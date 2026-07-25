@@ -11,10 +11,9 @@ export { startLoreServer } from '../../integration/harness/server';
 export type { LoreTestServer } from '../../integration/harness/server';
 export { seedRepo, secondClient, sampleFiles } from '../../integration/support/world';
 
-// The app's main process drives the SDK's native FFI directly, which the
-// harness's per-run HOME isolation (scoped to its `lore` CLI calls) does not
-// cover. Left alone, the FFI reads and writes a global config file under the
-// developer's real $HOME. Give each launched app its own throwaway HOME/XDG_*.
+// The launched app's FFI reads and writes a global config under the real $HOME,
+// which the harness's CLI-scoped HOME isolation doesn't cover. Give each app its
+// own throwaway HOME/XDG_*.
 export async function isolatedFfiHomeEnv(): Promise<Record<string, string>> {
   const homeDir = await mkdtemp(join(tmpdir(), 'lore-miniplayer-e2e-home-'));
   return isolatedHomeEnv(homeDir);

@@ -6,8 +6,8 @@ import path from 'node:path';
 import { killProcessTree } from './support/reaper';
 
 // Requires `pnpm build` first — every spec launches the built app at this path.
-// Exported as the suite's SAFE scoping key: the orphan reaper only ever kills
-// Electron processes whose argv contains this exact absolute path.
+// Exported as the reaper's scoping key: it only kills Electron processes whose
+// argv contains this exact path.
 export const APP_MAIN = path.join(process.cwd(), 'out/main/index.js');
 
 // A fresh, isolated userData directory per launch (or shared across a
@@ -47,15 +47,10 @@ export async function launchApp(
   return { app, userDataDir: dir };
 }
 
-// Close a launched app without ever letting teardown hang the run.
-//
-// A wedged instance (the residual intermittent `firstWindow()` launch stall) can
-// make `app.close()` hang past the test timeout and leave an orphaned Electron
-// tree that could poison a later launch's firstWindow(). So race the graceful
-// close against a bound; if it overruns, SIGKILL the whole Electron process tree.
-// Either way the process is gone before the next launch. (The app no longer runs
-// a blocking SDK shutdown on quit — see src/main/index.ts — so the graceful path
-// is normally prompt.)
+// Close a launched app without letting teardown hang the run. A wedged instance
+// can make app.close() hang past the timeout and orphan an Electron tree that
+// poisons a later launch. Race the close against a bound; on overrun, SIGKILL
+// the whole tree so the process is gone before the next launch.
 export async function closeAppBounded(app: ElectronApplication, timeoutMs = 15_000): Promise<void> {
   const pid = app.process().pid;
   let timer: ReturnType<typeof setTimeout> | undefined;

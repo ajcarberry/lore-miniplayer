@@ -1,7 +1,7 @@
 // Provisions version-pinned `loreserver` and `lore` binaries from GitHub
 // Releases, caching them on disk. Never relies on anything on PATH.
 import { execFile } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { access, chmod, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { constants as fsConstants } from 'node:fs';
 import { arch as osArch, platform as osPlatform } from 'node:os';
@@ -27,8 +27,13 @@ const REPO_ROOT = resolve(HERE, '../../..');
 const CACHE_ROOT = join(REPO_ROOT, '.lore-test-cache', 'lore-bins');
 
 const SdkPackageSchema = z.object({ version: z.string() });
-const ReleaseAssetSchema = z.object({ name: z.string(), url: z.string() });
+const ReleaseAssetSchema = z.object({
+  name: z.string(),
+  url: z.string(),
+  digest: z.string().nullish(), // e.g. "sha256:<hex>"; absent on older releases
+});
 const ReleaseSchema = z.object({ assets: z.array(ReleaseAssetSchema) });
+type ReleaseAsset = z.infer<typeof ReleaseAssetSchema>;
 
 /**
  * Resolves cached, executable binary paths; downloads and caches on a miss.
@@ -122,9 +127,7 @@ function ghHeaders(accept: string): Record<string, string> {
   };
 }
 
-async function fetchReleaseAssets(
-  version: string
-): Promise<ReadonlyArray<{ name: string; url: string }>> {
+async function fetchReleaseAssets(version: string): Promise<ReadonlyArray<ReleaseAsset>> {
   const url = `https://api.github.com/repos/${GITHUB_REPO}/releases/tags/v${version}`;
   const res = await fetch(url, { headers: ghHeaders('application/vnd.github+json') });
   if (!res.ok) {
@@ -136,27 +139,43 @@ async function fetchReleaseAssets(
   return ReleaseSchema.parse(json).assets;
 }
 
-function resolveAssetUrl(
-  assets: ReadonlyArray<{ name: string; url: string }>,
+function resolveAsset(
+  assets: ReadonlyArray<ReleaseAsset>,
   bin: BinName,
   version: string,
   triple: string
-): string {
+): ReleaseAsset {
   const expected = `${bin}-v${version}-${triple}.tar.gz`;
   const asset = assets.find(candidate => candidate.name === expected);
   if (!asset) {
     throw new Error(`No release asset matching "${expected}" found in ${GITHUB_REPO} v${version}`);
   }
-  return asset.url;
+  return asset;
 }
 
-async function downloadAsset(assetUrl: string, destFile: string): Promise<void> {
-  const res = await fetch(assetUrl, { headers: ghHeaders('application/octet-stream') });
+// Download an asset, verifying its bytes before they are extracted and run.
+async function downloadAsset(asset: ReleaseAsset, destFile: string): Promise<void> {
+  const res = await fetch(asset.url, { headers: ghHeaders('application/octet-stream') });
   if (!res.ok) {
-    throw new Error(`Failed to download ${assetUrl}: ${res.status} ${res.statusText}`);
+    throw new Error(`Failed to download ${asset.url}: ${res.status} ${res.statusText}`);
   }
   const buffer = Buffer.from(await res.arrayBuffer());
+  verifyDigest(asset, buffer);
   await writeFile(destFile, buffer);
+}
+
+// Enforce the release's sha256 digest ("sha256:<hex>"). Other algorithms or an
+// absent digest go unverified, so the check only ever tightens trust.
+function verifyDigest(asset: ReleaseAsset, buffer: Buffer): void {
+  const prefix = 'sha256:';
+  if (asset.digest === undefined || asset.digest === null || !asset.digest.startsWith(prefix)) {
+    return;
+  }
+  const expected = asset.digest.slice(prefix.length);
+  const actual = createHash('sha256').update(buffer).digest('hex');
+  if (actual !== expected) {
+    throw new Error(`Checksum mismatch for ${asset.name}: expected sha256 ${expected}, got ${actual}`);
+  }
 }
 
 async function findExecutable(dir: string, name: string): Promise<string | undefined> {
@@ -177,15 +196,15 @@ async function findExecutable(dir: string, name: string): Promise<string | undef
 
 async function installBinary(
   bin: BinName,
-  assets: ReadonlyArray<{ name: string; url: string }>,
+  assets: ReadonlyArray<ReleaseAsset>,
   version: string,
   triple: string,
   stagingRoot: string,
   cacheDir: string
 ): Promise<void> {
-  const assetUrl = resolveAssetUrl(assets, bin, version, triple);
+  const asset = resolveAsset(assets, bin, version, triple);
   const tarballPath = join(stagingRoot, `${bin}.tar.gz`);
-  await downloadAsset(assetUrl, tarballPath);
+  await downloadAsset(asset, tarballPath);
 
   const extractDir = join(stagingRoot, `${bin}-extracted`);
   await mkdir(extractDir, { recursive: true });

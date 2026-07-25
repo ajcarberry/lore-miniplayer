@@ -12,15 +12,10 @@ import {
 } from '../live-server.setup';
 import { writeSeedFiles, type SeedFiles } from '../../../integration/support/world';
 
-// Page-object helper layer over the live Electron app. The scenario packets
-// (WP-U3…U6) drive every capability through these helpers so a selector only
-// ever lives in one place. Selectors are grounded in the affordance survey and
-// verified against the real renderer components.
-//
-// Launch model (from WP-U1, unchanged): workers:1 / fullyParallel:false sustains
-// many sequential real launches in one worker. Per test the `electronApp`
-// fixture does launchApp(undefined, isolatedFfiHomeEnv()) → firstWindow() →
-// guaranteed app.close() + removeTempUserDataDir.
+// Page-object helper layer over the live Electron app, so each selector lives in
+// one place. Launch model: workers:1 / fullyParallel:false sustains many
+// sequential real launches per worker; each test's electronApp fixture runs
+// launchApp → firstWindow → close + removeTempUserDataDir.
 
 export { expect };
 
@@ -240,13 +235,10 @@ export async function writeInClone(clonePath: string, files: SeedFiles): Promise
   await writeSeedFiles(clonePath, files);
 }
 
-// Force the card to re-read working-copy status after an on-disk change. The
-// card exposes no manual "reload" control: useFileStaging re-reads status only
-// on a 3s poll or when the selected repository's identity changes (its load
-// effect is keyed on selectedRepo). Re-selecting the active repo through the
-// footer picker — after a Refresh, which replaces the repo list with fresh
-// object identities from the IPC list() — makes that effect re-run at once, so
-// an on-disk edit surfaces without waiting on the poll (no blind timeout).
+// Force the card to re-read working-copy status after an on-disk change. There
+// is no manual reload: status re-reads on a 3s poll or when the selected repo's
+// identity changes. Refresh replaces the repo list with fresh identities, then
+// re-selecting the active repo re-runs the load effect at once — no blind wait.
 export async function refreshWorkingSet(window: Page): Promise<void> {
   await window.getByLabel('Repositories').click();
   await window.getByText('Refresh', { exact: true }).click();
@@ -273,7 +265,10 @@ export async function fileKindBadge(window: Page, relPath: string): Promise<'A' 
     )
     .first();
   const text = (await badge.textContent())?.trim();
-  return text === 'A' ? 'A' : 'M';
+  if (text === 'A' || text === 'M') {
+    return text;
+  }
+  throw new Error(`unexpected change-kind badge for ${relPath}: ${JSON.stringify(text)}`);
 }
 
 // Toggle a working-set file's staged state via its checkbox.
@@ -413,13 +408,10 @@ interface OpenExternalsStub {
   readonly terminalCalls: () => Promise<string[]>;
 }
 
-// Replace the two external-launching main handlers with capturing stubs so the
-// footer shortcuts can be asserted (invocation + path argument) WITHOUT
-// launching Finder/Terminal. Stubbing at the ipcMain handler (re-register via
-// removeHandler + handle) is reliable regardless of how the bundle imports the
-// underlying shell.openPath / child_process.spawn calls, and returns a
-// void-success Result so the renderer's success path runs unchanged. Call
-// before clicking the footer shortcuts.
+// Replace the two external-launching ipcMain handlers with capturing stubs so
+// the footer shortcuts can be asserted (invocation + path) without launching
+// Finder/Terminal. Returns a void-success Result so the renderer's success path
+// runs unchanged. Call before clicking the shortcuts.
 export async function stubOpenExternals(app: ElectronApplication): Promise<OpenExternalsStub> {
   await app.evaluate(({ ipcMain }) => {
     const globals = globalThis as typeof globalThis & {

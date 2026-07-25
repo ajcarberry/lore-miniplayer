@@ -1,14 +1,20 @@
 import { execFileSync } from 'node:child_process';
 import { APP_MAIN } from '../launch';
 
-// SAFELY-scoped orphan reaper for the live Electron suite.
-//
-// The scoping key is the absolute path of THIS repo's built main entry
-// (`out/main/index.js`, from launch.ts's APP_MAIN). Every suite launch is
-// `electron.launch({ args: [APP_MAIN], … })`, so that exact path is in the
-// Electron main process's argv and nothing else on the machine runs it — the
-// developer's own Electron/Chrome apps launch from their own bundles. This is
-// deliberately NOT a blanket `pkill electron`.
+// Orphan reaper for the live Electron suite, scoped to THIS repo's built main
+// entry (APP_MAIN, from launch.ts). Every suite launch passes that absolute
+// path as Electron's argv, so it identifies our processes without a blanket
+// `pkill electron`. Matches are also confirmed to be Electron, so an unrelated
+// process that merely names the path (an editor, a grep) is spared.
+
+// The full command line of `pid`, or '' if it has exited.
+function commandOf(pid: number): string {
+  try {
+    return execFileSync('ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8' }).trim();
+  } catch {
+    return '';
+  }
+}
 
 // The immediate children of `pid` (empty when it has none — pgrep exits 1).
 function childrenOf(pid: number): number[] {
@@ -50,10 +56,13 @@ export function killProcessTree(pid: number): void {
   forceKill(pid);
 }
 
-// PIDs of every live Electron main launched from this suite's APP_MAIN.
+// PIDs of every live Electron main launched from this suite's APP_MAIN. `pgrep
+// -f` matches any argv containing the path, so results are filtered to actual
+// Electron processes.
 export function suiteMainPids(): number[] {
+  let candidates: number[];
   try {
-    return execFileSync('pgrep', ['-f', APP_MAIN], { encoding: 'utf8' })
+    candidates = execFileSync('pgrep', ['-f', APP_MAIN], { encoding: 'utf8' })
       .split('\n')
       .map(line => line.trim())
       .filter(Boolean)
@@ -61,6 +70,7 @@ export function suiteMainPids(): number[] {
   } catch {
     return [];
   }
+  return candidates.filter(pid => /electron/i.test(commandOf(pid)));
 }
 
 // Reap every straggler Electron tree belonging to this suite. Returns how many

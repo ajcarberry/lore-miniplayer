@@ -1,7 +1,6 @@
 jest.mock('@lore-vcs/sdk', () => ({
   lore: {
     logConfigure: jest.fn(),
-    shutdown: jest.fn(),
   },
 }));
 
@@ -11,24 +10,27 @@ jest.mock('electron', () => ({
   },
 }));
 
-import { lore } from '@lore-vcs/sdk';
-import { initializeLoreSdk, shutdownLoreSdk } from '../../../src/main/services/lore-sdk';
+// resetModules gives each test a fresh module registry, so the SUT's
+// module-level init guard starts false. Import lore and the SUT together after
+// the reset so both resolve to the same freshly-mocked lore instance.
+async function loadFresh(): Promise<{
+  initializeLoreSdk: () => void;
+  logConfigure: jest.Mock;
+}> {
+  jest.resetModules();
+  const { lore } = await import('@lore-vcs/sdk');
+  const { initializeLoreSdk } = await import('../../../src/main/services/lore-sdk');
+  return { initializeLoreSdk, logConfigure: lore.logConfigure as jest.Mock };
+}
 
-const mockLore = lore as jest.Mocked<typeof lore>;
-
-describe('lore-sdk lifecycle', () => {
-  afterEach(() => {
-    // Reset module-level init state between tests
-    shutdownLoreSdk();
-    jest.clearAllMocks();
-  });
-
-  it('should configure SDK logging into the user data directory', () => {
+describe('lore-sdk initialization', () => {
+  it('should configure SDK file logging under the user data directory', async () => {
     // When: initializing the SDK
+    const { initializeLoreSdk, logConfigure } = await loadFresh();
     initializeLoreSdk();
 
     // Then: file logging is configured under userData
-    expect(mockLore.logConfigure).toHaveBeenCalledWith(
+    expect(logConfigure).toHaveBeenCalledWith(
       expect.objectContaining({
         file: true,
         filePath: expect.stringContaining('lore-logs'),
@@ -36,37 +38,13 @@ describe('lore-sdk lifecycle', () => {
     );
   });
 
-  it('should only configure once for repeated initialization', () => {
+  it('should configure logging only once for repeated initialization', async () => {
     // When: initializing twice
+    const { initializeLoreSdk, logConfigure } = await loadFresh();
     initializeLoreSdk();
     initializeLoreSdk();
 
     // Then: the SDK is configured a single time
-    expect(mockLore.logConfigure).toHaveBeenCalledTimes(1);
-  });
-
-  it('should shut the SDK down only when initialized', () => {
-    // Given: an uninitialized SDK
-    shutdownLoreSdk();
-    expect(mockLore.shutdown).not.toHaveBeenCalled();
-
-    // When: initializing and shutting down
-    initializeLoreSdk();
-    shutdownLoreSdk();
-
-    // Then: the native shutdown ran exactly once
-    expect(mockLore.shutdown).toHaveBeenCalledTimes(1);
-  });
-
-  it('should allow re-initialization after shutdown', () => {
-    // Given: a full init/shutdown cycle
-    initializeLoreSdk();
-    shutdownLoreSdk();
-
-    // When: initializing again
-    initializeLoreSdk();
-
-    // Then: logging is configured again
-    expect(mockLore.logConfigure).toHaveBeenCalledTimes(2);
+    expect(logConfigure).toHaveBeenCalledTimes(1);
   });
 });

@@ -118,52 +118,32 @@ test.describe('Live server', () => {
     });
   }
 
-  test('clone a real repository into the card, then open an empty one', async ({
+  // Cloning from the remote list and switching between repositories are covered
+  // by live-repositories.spec.ts (UA/UC); this keeps the distinct empty-repo case.
+  test('opening a brand-new empty repository shows a clean no-history state', async ({
     electronApp,
     window,
   }) => {
-    const repoName = 'repo1';
-    const emptyRepoName = 'repo4';
-    await seedRepo(testServer!, repoName, sampleFiles());
+    const emptyRepoName = 'repo1';
     await testServer!.createRepo(emptyRepoName); // no revisions
 
-    // Both narratives share one launched session -- cloning a real repository,
-    // then opening a brand-new empty one -- like a user adding a second
-    // repository without relaunching.
-
-    // Given: user1 connects to the server
     await connectToHarness(window);
-
-    // When: user1 picks repo1 from the server's repository list and
-    // clones it
-    await addAndCloneRepository(window, electronApp, repoName);
-
-    // Then: the UI has left the connect page and the card shows the cloned
-    // repository -- its name in the header eyebrow and a normal transport row.
-    await expect(repoHeaderName(window, repoName)).toBeVisible();
-    await expect(window.getByText('Sync', { exact: true })).toBeVisible();
-    await expect(window.getByText('No history yet')).not.toBeVisible();
-
-    // When: user1 also adds a brand-new empty repo
     await addAndCloneRepository(window, electronApp, emptyRepoName);
 
-    // Then: the card shows the empty repository cloned onto disk, with a plain
-    // "no history yet" state rather than a broken graph or stuck loader.
+    // The card shows the empty repository cloned onto disk, with a plain "no
+    // history yet" state rather than a broken graph or a stuck loader.
     await expect(repoHeaderName(window, emptyRepoName)).toBeVisible();
     await expect(window.getByText('Sync', { exact: true })).toBeVisible();
     await expect(window.getByText('No history yet')).toBeVisible();
     await expect(window.getByLabel('Loading history')).not.toBeVisible();
-
-    // And: the window is still responsive -- the repository picker still opens
-    // and lists both repositories. Each row is a button labeled with the repo
-    // name, so the lookup is role-scoped.
-    await window.getByLabel('Repositories').click();
-    await expect(window.getByText('Add repository…')).toBeVisible();
-    await expect(window.getByRole('button', { name: repoName, exact: true })).toBeVisible();
-    await expect(window.getByRole('button', { name: emptyRepoName, exact: true })).toBeVisible();
   });
 
-  test('a teammate push surfaces the sync-needed pill, and clears on sync', async ({
+  // The pill sync-notice and the card "Behind remote" caption are covered by
+  // live-sync-branches.spec.ts (UF); this test's distinct concern is that an
+  // active notice suspends the window's unfocused dim through the full live
+  // divergence -> notification pipeline (window-behavior.spec.ts only drives that
+  // via the mocked setNoticeActive plumbing).
+  test('an active sync notice suspends the window unfocused dim, and clears on sync', async ({
     electronApp,
     window,
   }) => {

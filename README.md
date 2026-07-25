@@ -128,7 +128,8 @@ src/
 
 tests/
 ├── e2e/
-│   └── electron/   # Playwright Electron end-to-end tests
+│   └── electron/   # Playwright Electron end-to-end tests (incl. live-server against a real loreserver)
+├── integration/    # Real-server integration suite (tsx + node:test): harness/ + support/ + workflows/ + edge-cases/
 ├── main/           # Main process tests
 ├── renderer/       # React component tests
 ├── mocks/          # Test mocks and fixtures
@@ -156,13 +157,17 @@ The repository tracks a minimal [Claude Code](https://claude.com/claude-code) se
 ### Testing Tools
 - **Jest**: Fast feedback loops, component testing, mocking, and testing JavaScript/TypeScript logic. 
 - **Playwright**: Testing real user workflows across the entire application.
+- **Real-server tests**: Exercise the app's Lore operations against a real, locally spawned `loreserver` instead of mocks, in two layers — a **service-layer** suite (`pnpm test:integration`, `node:test` via `tsx`) and a **comprehensive UI** suite that drives the real app end to end (the Playwright `electron-live-server` project). See [docs/testing/integration-suite.md](docs/testing/integration-suite.md) and the [scenario catalog](docs/testing/scenario-catalog.md).
 
 > **Note:** The Playwright E2E suite launches the built Electron app from `out/`, so it needs a build (`pnpm build`) — the e2e scripts run one automatically. `pnpm test:play:codegen` records against a Vite dev server for authoring new tests.
+
+> **Note:** The real-server tests run on **macOS and Linux only** and download the pinned `loreserver`/`lore` binaries from GitHub Releases on first run (cached under `.lore-test-cache/`, so later runs are offline; set `GITHUB_TOKEN` to avoid API rate limits on a cold download; they skip on Windows). The **service-layer** suite (`pnpm test:integration`) is a step of its own; the **live-server UI** suite runs as part of the Playwright e2e — so it is included in `pnpm test:play` and in `pnpm claude:pre-commit`.
 
 ### Testing Commands
 | Command | Description |
 |---------|-------------|
 | `pnpm test` | Run all Jest and Playwright tests |
+| `pnpm test:integration` | Run the real-server integration suite (spawns a local `loreserver`; macOS/Linux) |
 | `pnpm pre-commit` | Run all checks before committing |
 | `pnpm test:jest` | Run Jest unit tests (silent mode, only shows failures) |
 | `pnpm test:play` | Run Playwright E2E tests in headed mode (see browser) |

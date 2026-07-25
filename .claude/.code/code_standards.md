@@ -607,6 +607,55 @@ test.describe('Commit Workflow', () => {
 });
 ```
 
+### Real-Server Integration Suite
+
+A separate suite (`tests/integration/`, run with `pnpm test:integration`) exercises
+the app's Lore operations against a **real, locally spawned `loreserver`** — the
+actual SDK FFI and service layer, not mocks. It runs on `node:test` via `tsx`, so
+it is independent of Jest and Playwright and is **not** part of `pnpm claude:pre-commit`.
+
+**When to use it (agents and humans):**
+- Adding or changing a `LoreRepositoryService` method or any `@lore-vcs/sdk`
+  operation: add or update a scenario here so the behavior is proven against a
+  real server, not just a mock.
+- Investigating a defect that only reproduces against a real server (divergence,
+  conflict, sync/reset/force, clone progress, empty repos, awkward filenames).
+- Do **not** reach for it for pure renderer/UI logic — Jest and Playwright cover
+  that faster.
+
+**How to write one:**
+- Put happy-path flows in `workflows/`, failure/boundary cases in `edge-cases/`.
+- Wrap the body in `withServer()` from `tests/integration/support/world.ts`; seed
+  with `seedRepo()` / `seedAndClone()`; use `secondClient()` for a second actor.
+- Assert on the `LoreRepositoryService` result (the seam the IPC layer calls).
+  `stageFiles`/`unstageFiles` take absolute paths — wrap with `abs()`.
+- Use neutral identifiers (`user1`/`user2`, `repo1`/`repo2`), not personas.
+- Add the scenario to `docs/testing/scenario-catalog.md`.
+
+Full guide: [docs/testing/integration-suite.md](../../../docs/testing/integration-suite.md).
+
+### End-to-End Feature Coverage (MANDATORY)
+
+**Every user-facing feature and every UI capability must have an end-to-end test
+that drives the real app against a live Lore server.** A user-facing feature is
+not complete until its live-server e2e scenario exists and passes — treat it like
+the TDD rule, not an optional extra.
+
+- The test launches the built Electron app and exercises the capability as a user
+  would (real controls, real rendered state), so renderer → IPC → main-process
+  service → live `loreserver` is proven, not mocked. It lives in a
+  `tests/e2e/electron/live-*.spec.ts` under the Playwright `electron-live-server`
+  project and uses the `tests/e2e/electron/support/ui.ts` helpers.
+- When you add or change a user-facing feature, add/extend its scenario and record
+  it in the coverage index. When a capability can't be observed end to end (it
+  launches an external app, etc.), stub at the IPC boundary and assert the
+  invocation — never leave it silently uncovered.
+- Cosmetic / window-shell behaviour with no live-server dependency (theme, morph,
+  window geometry) is covered by the mocked Electron e2e specs instead.
+
+Mandate, coverage index, and how to extend it:
+[docs/testing/e2e-coverage.md](../../../docs/testing/e2e-coverage.md).
+
 ---
 
 ## 6) State Management

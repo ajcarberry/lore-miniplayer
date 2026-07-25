@@ -46,6 +46,30 @@ jobs:
       - name: Unit tests with coverage
         run: pnpm test:jest:coverage
 
+      # The integration suite and live-server e2e download and run real
+      # loreserver/lore binaries, so they need a runner with a matching release
+      # asset and a display. Keep them macOS-only.
+      - name: Resolve Lore binary version + triple
+        if: runner.os == 'macOS'
+        id: lore-bins
+        run: |
+          VERSION="$(node -p "require('./node_modules/@lore-vcs/sdk/package.json').version")"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "triple=aarch64-apple-darwin" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Lore binaries
+        if: runner.os == 'macOS'
+        uses: actions/cache@v4
+        with:
+          path: .lore-test-cache/lore-bins
+          key: lore-bins-${{ steps.lore-bins.outputs.version }}-${{ steps.lore-bins.outputs.triple }}
+
+      - name: Integration tests (real loreserver)
+        if: runner.os == 'macOS'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm test:integration
+
       # Electron E2E runs headed; hosted macOS/Windows runners have a display,
       # Linux does not, so it stays fast-checks-only.
       - name: Build app for E2E
@@ -64,12 +88,21 @@ jobs:
 
       - name: Playwright E2E
         if: runner.os != 'Linux'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm exec playwright test
 
+      # Harness server logs (tests/integration/harness/server.ts) live under
+      # the OS temp dir and are normally deleted by the harness's own
+      # stop()/afterAll cleanup, so this only catches the log on a crash that
+      # skipped that cleanup, hence if-no-files-found: ignore.
       - name: Upload Playwright failure artifacts
         if: failure() && runner.os != 'Linux'
         uses: actions/upload-artifact@v4
         with:
           name: playwright-results-${{ matrix.os }}
-          path: test-results/
+          path: |
+            test-results/
+            /tmp/lore-test-server-*/server.log
+            /var/folders/**/lore-test-server-*/server.log
           if-no-files-found: ignore

@@ -19,13 +19,3 @@ export function initializeLoreSdk(): void {
   });
   isInitialized = true;
 }
-
-// Release the Lore SDK's native resources
-export function shutdownLoreSdk(): void {
-  if (!isInitialized) {
-    return;
-  }
-
-  lore.shutdown();
-  isInitialized = false;
-}

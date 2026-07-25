@@ -3,9 +3,12 @@ import type { ElectronApplication } from '@playwright/test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { killProcessTree } from './support/reaper';
 
 // Requires `pnpm build` first — every spec launches the built app at this path.
-const APP_MAIN = path.join(process.cwd(), 'out/main/index.js');
+// Exported as the reaper's scoping key: it only kills Electron processes whose
+// argv contains this exact path.
+export const APP_MAIN = path.join(process.cwd(), 'out/main/index.js');
 
 // A fresh, isolated userData directory per launch (or shared across a
 // relaunch pair, when the caller needs the on-disk config to survive) so e2e
@@ -30,12 +33,41 @@ export interface LaunchedApp {
 
 // Launches the built app against an isolated temp userData dir. Pass
 // `userDataDir` (from a previous LaunchedApp) to relaunch against the same
-// profile; omit it to get a fresh one.
-export async function launchApp(userDataDir?: string): Promise<LaunchedApp> {
+// profile; omit it to get a fresh one. `extraEnv` merges on top of the
+// inherited environment.
+export async function launchApp(
+  userDataDir?: string,
+  extraEnv?: Record<string, string>
+): Promise<LaunchedApp> {
   const dir = userDataDir ?? createTempUserDataDir();
   const app = await electron.launch({
     args: [APP_MAIN],
-    env: { ...process.env, LORE_MINIPLAYER_USER_DATA: dir },
+    env: { ...process.env, ...extraEnv, LORE_MINIPLAYER_USER_DATA: dir },
   });
   return { app, userDataDir: dir };
+}
+
+// Close a launched app without letting teardown hang the run. A wedged instance
+// can make app.close() hang past the timeout and orphan an Electron tree that
+// poisons a later launch. Race the close against a bound; on overrun, SIGKILL
+// the whole tree so the process is gone before the next launch.
+export async function closeAppBounded(app: ElectronApplication, timeoutMs = 15_000): Promise<void> {
+  const pid = app.process().pid;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const closedGracefully = await Promise.race([
+    app
+      .close()
+      .then(() => true)
+      .catch(() => false),
+    new Promise<false>(resolve => {
+      timer = setTimeout(() => resolve(false), timeoutMs);
+      timer.unref();
+    }),
+  ]);
+  if (timer !== undefined) {
+    clearTimeout(timer);
+  }
+  if (!closedGracefully && pid !== undefined) {
+    killProcessTree(pid);
+  }
 }

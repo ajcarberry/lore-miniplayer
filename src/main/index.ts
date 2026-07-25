@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { registerIpcHandlers } from './ipc/handlers';
 import { attachFocusDimming } from './ipc/window-handlers';
 import { RepositoryService } from './services/repository';
-import { initializeLoreSdk, shutdownLoreSdk } from './services/lore-sdk';
+import { initializeLoreSdk } from './services/lore-sdk';
 import { LoreRepositoryService } from './services/lore-repository';
 import { loadWindowPosition, saveWindowPosition } from './ipc/config-handlers';
 import { hardenSession, hardenWebContents } from './security';
@@ -218,14 +218,10 @@ app.whenReady().then(async () => {
   });
 });
 
-app.on('will-quit', () => {
-  // Release the Lore SDK's native resources on exit
-  try {
-    shutdownLoreSdk();
-  } catch (error) {
-    log.error('Failed to shut down the Lore SDK', { error, operation: 'will-quit' });
-  }
-});
+// Quit does not call lore.shutdown(): it is a synchronous FFI call that blocks
+// the main thread for a fixed ~10s native drain and cannot be time-bounded from
+// JS. The SDK flushes its file logs incrementally, so the OS reclaiming native
+// threads, sockets, and memory on process exit is both sufficient and safe.
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

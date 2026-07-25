@@ -7,6 +7,12 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   workers: 1, // Single worker to prevent focus races between concurrent Electron windows
 
+  // Reap any suite Electron trees left by a previously aborted run before we
+  // start, and guarantee none outlive the run at the end. Scoped strictly to
+  // this suite's built main path — see tests/e2e/electron/support/reaper.ts.
+  globalSetup: './tests/e2e/electron/support/global-setup.ts',
+  globalTeardown: './tests/e2e/electron/support/global-teardown.ts',
+
   // Better reporter setup for humans
   reporter: process.env.CI
     ? [['list']]
@@ -23,6 +29,29 @@ export default defineConfig({
     {
       name: 'electron',
       testDir: './tests/e2e/electron',
+      // The live-* suite runs in its own project so its worker state stays
+      // out of the pure-UI specs; a shared worker delays the next spec's
+      // electronApp.firstWindow() past its timeout. The P-U1 isolation-model
+      // diagnostic connects to a real loreserver too, so it is likewise kept out
+      // of this worker — run it explicitly (`--grep "launch isolation model"`).
+      testIgnore: ['**/live-*.spec.ts', '**/*.diag.spec.ts'],
+      use: {},
+    },
+    {
+      name: 'electron-live-server',
+      testDir: './tests/e2e/electron',
+      testMatch: '**/live-*.spec.ts',
+      use: {},
+    },
+    {
+      // Launch-isolation reliability check (>=6 sequential real launches). Its
+      // own project (like electron-live-server) so its real-FFI launches never
+      // share a worker with the pure-UI specs. Runs as part of the default
+      // `playwright test` (and `claude:pre-commit`); run it alone with
+      // `playwright test --project=electron-diag`.
+      name: 'electron-diag',
+      testDir: './tests/e2e/electron',
+      testMatch: '**/*.diag.spec.ts',
       use: {},
     },
   ],

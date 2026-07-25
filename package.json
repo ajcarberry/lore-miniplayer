@@ -16,6 +16,7 @@
     "dist:linux": "pnpm build && electron-builder --linux",
     "preview": "electron-vite preview",
     "test": "jest && pnpm build && playwright test",
+    "test:integration": "tsx --test 'tests/integration/**/*.test.ts'",
     "test:jest": "jest --silent",
     "test:jest:coverage": "jest --coverage --silent && echo Coverage report: coverage/lcov-report/index.html",
     "test:jest:verbose": "jest --verbose",
@@ -102,6 +103,7 @@
     "rimraf": "^6.0.1",
     "ts-jest": "^29.4.4",
     "ts-node": "^10.9.2",
+    "tsx": "^4.23.1",
     "typescript": "^5.9.2",
     "vite": "^8.1.5",
     "wait-on": "^9.0.1"

@@ -91,6 +91,7 @@
 - ALWAYS validate external inputs with Zod schemas
 - ALWAYS cleanup resources (listeners, timers, abort controllers)
 - No feature is complete without comprehensive test coverage
+- **E2E feature-coverage mandate**: every user-facing feature/UI capability needs a live-server e2e test driving the real app — see `code_standards.md` §5 and the coverage index in `docs/testing/e2e-coverage.md`
 
 ## Essential Commands
 
@@ -107,6 +108,7 @@ pnpm claude:type-check   # After any TypeScript changes
 pnpm claude:lint         # Check for code issues (JSON output for parsing)
 pnpm claude:test:jest    # Fast unit test feedback
 pnpm claude:test:play    # E2E validation
+pnpm test:integration    # Real-server integration suite — when/how in code_standards.md §5; guide + scenario catalog in docs/testing/
 pnpm format:fix          # Auto-fix formatting issues
 ```
 
@@ -130,7 +132,8 @@ src/
 
 tests/
 ├── e2e/
-│   └── electron/   # Playwright Electron end-to-end tests
+│   └── electron/   # Playwright Electron end-to-end tests (incl. live-server against a real loreserver)
+├── integration/    # Real-server integration suite (tsx + node:test): harness/ + support/ + workflows/ + edge-cases/
 ├── main/           # Main process tests
 ├── renderer/       # React component tests
 ├── mocks/          # Test mocks and fixtures

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { registerIpcHandlers } from './ipc/handlers';
 import { attachFocusDimming } from './ipc/window-handlers';
 import { RepositoryService } from './services/repository';
-import { initializeLoreSdk, shutdownLoreSdk } from './services/lore-sdk';
+import { initializeLoreSdk } from './services/lore-sdk';
 import { LoreRepositoryService } from './services/lore-repository';
 import { loadWindowPosition, saveWindowPosition } from './ipc/config-handlers';
 import { hardenSession, hardenWebContents } from './security';
@@ -218,14 +218,18 @@ app.whenReady().then(async () => {
   });
 });
 
-app.on('will-quit', () => {
-  // Release the Lore SDK's native resources on exit
-  try {
-    shutdownLoreSdk();
-  } catch (error) {
-    log.error('Failed to shut down the Lore SDK', { error, operation: 'will-quit' });
-  }
-});
+// No `will-quit` SDK shutdown: `lore.shutdown()` is a SYNCHRONOUS FFI call that
+// blocks the main thread up to a fixed ~10s native drain timeout while streaming
+// (notification/status) threads join — measured hitting 10001ms on quits after
+// live server activity. Blocking quit that long slowed teardown past the e2e
+// bound, which SIGKILLed the tree (macOS "quit unexpectedly" dialogs) and left an
+// orphan that could poison the next launch's firstWindow(). A synchronous FFI
+// call cannot be time-bounded from JS (it blocks the event loop, so no
+// timer/app.exit race can fire), and the SDK's own file logging is flushed
+// incrementally (operation logs are on disk before quit; shutdown only appends
+// its self-teardown lines), so the OS reclaiming native threads/sockets/memory on
+// process exit is both sufficient and non-destructive. shutdownLoreSdk() is kept
+// (and unit-tested) for any future in-process teardown, just not wired to quit.
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

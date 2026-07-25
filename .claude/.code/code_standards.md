@@ -634,6 +634,28 @@ it is independent of Jest and Playwright and is **not** part of `pnpm claude:pre
 
 Full guide: [docs/testing/integration-suite.md](../../../docs/testing/integration-suite.md).
 
+### End-to-End Feature Coverage (MANDATORY)
+
+**Every user-facing feature and every UI capability must have an end-to-end test
+that drives the real app against a live Lore server.** A user-facing feature is
+not complete until its live-server e2e scenario exists and passes — treat it like
+the TDD rule, not an optional extra.
+
+- The test launches the built Electron app and exercises the capability as a user
+  would (real controls, real rendered state), so renderer → IPC → main-process
+  service → live `loreserver` is proven, not mocked. It lives in a
+  `tests/e2e/electron/live-*.spec.ts` under the Playwright `electron-live-server`
+  project and uses the `tests/e2e/electron/support/ui.ts` helpers.
+- When you add or change a user-facing feature, add/extend its scenario and record
+  it in the coverage index. When a capability can't be observed end to end (it
+  launches an external app, etc.), stub at the IPC boundary and assert the
+  invocation — never leave it silently uncovered.
+- Cosmetic / window-shell behaviour with no live-server dependency (theme, morph,
+  window geometry) is covered by the mocked Electron e2e specs instead.
+
+Mandate, coverage index, and how to extend it:
+[docs/testing/e2e-coverage.md](../../../docs/testing/e2e-coverage.md).
+
 ---
 
 ## 6) State Management

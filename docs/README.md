@@ -5,6 +5,9 @@ basics, start with the root [README](../README.md).
 
 ## Testing
 
+- [E2E coverage & the feature-coverage mandate](./testing/e2e-coverage.md) — the
+  requirement that every user-facing feature has a live-server e2e test, the
+  capability → scenario coverage index, and how to extend it.
 - [Real-server integration suite](./testing/integration-suite.md) — how to run
   the suite that spawns a real `loreserver`, how it works, and how to add a
   scenario.

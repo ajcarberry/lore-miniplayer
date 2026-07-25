@@ -91,6 +91,7 @@
 - ALWAYS validate external inputs with Zod schemas
 - ALWAYS cleanup resources (listeners, timers, abort controllers)
 - No feature is complete without comprehensive test coverage
+- **E2E feature-coverage mandate**: every user-facing feature/UI capability needs a live-server e2e test driving the real app — see `code_standards.md` §5 and the coverage index in `docs/testing/e2e-coverage.md`
 
 ## Essential Commands
 

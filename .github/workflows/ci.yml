@@ -92,6 +92,18 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm exec playwright test
 
+      # Focus/blur and unfocused-dim assertions need a real OS-granted window
+      # focus, which needs a visible window, so they're excluded from the
+      # default project set (see playwright.config.ts) and run explicitly
+      # here instead. They keep their existing self-skip if a runner's window
+      # manager won't actually grant the window focus — expected, not a
+      # failure.
+      - name: Playwright E2E (electron-focus)
+        if: runner.os != 'Linux'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm exec playwright test --project=electron-focus
+
       # Harness server logs (tests/integration/harness/server.ts) live under
       # the OS temp dir and are normally deleted by the harness's own
       # stop()/afterAll cleanup, so this only catches the log on a crash that

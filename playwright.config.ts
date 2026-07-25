@@ -1,5 +1,26 @@
 import { defineConfig } from '@playwright/test';
 
+// electron-focus (below) exercises real OS focus/blur, which needs a visible
+// window and must stay out of a bare local `playwright test` run. Playwright
+// runs every project in `projects: []` whenever `--project` is omitted from
+// the CLI — there's no per-project "excluded from default" flag — so the only
+// way to keep this project's tests from running unrequested is to detect the
+// explicit `--project=electron-focus` (or `--project electron-focus`) CLI
+// selection ourselves and gate the project's testMatch on it.
+const focusProjectRequested = process.argv.some(
+  (arg, i) =>
+    arg === '--project=electron-focus' ||
+    (arg === '--project' && process.argv[i + 1] === 'electron-focus')
+);
+if (focusProjectRequested) {
+  // See tests/e2e/electron/launch.ts: LORE_MINIPLAYER_E2E_SHOW=1 restores the
+  // visible window the focus/blur and notice-dim assertions depend on. Set
+  // here, before Playwright forks its worker processes (which inherit
+  // process.env from this config-eval step), so `--project=electron-focus`
+  // is visible wherever it's invoked from — no separate env var required.
+  process.env['LORE_MINIPLAYER_E2E_SHOW'] = '1';
+}
+
 export default defineConfig({
   testDir: './tests/e2e',
   fullyParallel: false, // Run serially - each test launches its own Electron instance
@@ -14,15 +35,13 @@ export default defineConfig({
   globalTeardown: './tests/e2e/electron/support/global-teardown.ts',
 
   // Better reporter setup for humans
-  reporter: process.env.CI
-    ? [['list']]
-    : [['list'], ['html', { open: 'on-failure' }]],  // Auto-open on failure
+  reporter: process.env.CI ? [['list']] : [['list'], ['html', { open: 'on-failure' }]], // Auto-open on failure
 
   use: {
     // Better debugging artifacts
-    trace: 'retain-on-failure',  // Keep trace for failed tests
-    video: 'retain-on-failure',  // Record video for failed tests
-    screenshot: 'only-on-failure',  // Screenshot on failure
+    trace: 'retain-on-failure', // Keep trace for failed tests
+    video: 'retain-on-failure', // Record video for failed tests
+    screenshot: 'only-on-failure', // Screenshot on failure
   },
 
   projects: [
@@ -34,7 +53,7 @@ export default defineConfig({
       // electronApp.firstWindow() past its timeout. The P-U1 isolation-model
       // diagnostic connects to a real loreserver too, so it is likewise kept out
       // of this worker — run it explicitly (`--grep "launch isolation model"`).
-      testIgnore: ['**/live-*.spec.ts', '**/*.diag.spec.ts'],
+      testIgnore: ['**/live-*.spec.ts', '**/*.diag.spec.ts', '**/window-behavior-focus.spec.ts'],
       use: {},
     },
     {
@@ -52,6 +71,22 @@ export default defineConfig({
       name: 'electron-diag',
       testDir: './tests/e2e/electron',
       testMatch: '**/*.diag.spec.ts',
+      use: {},
+    },
+    {
+      // Focus/blur and unfocused-dim assertions need a real OS-granted window
+      // focus, which in turn needs a visible window (LORE_MINIPLAYER_E2E_SHOW=1,
+      // set above) — unlike every other project here, that means it can't run
+      // silently as part of a developer's default `playwright test`. Kept out
+      // of the default set by the focusProjectRequested gate above; run it
+      // explicitly with `playwright test --project=electron-focus`. CI runs it
+      // as its own step, where a visible window is expected, not a surprise on
+      // someone's laptop.
+      name: 'electron-focus',
+      testDir: './tests/e2e/electron',
+      testMatch: focusProjectRequested ? '**/window-behavior-focus.spec.ts' : [],
+      fullyParallel: false,
+      workers: 1,
       use: {},
     },
   ],

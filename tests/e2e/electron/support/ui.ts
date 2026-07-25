@@ -1,6 +1,8 @@
+import { readdir } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { ElectronApplication, Locator, Page } from '@playwright/test';
 import { test as base, expect } from '@playwright/test';
-import { launchApp, removeTempUserDataDir } from '../launch';
+import { launchApp, closeAppBounded, removeTempUserDataDir } from '../launch';
 import {
   startLoreServer,
   isolatedFfiHomeEnv,
@@ -8,6 +10,7 @@ import {
   createCloneBaseDir,
   type LoreTestServer,
 } from '../live-server.setup';
+import { writeSeedFiles, type SeedFiles } from '../../../integration/support/world';
 
 // Page-object helper layer over the live Electron app. The scenario packets
 // (WP-U3…U6) drive every capability through these helpers so a selector only
@@ -35,7 +38,7 @@ export const test = base.extend<LiveFixtures>({
   electronApp: async ({}, use) => {
     const { app, userDataDir } = await launchApp(undefined, await isolatedFfiHomeEnv());
     await use(app);
-    await app.close();
+    await closeAppBounded(app);
     removeTempUserDataDir(userDataDir);
   },
   window: async ({ electronApp }, use) => {
@@ -108,12 +111,16 @@ interface AddAndCloneOptions {
 
 // Search the remote list, select `repoName`, stub + pick a fresh base
 // directory, submit "Add & Clone Repository", and await the real clone finish.
+// Returns the on-disk working-copy path the app cloned into — `<baseDir>/
+// <friendlyName>` — so scenarios can mutate the working copy. The subfolder
+// name is read back from the (freshly created, so single-entry) base dir
+// rather than assumed, keeping the helper independent of the app's naming.
 export async function addAndClone(
   window: Page,
   app: ElectronApplication,
   repoName: string,
   options: AddAndCloneOptions = {}
-): Promise<void> {
+): Promise<{ clonePath: string }> {
   await openAddRepository(window);
 
   const search = window.getByPlaceholder('Search repositories...');
@@ -134,6 +141,18 @@ export async function addAndClone(
 
   await submit.click();
   await expect(window.getByText('Define Repository')).not.toBeVisible({ timeout: 30_000 });
+
+  const entries = await readdir(baseDir, { withFileTypes: true });
+  const dirs = entries.filter(entry => entry.isDirectory());
+  const [cloneDir] = dirs;
+  if (dirs.length !== 1 || cloneDir === undefined) {
+    throw new Error(
+      `expected exactly one clone subfolder under ${baseDir}, found: ${dirs
+        .map(dir => dir.name)
+        .join(', ')}`
+    );
+  }
+  return { clonePath: join(baseDir, cloneDir.name) };
 }
 
 // Open the modal and add a directory that is already a Lore repo on disk: the
@@ -200,6 +219,26 @@ export async function currentBranch(window: Page): Promise<string> {
 }
 
 // --- Working set -----------------------------------------------------------
+
+// Write/overwrite a map of repo-relative files directly in the on-disk working
+// copy (from addAndClone's clonePath), reusing the harness's seed writer. Use
+// to stage an edit (existing path) or an add (new path) before a refresh.
+export async function writeInClone(clonePath: string, files: SeedFiles): Promise<void> {
+  await writeSeedFiles(clonePath, files);
+}
+
+// Force the card to re-read working-copy status after an on-disk change. The
+// card exposes no manual "reload" control: useFileStaging re-reads status only
+// on a 3s poll or when the selected repository's identity changes (its load
+// effect is keyed on selectedRepo). Re-selecting the active repo through the
+// footer picker — after a Refresh, which replaces the repo list with fresh
+// object identities from the IPC list() — makes that effect re-run at once, so
+// an on-disk edit surfaces without waiting on the poll (no blind timeout).
+export async function refreshWorkingSet(window: Page): Promise<void> {
+  await window.getByLabel('Repositories').click();
+  await window.getByText('Refresh', { exact: true }).click();
+  await window.locator('[data-active="true"]').getByRole('button').first().click();
+}
 
 // Expand the Working Set section.
 export async function openWorkingSet(window: Page): Promise<void> {

@@ -1,6 +1,6 @@
 import type { ElectronApplication, Page } from '@playwright/test';
 import { test as base, expect } from '@playwright/test';
-import { launchApp, removeTempUserDataDir } from './launch';
+import { launchApp, closeAppBounded, removeTempUserDataDir } from './launch';
 import {
   startLoreServer,
   seedRepo,
@@ -15,16 +15,18 @@ import {
 // Drives the real Electron app -- renderer -> IPC -> main-process service ->
 // live `loreserver` -- against a hermetic server. Requires `pnpm build` first.
 
-// The app launches its in-process Lore SDK native FFI for real, and that launch
-// is occasionally slow to produce the `window` event -- hence `retries: 1` and a
-// ceiling of ~3 real launches per worker (a 4th `firstWindow()` hangs), which is
-// why the clone and empty-repo cases share one launch. This fixture gives each
-// test a fresh isolated-HOME launch with guaranteed teardown.
+// The app launches its in-process Lore SDK native FFI for real. On exit the
+// main process's `will-quit` runs a synchronous, unbounded `lore.shutdown()`
+// that occasionally blocks past the test timeout; left unguarded that hung the
+// teardown and orphaned an Electron tree that could poison a later launch's
+// firstWindow(). The fixture's `closeAppBounded` races that close against a
+// bound and SIGKILLs the tree on overrun, so each test gets a fresh
+// isolated-HOME launch with guaranteed, bounded teardown.
 const test = base.extend<{ electronApp: ElectronApplication; window: Page }>({
   electronApp: async ({}, use) => {
     const { app, userDataDir } = await launchApp(undefined, await isolatedFfiHomeEnv());
     await use(app);
-    await app.close();
+    await closeAppBounded(app);
     removeTempUserDataDir(userDataDir);
   },
   window: async ({ electronApp }, use) => {
@@ -32,8 +34,11 @@ const test = base.extend<{ electronApp: ElectronApplication; window: Page }>({
   },
 });
 
-// Timeout and retries for this file only; the rest of the suite keeps the
-// config defaults.
+// Bounded teardown (closeAppBounded) removed the teardown-hang failure mode, but
+// `retries: 1` REMAINS as documented defense-in-depth for a residual product-side
+// flake: `electronApp.firstWindow()` intermittently times out at 30s even with a
+// verified-clean process table — the launched app's main process never emits the
+// `window` event (in-process Lore SDK FFI init). That needs a fix in src/main.
 test.describe.configure({ timeout: 120_000, retries: 1 });
 
 test.describe('Live server', () => {

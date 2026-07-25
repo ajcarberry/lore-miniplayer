@@ -7,6 +7,12 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   workers: 1, // Single worker to prevent focus races between concurrent Electron windows
 
+  // Reap any suite Electron trees left by a previously aborted run before we
+  // start, and guarantee none outlive the run at the end. Scoped strictly to
+  // this suite's built main path — see tests/e2e/electron/support/reaper.ts.
+  globalSetup: './tests/e2e/electron/support/global-setup.ts',
+  globalTeardown: './tests/e2e/electron/support/global-teardown.ts',
+
   // Better reporter setup for humans
   reporter: process.env.CI
     ? [['list']]

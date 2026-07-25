@@ -39,8 +39,21 @@ export default defineConfig({
   globalSetup: './tests/e2e/electron/support/global-setup.ts',
   globalTeardown: './tests/e2e/electron/support/global-teardown.ts',
 
-  // Better reporter setup for humans
-  reporter: process.env.CI ? [['list']] : [['list'], ['html', { open: 'on-failure' }]], // Auto-open on failure
+  // Better reporter setup for humans. The HTML report itself is always
+  // written on failure (for the trace/video/screenshot artifacts below); only
+  // whether Playwright auto-opens a browser tab for it is gated. Concurrent
+  // runs (two worktrees, a background run) must never pop a browser over
+  // whatever the developer is doing, so `open` defaults to 'never' — set
+  // LORE_MINIPLAYER_E2E_OPEN_REPORT=1 to opt back into the old on-failure pop.
+  reporter: process.env.CI
+    ? [['list']]
+    : [
+        ['list'],
+        [
+          'html',
+          { open: process.env['LORE_MINIPLAYER_E2E_OPEN_REPORT'] === '1' ? 'on-failure' : 'never' },
+        ],
+      ],
 
   use: {
     // Better debugging artifacts

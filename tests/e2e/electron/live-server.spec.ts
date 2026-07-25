@@ -15,13 +15,12 @@ import {
 // Drives the real Electron app -- renderer -> IPC -> main-process service ->
 // live `loreserver` -- against a hermetic server. Requires `pnpm build` first.
 
-// The app launches its in-process Lore SDK native FFI for real. On exit the
-// main process's `will-quit` runs a synchronous, unbounded `lore.shutdown()`
-// that occasionally blocks past the test timeout; left unguarded that hung the
-// teardown and orphaned an Electron tree that could poison a later launch's
-// firstWindow(). The fixture's `closeAppBounded` races that close against a
-// bound and SIGKILLs the tree on overrun, so each test gets a fresh
-// isolated-HOME launch with guaranteed, bounded teardown.
+// The app launches its in-process Lore SDK native FFI for real. A wedged
+// instance (the residual intermittent firstWindow() launch stall) could hang
+// teardown and orphan an Electron tree that poisons a later launch, so the
+// fixture's `closeAppBounded` races the close against a bound and SIGKILLs the
+// tree on overrun. Each test gets a fresh isolated-HOME launch with guaranteed,
+// bounded teardown.
 const test = base.extend<{ electronApp: ElectronApplication; window: Page }>({
   electronApp: async ({}, use) => {
     const { app, userDataDir } = await launchApp(undefined, await isolatedFfiHomeEnv());

@@ -44,9 +44,11 @@ export default defineConfig({
       use: {},
     },
     {
-      // P-U1 isolation-model reliability check. Its own project (like
-      // electron-live-server) so its real-FFI launches never share a worker with
-      // the pure-UI specs. On-demand: `playwright test --project=electron-diag`.
+      // Launch-isolation reliability check (>=6 sequential real launches). Its
+      // own project (like electron-live-server) so its real-FFI launches never
+      // share a worker with the pure-UI specs. Runs as part of the default
+      // `playwright test` (and `claude:pre-commit`); run it alone with
+      // `playwright test --project=electron-diag`.
       name: 'electron-diag',
       testDir: './tests/e2e/electron',
       testMatch: '**/*.diag.spec.ts',

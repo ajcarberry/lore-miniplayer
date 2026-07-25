@@ -187,6 +187,19 @@ export async function selectRepository(window: Page, repoName: string): Promise<
   await window.getByRole('button', { name: repoName, exact: true }).click();
 }
 
+// Remove a repository from the app's list (not from the server): open the
+// picker, click the row's "Edit <name>" pencil to open the fullscreen
+// EditRepositoryModal, hit "Delete Repository" to reveal the DeleteConfirmation
+// panel, then confirm with "Remove from Lore". The modal closes on confirm.
+export async function deleteRepository(window: Page, repoName: string): Promise<void> {
+  await openRepositoryPicker(window);
+  await window.getByLabel(`Edit ${repoName}`).click();
+  await expect(window.getByText('Edit Repository')).toBeVisible();
+  await window.getByRole('button', { name: 'Delete Repository' }).click();
+  await window.getByRole('button', { name: 'Remove from Lore' }).click();
+  await expect(window.getByText('Edit Repository')).not.toBeVisible();
+}
+
 // The repository name in the card header eyebrow. The name also renders in the
 // always-mounted pill, so this scopes to the header's Switch-branch button.
 export function repoHeaderName(window: Page, repoName: string): Locator {
@@ -387,4 +400,57 @@ export async function transportAccented(
     .locator('xpath=ancestor::button[1]')
     .getAttribute('data-primary');
   return primary === 'true';
+}
+
+// --- External-launcher shortcuts -------------------------------------------
+
+interface OpenExternalsStub {
+  // Paths passed to repository:open-in-explorer (the footer "Open in File
+  // Explorer" shortcut, which really calls shell.openPath).
+  readonly explorerCalls: () => Promise<string[]>;
+  // Paths passed to window:open-terminal (the footer "Open Terminal here"
+  // shortcut, which really spawns an OS terminal).
+  readonly terminalCalls: () => Promise<string[]>;
+}
+
+// Replace the two external-launching main handlers with capturing stubs so the
+// footer shortcuts can be asserted (invocation + path argument) WITHOUT
+// launching Finder/Terminal. Stubbing at the ipcMain handler (re-register via
+// removeHandler + handle) is reliable regardless of how the bundle imports the
+// underlying shell.openPath / child_process.spawn calls, and returns a
+// void-success Result so the renderer's success path runs unchanged. Call
+// before clicking the footer shortcuts.
+export async function stubOpenExternals(app: ElectronApplication): Promise<OpenExternalsStub> {
+  await app.evaluate(({ ipcMain }) => {
+    const globals = globalThis as typeof globalThis & {
+      __openExternals?: { explorer: string[]; terminal: string[] };
+    };
+    const store = globals.__openExternals ?? { explorer: [], terminal: [] };
+    globals.__openExternals = store;
+
+    ipcMain.removeHandler('repository:open-in-explorer');
+    ipcMain.handle('repository:open-in-explorer', (_event, path: string) => {
+      store.explorer.push(path);
+      return { success: true, data: undefined };
+    });
+
+    ipcMain.removeHandler('window:open-terminal');
+    ipcMain.handle('window:open-terminal', (_event, path: string) => {
+      store.terminal.push(path);
+      return { success: true, data: undefined };
+    });
+  });
+
+  const read = (key: 'explorer' | 'terminal'): Promise<string[]> =>
+    app.evaluate((_electron, k) => {
+      const globals = globalThis as typeof globalThis & {
+        __openExternals?: { explorer: string[]; terminal: string[] };
+      };
+      return globals.__openExternals?.[k] ?? [];
+    }, key);
+
+  return {
+    explorerCalls: () => read('explorer'),
+    terminalCalls: () => read('terminal'),
+  };
 }

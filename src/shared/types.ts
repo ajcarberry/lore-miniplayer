@@ -12,7 +12,6 @@ import type {
   CloneProgressSchema,
   LoreSyncOptionsSchema,
   RevisionSummarySchema,
-  BranchGraphLaneSchema,
   BranchGraphParentLaneSchema,
   MergeFromParentSchema,
   MergeToParentSchema,
@@ -21,8 +20,6 @@ import type {
   WorkspaceBandSchema,
   WorkspaceAttentionReasonSchema,
   WorkspaceAttentionSchema,
-  AgentSessionStatusSchema,
-  AgentSessionStateSchema,
   AgentTaskStatusSchema,
   AgentTaskSchema,
   AgentCommentaryEntrySchema,
@@ -41,7 +38,6 @@ import type {
   WorkspaceModelSnapshotSchema,
   WorkspaceProvisionRequestSchema,
   WorkspaceTeardownRequestSchema,
-  WorkspaceTeardownResultSchema,
   WorkspaceMarkActiveRequestSchema,
   WorkspaceForgetRequestSchema,
   DiffRequestSchema,
@@ -49,7 +45,6 @@ import type {
   MergeResolveRequestSchema,
   MergeAbortRequestSchema,
   MergeCompleteRequestSchema,
-  ResolveUserNameRequestSchema,
 } from './schemas';
 
 export type ThemeMode = 'auto' | 'light' | 'dark';
@@ -93,10 +88,6 @@ export type CloneProgress = z.infer<typeof CloneProgressSchema>;
 // follow-up `revisionInfo` call streams, and that enrichment degrades to
 // hash-only entries on failure.
 export type RevisionSummary = z.infer<typeof RevisionSummarySchema>;
-
-// One lane of the branch graph: a named branch and its revisions
-// (newest-first, matching the SDK's parent-pointer walk order).
-export type BranchGraphLane = z.infer<typeof BranchGraphLaneSchema>;
 
 // The parent lane additionally carries the branch point — the revision on
 // the parent branch where the current branch was created.
@@ -185,10 +176,6 @@ export type WorkspaceAttentionReason = z.infer<typeof WorkspaceAttentionReasonSc
 
 export type WorkspaceAttention = z.infer<typeof WorkspaceAttentionSchema>;
 
-export type AgentSessionStatus = z.infer<typeof AgentSessionStatusSchema>;
-
-export type AgentSessionState = z.infer<typeof AgentSessionStateSchema>;
-
 export type AgentTaskStatus = z.infer<typeof AgentTaskStatusSchema>;
 
 export type AgentTask = z.infer<typeof AgentTaskSchema>;
@@ -235,8 +222,6 @@ export type WorkspaceProvisionRequest = z.infer<typeof WorkspaceProvisionRequest
 export type WorkspaceProvisionResponse = Workspace;
 
 export type WorkspaceTeardownRequest = z.infer<typeof WorkspaceTeardownRequestSchema>;
-export type WorkspaceTeardownResult = z.infer<typeof WorkspaceTeardownResultSchema>;
-export type WorkspaceTeardownResponse = WorkspaceTeardownResult;
 
 export type WorkspaceMarkActiveRequest = z.infer<typeof WorkspaceMarkActiveRequestSchema>;
 export type WorkspaceMarkActiveResponse = Workspace;
@@ -257,6 +242,3 @@ export type MergeAbortResponse = { aborted: boolean };
 
 export type MergeCompleteRequest = z.infer<typeof MergeCompleteRequestSchema>;
 export type MergeCompleteResponse = { revision: string };
-
-export type ResolveUserNameRequest = z.infer<typeof ResolveUserNameRequestSchema>;
-export type ResolveUserNameResponse = { name: string };

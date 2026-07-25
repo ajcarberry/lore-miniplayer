@@ -98,13 +98,6 @@ describe('MissionCard — in progress', () => {
     const card = makeCard('inProgress', {
       workspace: makeWorkspace({ instanceId: 'inst-2', branchName: 'agent/dialogue-docks' }),
       attention: { band: 'inProgress', needsYou: false, reasons: [] },
-      session: {
-        sessionId: 's',
-        workspacePath: '/w',
-        status: 'active',
-        lastEventAt: 1,
-        costUsd: 0.37,
-      },
       intention: {
         prompt: 'Rewrite docks dialogue.',
         tasks: [
@@ -125,7 +118,6 @@ describe('MissionCard — in progress', () => {
     expect(screen.getByText('running 7m 12s')).toBeInTheDocument();
     expect(screen.getByText('Recent commentary')).toBeInTheDocument();
     expect(screen.getByText('Barks trimmed to 10 words max.')).toBeInTheDocument();
-    expect(screen.getByText('$0.37')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Review' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Merge → main' })).not.toBeInTheDocument();
   });

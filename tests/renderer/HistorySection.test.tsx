@@ -1,10 +1,9 @@
-import type { ReactElement } from 'react';
-import { MantineProvider } from '@mantine/core';
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HistorySection } from '../../src/renderer/components/HistorySection';
 import type { HistorySectionProps } from '../../src/renderer/components/HistorySection';
 import type { BranchGraphParentLane, RevisionSummary } from '../../src/shared/types';
+import { renderWithMantine } from './test-utils';
 
 const revisions: RevisionSummary[] = [
   { revision: 'aaaaaaaaaaaaaaaa', revisionNumber: 3 },
@@ -55,7 +54,7 @@ function childNodeX(revisionNumber: number): number {
 }
 
 function renderHistorySection(props: HistorySectionProps): void {
-  render((<MantineProvider>{<HistorySection {...props} />}</MantineProvider>) as ReactElement);
+  renderWithMantine(<HistorySection {...props} />);
 }
 
 describe('HistorySection', () => {

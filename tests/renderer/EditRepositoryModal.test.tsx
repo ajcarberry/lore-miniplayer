@@ -6,37 +6,36 @@ jest.mock('../../src/renderer/utils/notify', () => ({
   notifySuccess: jest.fn(),
 }));
 
-import type { ReactElement } from 'react';
-import { MantineProvider } from '@mantine/core';
-import { render, screen, waitFor } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { EditRepositoryModal } from '../../src/renderer/components/EditRepositoryModal';
 import { logError } from '../../src/renderer/utils/logging';
 import { notifyError } from '../../src/renderer/utils/notify';
 import { installMockElectronAPI } from '../mocks/electron-api';
 import { makeRepository } from '../mocks/repository-fixture';
+import { renderWithMantine } from './test-utils';
 
 const repository = makeRepository();
 
 function renderModal(
   overrides: Partial<Parameters<typeof EditRepositoryModal>[0]> = {}
-): ReturnType<typeof render> & { onSave: jest.Mock; onDelete: jest.Mock; onClose: jest.Mock } {
+): ReturnType<typeof renderWithMantine> & {
+  onSave: jest.Mock;
+  onDelete: jest.Mock;
+  onClose: jest.Mock;
+} {
   const onSave = jest.fn();
   const onDelete = jest.fn();
   const onClose = jest.fn();
-  const utils = render(
-    (
-      <MantineProvider>
-        <EditRepositoryModal
-          opened
-          onClose={onClose}
-          onSave={onSave}
-          onDelete={onDelete}
-          repository={repository}
-          {...overrides}
-        />
-      </MantineProvider>
-    ) as ReactElement
+  const utils = renderWithMantine(
+    <EditRepositoryModal
+      opened
+      onClose={onClose}
+      onSave={onSave}
+      onDelete={onDelete}
+      repository={repository}
+      {...overrides}
+    />
   );
   return { ...utils, onSave, onDelete, onClose };
 }

@@ -2,7 +2,6 @@ import { EventEmitter } from 'node:events';
 import type { MainLogger } from '../ipc/logger';
 import type {
   AgentIntention,
-  AgentSessionStatus,
   BranchDivergence,
   FileDiffResult,
   LineStats,
@@ -16,8 +15,7 @@ import type {
   WorkspaceModelSnapshot,
 } from '../../shared/types';
 import { WorkspaceModelSnapshotSchema } from '../../shared/schemas';
-import { toSessionState } from './agent-observer';
-import type { AgentSessionRecord } from './agent-observer';
+import type { AgentSessionRecord, AgentSessionStatus } from './agent-observer';
 import type { WorkspaceRevisionStatus } from './lore-status';
 import { hasConflict, isDirty } from './lore-status';
 import { samePath } from './path-utils';
@@ -377,7 +375,6 @@ export class WorkspaceModelService extends EventEmitter {
       reviewableCommits: sessionCommits.length > 0,
     });
 
-    const session = record ? toSessionState(record) : undefined;
     const lastEventAt = record?.lastEventAt ?? provisionedAtMs(workspace) ?? 0;
 
     return {
@@ -388,7 +385,6 @@ export class WorkspaceModelService extends EventEmitter {
       changedFileCount: dirtyStats.length,
       sessionCommits,
       lastEventAt,
-      ...(session ? { session } : {}),
       ...(intention ? { intention } : {}),
     };
   }

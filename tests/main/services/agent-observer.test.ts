@@ -4,8 +4,7 @@
 // research note's verified Claude Code hook fields (session_id,
 // hook_event_name, notification_type, transcript_path, cwd, tool_name).
 import * as http from 'node:http';
-import { AgentObserverService, toSessionState } from '../../../src/main/services/agent-observer';
-import { AgentSessionStateSchema } from '../../../src/shared/schemas';
+import { AgentObserverService } from '../../../src/main/services/agent-observer';
 
 const mockLog = { error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn() };
 
@@ -158,10 +157,6 @@ describe('AgentObserverService', () => {
       expect(session?.status).toBe(status);
       expect(session?.workspacePath).toBe(WORKSPACE_A);
       expect(session?.sessionId).toBe('sess-1');
-      // The session's schema-visible projection is schema-valid.
-      if (session) {
-        expect(() => AgentSessionStateSchema.parse(toSessionState(session))).not.toThrow();
-      }
     });
 
     it('derives workspacePath from the token, not the payload cwd', async () => {
@@ -213,18 +208,13 @@ describe('AgentObserverService', () => {
   });
 
   describe('session state retention', () => {
-    it('retains transcript_path and latest cwd per session', async () => {
+    it('retains transcript_path per session', async () => {
       await new Promise<void>(resolve => {
         service.once('push', () => resolve());
-        void postHook(
-          service,
-          token,
-          payload({ hook_event_name: 'SessionStart', cwd: WORKSPACE_A })
-        );
+        void postHook(service, token, payload({ hook_event_name: 'SessionStart' }));
       });
       const [session] = service.listSessions();
       expect(session?.transcriptPath).toBe('/Users/alex/.claude/projects/enc/sess-1.jsonl');
-      expect(session?.cwd).toBe(WORKSPACE_A);
       expect(session?.sessionId).toBe('sess-1');
     });
 

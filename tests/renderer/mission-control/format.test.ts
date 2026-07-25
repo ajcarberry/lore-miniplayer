@@ -1,11 +1,9 @@
 import {
   deriveWorkspaceFlags,
   formatCommitAge,
-  formatCost,
   formatElapsed,
   groupRepositoriesByRepo,
   previewWorkspaceDir,
-  resolveCostUsd,
   selectedRepositoryGroup,
 } from '../../../src/renderer/components/mission-control/format';
 import { makeCard, makeRepository } from './fixtures';
@@ -20,19 +18,17 @@ describe('deriveWorkspaceFlags', () => {
     // Then: dirty + requiresForce
     expect(deriveWorkspaceFlags(card)).toEqual({
       dirty: true,
-      unpushed: false,
       requiresForce: true,
       isRepoCheckout: false,
     });
   });
 
-  it('treats unpushed and diverged as unpushed and force-required', () => {
+  it('treats unpushed and diverged as force-required', () => {
     const card = makeCard('awaitingReview', {
       attention: { band: 'awaitingReview', needsYou: true, reasons: ['diverged'] },
     });
     expect(deriveWorkspaceFlags(card)).toEqual({
       dirty: false,
-      unpushed: true,
       requiresForce: true,
       isRepoCheckout: false,
     });
@@ -44,7 +40,6 @@ describe('deriveWorkspaceFlags', () => {
     });
     expect(deriveWorkspaceFlags(card)).toEqual({
       dirty: false,
-      unpushed: false,
       requiresForce: false,
       isRepoCheckout: false,
     });
@@ -61,38 +56,9 @@ describe('deriveWorkspaceFlags', () => {
     // unpushed only) stays false — the caller ORs both to gate the checkbox
     expect(deriveWorkspaceFlags(card)).toEqual({
       dirty: false,
-      unpushed: false,
       requiresForce: false,
       isRepoCheckout: true,
     });
-  });
-});
-
-describe('resolveCostUsd / formatCost', () => {
-  it('prefers the live session cost', () => {
-    const card = makeCard('inProgress', {
-      session: {
-        sessionId: 's1',
-        workspacePath: '/w',
-        status: 'active',
-        lastEventAt: 1,
-        costUsd: 1.62,
-      },
-      intention: { tasks: [], commentary: [], costUsd: 9.99 },
-    });
-    expect(resolveCostUsd(card)).toBe(1.62);
-    expect(formatCost(resolveCostUsd(card))).toBe('$1.62');
-  });
-
-  it('falls back to the transcript cost, then null when neither is present', () => {
-    const withIntention = makeCard('awaitingReview', {
-      intention: { tasks: [], commentary: [], costUsd: 0.84 },
-    });
-    expect(formatCost(resolveCostUsd(withIntention))).toBe('$0.84');
-
-    const degraded = makeCard('idle');
-    expect(resolveCostUsd(degraded)).toBeNull();
-    expect(formatCost(null)).toBeNull();
   });
 });
 

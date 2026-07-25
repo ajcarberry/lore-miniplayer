@@ -1,13 +1,13 @@
 import type { WorkspaceService } from '../services/workspace-service';
 import type { WorkspaceModelService } from '../services/workspace-model';
-import { IPC_CHANNELS } from '../../shared/schemas';
-import { handleResult } from './result-helpers';
 import {
-  WorkspaceProvisionArgsSchema,
-  WorkspaceTeardownArgsSchema,
-  WorkspaceMarkActiveArgsSchema,
-  WorkspaceForgetArgsSchema,
-} from './validators';
+  IPC_CHANNELS,
+  WorkspaceProvisionRequestSchema,
+  WorkspaceTeardownRequestSchema,
+  WorkspaceMarkActiveRequestSchema,
+  WorkspaceForgetRequestSchema,
+} from '../../shared/schemas';
+import { handleRequest } from './result-helpers';
 import type { MainLogger } from './logger';
 
 // Workspace lifecycle channels (Mission Control, design 2a): provision a
@@ -21,19 +21,19 @@ export function registerWorkspaceHandlers(
   workspaceService: WorkspaceService,
   workspaceModel: WorkspaceModelService
 ): void {
-  handleResult(log, IPC_CHANNELS.workspace.provision, WorkspaceProvisionArgsSchema, request =>
+  handleRequest(log, IPC_CHANNELS.workspace.provision, WorkspaceProvisionRequestSchema, request =>
     workspaceService.provision(request)
   );
 
-  handleResult(log, IPC_CHANNELS.workspace.teardown, WorkspaceTeardownArgsSchema, request =>
+  handleRequest(log, IPC_CHANNELS.workspace.teardown, WorkspaceTeardownRequestSchema, request =>
     workspaceService.teardown(request)
   );
 
-  handleResult(log, IPC_CHANNELS.workspace.markActive, WorkspaceMarkActiveArgsSchema, request =>
+  handleRequest(log, IPC_CHANNELS.workspace.markActive, WorkspaceMarkActiveRequestSchema, request =>
     workspaceModel.markActive(request.workspaceId)
   );
 
-  handleResult(log, IPC_CHANNELS.workspace.forget, WorkspaceForgetArgsSchema, request =>
+  handleRequest(log, IPC_CHANNELS.workspace.forget, WorkspaceForgetRequestSchema, request =>
     workspaceService.forget(request)
   );
 }

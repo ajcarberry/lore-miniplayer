@@ -28,9 +28,7 @@ import type {
   WorkspaceOrigin,
   WorkspaceProvisionRequest,
   WorkspaceTeardownRequest,
-  WorkspaceTeardownResult,
 } from '../../shared/types';
-import { WorkspaceSchema } from '../../shared/schemas';
 import { pathExists, samePath } from './path-utils';
 
 // Worktree directories are placed as a sibling of the repository's own
@@ -223,14 +221,13 @@ export class WorkspaceService extends EventEmitter {
   // before any disk touch); it may not be the repo's own checkout or a
   // symlink escaping the workspace root; and, unless `force`, it must have no
   // uncommitted or unpushed work. Every step is logged. Remote-branch removal
-  // has no offline/SDK path (P1 finding d) — it is a recorded server ask,
-  // reported as remoteBranchRemoved:false.
-  async teardown(request: WorkspaceTeardownRequest): Promise<WorkspaceTeardownResult> {
+  // has no offline/SDK path (P1 finding d) — it is a recorded server ask.
+  async teardown(request: WorkspaceTeardownRequest): Promise<void> {
     const located = await this.locateWorkspace(request);
     if (!located) {
       throw new Error('Workspace not found or not a tracked instance');
     }
-    const { repo, entry, instance } = located;
+    const { repo, entry } = located;
     // The registry is the source of truth for the path; the branch name comes
     // from the registry too, so a missing/stale live instance can't strand it.
     const workspacePath = entry.localPath;
@@ -277,9 +274,8 @@ export class WorkspaceService extends EventEmitter {
     // line.
     const sibling = await this.siblingWorkspacePath(entry, workspacePath);
 
-    let localBranchRemoved = false;
     if (sibling) {
-      localBranchRemoved = await this.pruneAndArchive(sibling, workspacePath, branchName);
+      await this.pruneAndArchive(sibling, workspacePath, branchName);
     } else {
       this.log.info(
         'Workspace teardown: no sibling workspace in the shared store; skipping prune + archive',
@@ -288,14 +284,6 @@ export class WorkspaceService extends EventEmitter {
     }
 
     this.emit('lifecycle');
-    return {
-      workspaceId: instance?.instanceId ?? workspacePath,
-      path: workspacePath,
-      directoryRemoved: true,
-      localBranchRemoved,
-      // Remote-branch removal is a server ask, not implemented (P1 finding d).
-      remoteBranchRemoved: false,
-    };
   }
 
   // "Forget" a workspace (design amendment, packet U3): untrack-only — drops
@@ -365,12 +353,12 @@ export class WorkspaceService extends EventEmitter {
   // the sibling's handle (see teardown). Only a provisioned entry carries a
   // branch of its own to archive (C51): an attached/cloned entry has no
   // branchName, and its display name must never be used as one. Both steps
-  // continue-on-error (logged); returns whether the local branch was archived.
+  // continue-on-error (logged).
   private async pruneAndArchive(
     sibling: string,
     workspacePath: string,
     branchName: string | undefined
-  ): Promise<boolean> {
+  ): Promise<void> {
     try {
       await run(
         lore.repositoryInstancePrune({ repositoryPath: sibling }, {}),
@@ -388,21 +376,19 @@ export class WorkspaceService extends EventEmitter {
         operation: 'workspace:teardown',
         workspacePath,
       });
-      return false;
+      return;
     }
     try {
       await run(
         lore.branchArchive({ repositoryPath: sibling }, { branch: branchName }),
         'Failed to archive local branch'
       );
-      return true;
     } catch (error) {
       this.log.error('Workspace teardown: failed to archive local branch (continuing)', {
         error,
         operation: 'workspace:teardown',
         branch: branchName,
       });
-      return false;
     }
   }
 
@@ -473,7 +459,7 @@ export class WorkspaceService extends EventEmitter {
   // the checkout-safety guard and lifecycle attribution.
   private async locateWorkspace(
     parsed: { workspaceId: string } | { path: string }
-  ): Promise<{ repo?: Repository; entry: Repository; instance?: RawInstance } | null> {
+  ): Promise<{ repo?: Repository; entry: Repository } | null> {
     const cardRepos = await this.repositoryService.getAll();
     const entries = await this.store.all();
     for (const entry of entries) {
@@ -485,7 +471,7 @@ export class WorkspaceService extends EventEmitter {
             samePath(entry.localPath, parsed.workspaceId)
           : samePath(entry.localPath, parsed.path);
       if (matches) {
-        return { ...(repo ? { repo } : {}), entry, ...(instance ? { instance } : {}) };
+        return { ...(repo ? { repo } : {}), entry };
       }
     }
     return null;
@@ -534,17 +520,16 @@ export class WorkspaceService extends EventEmitter {
   // gone or whose store cannot be queried. The path doubles as a stable
   // synthetic instance id (the live id is unknown).
   private staleWorkspace(entry: Repository, repositoryId: string): Workspace {
-    return WorkspaceSchema.parse({
+    return {
       instanceId: entry.localPath,
       path: entry.localPath,
       branchName: entry.branchName ?? entry.name,
       name: entry.name,
       revision: '',
-      stale: true,
       repositoryId,
       origin: entry.origin,
       ...(entry.provisionedAt ? { provisionedAt: entry.provisionedAt } : {}),
-    });
+    };
   }
 
   private toWorkspace(
@@ -554,17 +539,16 @@ export class WorkspaceService extends EventEmitter {
     name: string,
     provisionedAt?: string
   ): Workspace {
-    return WorkspaceSchema.parse({
+    return {
       instanceId: inst.instanceId,
       path: inst.path,
       branchName: inst.branchName,
       name,
       revision: inst.revision,
-      stale: inst.stale,
       repositoryId,
       origin,
       ...(provisionedAt ? { provisionedAt } : {}),
-    });
+    };
   }
 
   private async safeRemoveDir(dir: string): Promise<void> {

@@ -19,7 +19,7 @@ import { AgentTranscriptService } from './services/agent-transcript';
 import { WorkspaceModelService } from './services/workspace-model';
 import { DiffService } from './services/diff-service';
 import { MergeService } from './services/merge-service';
-import { IPC_CHANNELS, WorkspaceModelSnapshotSchema } from '../shared/schemas';
+import { IPC_CHANNELS } from '../shared/schemas';
 import { loadWindowPosition, saveWindowPosition } from './ipc/config-handlers';
 import { hardenSession, hardenWebContents } from './security';
 import { COLLAPSED_WINDOW_SIZE, resolveRestorePosition } from '../shared/window-position';
@@ -278,22 +278,15 @@ app.whenReady().then(async () => {
   // Control's Review / Commit / Merge actions with its targets + workflow
   // preloaded; same chrome and security wiring as Mission Control.
   registerReviewWindow(log, secondaryWindowDeps);
+  // The model Zod-validates every snapshot before emitting it (snapshot()'s
+  // parse); the renderer re-validates on arrival, so the forward is a plain
+  // send.
   workspaceModel.on('snapshot', snapshot => {
     const win = getMissionControlWindow();
     if (!win || win.isDestroyed()) {
       return;
     }
-    try {
-      win.webContents.send(
-        IPC_CHANNELS.workspaceModel.snapshot,
-        WorkspaceModelSnapshotSchema.parse(snapshot)
-      );
-    } catch (error) {
-      log.error('Failed to forward workspace snapshot to Mission Control', {
-        error,
-        operation: 'workspace:model:snapshot',
-      });
-    }
+    win.webContents.send(IPC_CHANNELS.workspaceModel.snapshot, snapshot);
   });
 
   // Deny-by-default browser permission requests

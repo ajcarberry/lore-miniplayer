@@ -8,7 +8,6 @@ const WORKSPACE_PATH = '/Users/rowan/work/emberfall-wt/act2-balance';
 
 const FULL_INTENTION: AgentIntention = {
   prompt: 'Rebalance the ravine ambush encounter for a smoother difficulty curve.',
-  title: 'Rebalance ravine ambush',
   tasks: [
     { subject: 'Read the current encounter config', status: 'done' },
     { subject: 'Retune elite spawn timing', status: 'running', runningElapsedMs: 4200 },
@@ -17,7 +16,6 @@ const FULL_INTENTION: AgentIntention = {
   commentary: [{ at: 1000, text: 'Starting with the spawn delay.' }],
   summary: 'Reduced elite density and staggered spawns so the ambush ramps in over six seconds.',
   sessionId: '9f2c',
-  costUsd: 1.624,
 };
 
 function installSnapshot(intention: AgentIntention | undefined): void {
@@ -61,7 +59,7 @@ describe('IntentionPanel', () => {
         'Reduced elite density and staggered spawns so the ambush ramps in over six seconds.'
       )
     ).toBeInTheDocument();
-    expect(screen.getByText('from transcript · session 9f2c · $1.62')).toBeInTheDocument();
+    expect(screen.getByText('from transcript · session 9f2c')).toBeInTheDocument();
   });
 
   it('renders the done/running/pending task glyphs', async () => {
@@ -113,23 +111,6 @@ describe('IntentionPanel', () => {
     expect(await screen.findByTestId('intention-asked')).toBeInTheDocument();
     expect(screen.getByTestId('intention-tasks')).toBeInTheDocument();
     expect(screen.queryByTestId('intention-summary')).not.toBeInTheDocument();
-  });
-
-  it('omits the cost clause when costUsd is undefined, never fabricating one', async () => {
-    // Given: an intention with a session id but no cost
-    installSnapshot({
-      prompt: 'Fix the pacing dip in act two.',
-      tasks: [],
-      commentary: [],
-      summary: 'Done.',
-      sessionId: '1a2b',
-    });
-
-    // When: the panel mounts
-    renderPanel();
-
-    // Then: the footer names the session without a $ clause
-    expect(await screen.findByText('from transcript · session 1a2b')).toBeInTheDocument();
   });
 
   it('renders the diff-only placeholder when the workspace has no intention', async () => {

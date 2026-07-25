@@ -4,8 +4,11 @@ import { randomBytes } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import type { Socket } from 'node:net';
 import type { MainLogger } from '../ipc/logger';
-import type { AgentSessionState, AgentSessionStatus } from '../../shared/types';
 import type { WorkspaceObserverConfig } from './workspace-service';
+
+// Hook-driven session lifecycle state (main-process only — the workspace
+// model consumes it via banding; nothing session-shaped crosses IPC).
+export type AgentSessionStatus = 'active' | 'waitingOnUser' | 'stopped' | 'ended';
 
 // Default loopback port the hook listener binds (research note "Recommended
 // shape"). If occupied, start() scans upward; hooks always embed the port
@@ -37,31 +40,17 @@ interface HookPayload {
   readonly hook_event_name?: unknown;
   readonly notification_type?: unknown;
   readonly transcript_path?: unknown;
-  readonly cwd?: unknown;
 }
 
-// In-memory per-session record. Carries the schema-visible AgentSessionState
-// fields plus transcript_path + latest cwd, which P8 consumes in-process to
-// locate and parse the transcript. workspacePath is authoritative from the
-// hook's token, never the payload.
+// In-memory per-session record: lifecycle fields plus transcript_path, which
+// P8 consumes in-process to locate and parse the transcript. workspacePath is
+// authoritative from the hook's token, never the payload.
 export interface AgentSessionRecord {
   sessionId: string;
   workspacePath: string;
   status: AgentSessionStatus;
   lastEventAt: number;
   transcriptPath?: string;
-  cwd?: string;
-}
-
-// The schema-visible projection of a session record (shared with the
-// workspace model, which surfaces the same four fields on its cards).
-export function toSessionState(record: AgentSessionRecord): AgentSessionState {
-  return {
-    sessionId: record.sessionId,
-    workspacePath: record.workspacePath,
-    status: record.status,
-    lastEventAt: record.lastEventAt,
-  };
 }
 
 export interface AgentObserverOptions {
@@ -123,7 +112,7 @@ export class AgentObserverService extends EventEmitter {
     };
   }
 
-  // Snapshot of current sessions (P8 consumes transcriptPath + cwd in-process).
+  // Snapshot of current sessions (P8 consumes transcriptPath in-process).
   listSessions(): AgentSessionRecord[] {
     return [...this.sessions.values()].map(record => ({ ...record }));
   }
@@ -302,7 +291,6 @@ export class AgentObserverService extends EventEmitter {
       typeof payload.transcript_path === 'string'
         ? payload.transcript_path
         : existing?.transcriptPath;
-    const cwd = typeof payload.cwd === 'string' ? payload.cwd : existing?.cwd;
 
     const record: AgentSessionRecord = {
       sessionId,
@@ -310,7 +298,6 @@ export class AgentObserverService extends EventEmitter {
       status,
       lastEventAt: now,
       ...(transcriptPath !== undefined ? { transcriptPath } : {}),
-      ...(cwd !== undefined ? { cwd } : {}),
     };
     this.sessions.set(sessionId, record);
 

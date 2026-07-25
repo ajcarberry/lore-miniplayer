@@ -1,9 +1,8 @@
-import type { ReactElement } from 'react';
-import { MantineProvider } from '@mantine/core';
-import { render, screen, waitFor } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { BranchSwitcher } from '../../src/renderer/components/BranchSwitcher';
 import type { LoreBranch } from '../../src/shared/types';
+import { renderWithMantine } from './test-utils';
 
 const branches: LoreBranch[] = [
   { name: 'main', isDefault: true, isCurrent: true },
@@ -22,24 +21,20 @@ function renderSwitcher(options: RenderOptions = {}): {
 } {
   const onSelect = jest.fn();
   const onReload = jest.fn();
-  render(
-    (
-      <MantineProvider>
-        <BranchSwitcher
-          branches={options.branches ?? branches}
-          currentBranch={options.currentBranch ?? 'main'}
-          isLoading={options.isLoading ?? false}
-          onSelect={onSelect}
-          onReload={onReload}
-        >
-          {onOpenSwitcher => (
-            <button type='button' onClick={onOpenSwitcher}>
-              trigger
-            </button>
-          )}
-        </BranchSwitcher>
-      </MantineProvider>
-    ) as ReactElement
+  renderWithMantine(
+    <BranchSwitcher
+      branches={options.branches ?? branches}
+      currentBranch={options.currentBranch ?? 'main'}
+      isLoading={options.isLoading ?? false}
+      onSelect={onSelect}
+      onReload={onReload}
+    >
+      {onOpenSwitcher => (
+        <button type='button' onClick={onOpenSwitcher}>
+          trigger
+        </button>
+      )}
+    </BranchSwitcher>
   );
   return { onSelect, onReload };
 }

@@ -182,15 +182,8 @@ describe('workspace:provision', () => {
 
 describe('workspace:teardown', () => {
   it('forwards an id-based teardown request', async () => {
-    // Given: the service returns a teardown result
-    const teardownResult = {
-      workspaceId: 'inst-1',
-      path: '/w/a',
-      directoryRemoved: true,
-      localBranchRemoved: true,
-      remoteBranchRemoved: false,
-    };
-    mockWorkspaceService.teardown.mockResolvedValue(teardownResult);
+    // Given: the service resolves
+    mockWorkspaceService.teardown.mockResolvedValue(undefined);
 
     // When: tearing down by id
     const result = await invoke(IPC_CHANNELS.workspace.teardown, {
@@ -198,23 +191,17 @@ describe('workspace:teardown', () => {
       force: false,
     });
 
-    // Then: the request is forwarded and the result wrapped
+    // Then: the request is forwarded and the void result wrapped
     expect(mockWorkspaceService.teardown).toHaveBeenCalledWith({
       workspaceId: 'inst-1',
       force: false,
     });
-    expect(result).toEqual({ success: true, data: teardownResult });
+    expect(result).toEqual({ success: true, data: undefined });
   });
 
   it('forwards a path-based teardown request', async () => {
     // Given: the service resolves
-    mockWorkspaceService.teardown.mockResolvedValue({
-      workspaceId: 'inst-1',
-      path: '/w/a',
-      directoryRemoved: true,
-      localBranchRemoved: true,
-      remoteBranchRemoved: false,
-    });
+    mockWorkspaceService.teardown.mockResolvedValue(undefined);
 
     // When: tearing down by path
     await invoke(IPC_CHANNELS.workspace.teardown, { path: '/w/a', force: true });

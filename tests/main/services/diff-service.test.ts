@@ -601,7 +601,6 @@ describe('DiffService', () => {
       await expect(promise).rejects.toThrow(DiffOperationError);
       await expect(promise).rejects.toThrow('Failed to diff files');
       await expect(promise).rejects.toThrow('No such revision');
-      await expect(promise).rejects.toHaveProperty('errorType', 6);
     });
 
     it('wraps a branchInfo LoreError when resolving a branchHead target', async () => {

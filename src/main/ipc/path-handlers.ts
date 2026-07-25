@@ -1,7 +1,7 @@
 import * as path from 'node:path';
-import { PathJoinArgsSchema, PathBasenameArgsSchema } from './validators';
+import { PathJoinInputSchema, PathBasenameInputSchema } from './validators';
 import type { PathValidationResult } from '../../shared/types';
-import { handleResult } from './result-helpers';
+import { handleRequest } from './result-helpers';
 import type { MainLogger } from './logger';
 
 // Windows MAX_PATH constant (including null terminator)
@@ -78,7 +78,7 @@ export function registerPathIpcHandlers(log: MainLogger): void {
   // Joins path segments using the OS-specific separator, then validates the
   // result for Windows compatibility on Windows hosts.
   // Example: ['C:', 'Users', 'John', 'repos'] -> 'C:\Users\John\repos'
-  handleResult(log, 'path:join', PathJoinArgsSchema, ({ segments }) => {
+  handleRequest(log, 'path:join', PathJoinInputSchema, ({ segments }) => {
     const joinedPath = path.join(...segments);
 
     const validation = validateWindowsPath(joinedPath);
@@ -91,5 +91,5 @@ export function registerPathIpcHandlers(log: MainLogger): void {
 
   // Returns the last portion of a path (filename or directory name)
   // Example: 'C:\Users\John\repos\my-repo' -> 'my-repo'
-  handleResult(log, 'path:basename', PathBasenameArgsSchema, input => path.basename(input.path));
+  handleRequest(log, 'path:basename', PathBasenameInputSchema, input => path.basename(input.path));
 }

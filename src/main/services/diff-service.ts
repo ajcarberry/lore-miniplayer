@@ -30,8 +30,8 @@ import { allStatusFiles } from './lore-status';
 export const PATCH_TRUNCATION_LINE_CAP = 4000;
 
 export class DiffOperationError extends OperationError {
-  constructor(message: string, errorType?: number) {
-    super(message, errorType);
+  constructor(message: string) {
+    super(message);
     this.name = 'DiffOperationError';
   }
 }

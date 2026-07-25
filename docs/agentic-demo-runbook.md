@@ -113,7 +113,7 @@ Click **Review** on workspace B's card.
 - **Observable:** the review window opens three panes — files (stage
   checkboxes) on the left, a unified diff in the center, and on the right the
   **intention panel**: Asked (the first prompt), Task list, the agent's own
-  account/commentary, and session + cost. The compare picker defaults to the
+  account/commentary, and the session id. The compare picker defaults to the
   workspace's revision → working tree.
 - **Evidences:** OBJ-5 (intention alongside diff, sourced from the real
   transcript — confirm the Asked/task text matches what you actually typed).
@@ -151,11 +151,9 @@ Have your second identity push a small commit to the repository (any branch
 the MiniPlayer is currently watching, or `main`).
 
 - **Observable:** within a few seconds, a toast appears at the top of the
-  card: `"<name> pushed r<N> to <branch>"`, auto-dismissing after 5 seconds.
-- **Evidences:** OBJ-3 (collaborators visible, attributed by name).
-- **If the toast shows a raw id instead of a name:** see "Degradations" below
-  — this is the expected, honest fallback when name resolution isn't
-  available.
+  card: `"<userId> pushed r<N> to <branch>"`, auto-dismissing after 5
+  seconds.
+- **Evidences:** OBJ-3 (collaborators visible, attributed by user id).
 
 *(Optional, same OBJ)* While a conflict is unresolved, open the card's
 working set — the conflicted file's row shows a **⚠** in place of its stage
@@ -185,13 +183,11 @@ Repeat step 9 for workspace A once you're done with it.
 
 ## Degradations (honest, by design)
 
-- **Raw `userId` in toasts when no auth endpoint is reachable.** Lore-
-  side authorship (`revisionTreeInfo.authorIdentity`) is empty on a purely
-  local/offline commit and `authUserInfo` needs a server auth endpoint (P1
-  finding c). Attribution therefore rides the notification's own `userId`,
-  resolved to a display name only when the server's auth endpoint answers;
-  otherwise the toast UI shows the raw id verbatim rather than
-  fabricating a name.
+- **Raw `userId` in toasts.** Lore-side authorship
+  (`revisionTreeInfo.authorIdentity`) is empty on a purely local/offline
+  commit, so attribution rides the notification's own `userId`, shown
+  verbatim rather than fabricating a name (display-name resolution was cut
+  from scope — `authUserInfo` needs a server auth endpoint, P1 finding c).
 - **Hookless (or not-yet-started) workspaces never claim agent state they
   don't have.** If Claude Code isn't run in a workspace (or its hook write
   was refused — e.g., a symlinked `.claude`, blocked as a security guard),

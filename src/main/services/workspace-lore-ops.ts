@@ -64,8 +64,8 @@ export async function safeLoreRepositoryId(
 // the shared scaffold in ./lore-operation.
 
 export class WorkspaceOperationError extends OperationError {
-  constructor(message: string, errorType?: number) {
-    super(message, errorType);
+  constructor(message: string) {
+    super(message);
     this.name = 'WorkspaceOperationError';
   }
 }
@@ -173,9 +173,7 @@ export interface RawInstance {
   instanceId: string;
   path: string;
   branchName: string;
-  branch: string;
   revision: string;
-  stale: boolean;
 }
 
 // The live instances `repositoryPath`'s OWN Lore store self-reports (P18: a
@@ -191,9 +189,7 @@ export async function listInstances(repositoryPath: string): Promise<RawInstance
       instanceId: String(data.instanceId),
       path: String(data.path),
       branchName: String(data.branchName),
-      branch: String(data.branch),
       revision: String(data.revision),
-      stale: Boolean(data.stale),
     }),
     'Failed to list workspace instances'
   );

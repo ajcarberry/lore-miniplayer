@@ -1,20 +1,13 @@
-import type { ReactElement } from 'react';
-import { MantineProvider } from '@mantine/core';
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AttentionChip } from '../../src/renderer/components/AttentionChip';
+import { renderWithMantine } from './test-utils';
 
 function renderChip(props: Partial<Parameters<typeof AttentionChip>[0]> = {}): {
   onOpen: jest.Mock;
 } {
   const onOpen = jest.fn();
-  render(
-    (
-      <MantineProvider>
-        <AttentionChip needsYouCount={0} activeCount={0} onOpen={onOpen} {...props} />
-      </MantineProvider>
-    ) as ReactElement
-  );
+  renderWithMantine(<AttentionChip needsYouCount={0} activeCount={0} onOpen={onOpen} {...props} />);
   return { onOpen };
 }
 
@@ -73,14 +66,10 @@ describe('AttentionChip', () => {
     const user = userEvent.setup();
     const onOpen = jest.fn();
     const outerClick = jest.fn();
-    render(
-      (
-        <MantineProvider>
-          <div onClick={outerClick}>
-            <AttentionChip needsYouCount={1} activeCount={0} onOpen={onOpen} />
-          </div>
-        </MantineProvider>
-      ) as ReactElement
+    renderWithMantine(
+      <div onClick={outerClick}>
+        <AttentionChip needsYouCount={1} activeCount={0} onOpen={onOpen} />
+      </div>
     );
 
     // When: clicking the chip

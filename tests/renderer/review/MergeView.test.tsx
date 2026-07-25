@@ -1,13 +1,13 @@
 jest.mock('@mantine/notifications', () => ({ notifications: { show: jest.fn() } }));
 
 import { notifications } from '@mantine/notifications';
-import type { ReactElement } from 'react';
-import { MantineProvider } from '@mantine/core';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MergeView } from '../../../src/renderer/components/review/MergeView';
 import { installMockElectronAPI } from '../../mocks/electron-api';
-import { makeCard, makeWorkspace } from '../mission-control/fixtures';
+import { makeCard, makeWorkspace, REPO_ID } from '../mission-control/fixtures';
+import { renderWithMantine } from '../test-utils';
+import { makeReviewRequest } from './fixtures';
 import type {
   AgentIntention,
   FileDiffResult,
@@ -16,24 +16,9 @@ import type {
   WorkspaceModelSnapshot,
 } from '../../../src/shared/types';
 
-const REPO_ID = '11111111-1111-4111-8111-111111111111';
 const WORKSPACE_PATH = '/wt/act2-balance';
 const SOURCE_BRANCH = 'agent/act2-balance';
 const TARGET_BRANCH = 'main';
-
-function makeRequest(overrides: Partial<ReviewOpenRequest> = {}): ReviewOpenRequest {
-  return {
-    workspacePath: WORKSPACE_PATH,
-    repositoryId: REPO_ID,
-    branchName: SOURCE_BRANCH,
-    workflow: 'merge',
-    compare: {
-      source: { kind: 'branchHead', branch: SOURCE_BRANCH },
-      target: { kind: 'branchHead', branch: TARGET_BRANCH },
-    },
-    ...overrides,
-  };
-}
 
 // A merge where both changed files auto-merged with no conflicts.
 function cleanState(): MergeState {
@@ -181,8 +166,16 @@ function installApi(
   return { start, resolve, abort, complete, compare, close: api.window.close as jest.Mock };
 }
 
-function renderView(request: ReviewOpenRequest = makeRequest()): void {
-  render((<MantineProvider>{<MergeView request={request} />}</MantineProvider>) as ReactElement);
+function renderView(
+  request: ReviewOpenRequest = makeReviewRequest({
+    workflow: 'merge',
+    compare: {
+      source: { kind: 'branchHead', branch: SOURCE_BRANCH },
+      target: { kind: 'branchHead', branch: TARGET_BRANCH },
+    },
+  })
+): void {
+  renderWithMantine(<MergeView request={request} />);
 }
 
 describe('MergeView — clean merge', () => {
@@ -286,12 +279,10 @@ describe('MergeView — sidebar intention', () => {
     installApi();
     installIntentionSnapshot({
       prompt: 'Rebalance the ravine ambush encounter.',
-      title: 'Rebalance ravine ambush',
       tasks: [{ subject: 'Retune elite spawn timing', status: 'running', runningElapsedMs: 4200 }],
       commentary: [],
       summary: 'Staggered the spawns over six seconds.',
       sessionId: '9f2c',
-      costUsd: 1.62,
     });
     renderView();
 

@@ -45,25 +45,18 @@ describe('useRepositoryNotifications', () => {
     });
   });
 
-  it('forwards branchPushed userId and lock-kind userId/branch/paths (design 1c attribution)', async () => {
+  it('forwards the branchPushed userId (design 1c attribution)', async () => {
     // Given: a mounted hook for a connected repo
     const onNotification = jest.fn();
     renderHook(() => useRepositoryNotifications(repoA, true, onNotification));
     await waitFor(() => expect(window.electronAPI.lore.notifications.subscribe).toHaveBeenCalled());
 
-    // When: a push with a userId and a lock with userId/branch/paths arrive
+    // When: a push with a userId arrives
     act(() => {
       registeredListener()({
         repositoryPath: '/repos/a',
         kind: 'branchPushed',
         userId: 'mara-voss',
-      });
-      registeredListener()({
-        repositoryPath: '/repos/a',
-        kind: 'resourceLocked',
-        userId: 'rowan',
-        branch: 'feature/act-two',
-        paths: ['levels/act2/pacing.toml'],
       });
     });
 
@@ -72,13 +65,6 @@ describe('useRepositoryNotifications', () => {
       repositoryPath: '/repos/a',
       kind: 'branchPushed',
       userId: 'mara-voss',
-    });
-    expect(onNotification).toHaveBeenNthCalledWith(2, {
-      repositoryPath: '/repos/a',
-      kind: 'resourceLocked',
-      userId: 'rowan',
-      branch: 'feature/act-two',
-      paths: ['levels/act2/pacing.toml'],
     });
   });
 

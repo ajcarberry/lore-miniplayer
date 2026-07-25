@@ -14,7 +14,6 @@ import { groupWorkspacesByRepo, repoNameFromUrl } from '../../utils/repository-n
 // needs explicit confirmation regardless of dirty/unpushed state.
 export interface WorkspaceFlags {
   readonly dirty: boolean;
-  readonly unpushed: boolean;
   readonly requiresForce: boolean;
   readonly isRepoCheckout: boolean;
 }
@@ -24,18 +23,7 @@ export function deriveWorkspaceFlags(card: WorkspaceCard): WorkspaceFlags {
   const dirty = reasons.includes('uncommitted');
   const unpushed = reasons.includes('unpushed') || reasons.includes('diverged');
   const isRepoCheckout = card.workspace.origin !== 'provisioned';
-  return { dirty, unpushed, requiresForce: dirty || unpushed, isRepoCheckout };
-}
-
-// The per-workspace cost, preferring the live session total, falling back to
-// the transcript-derived total. `null` when neither is observed (degraded).
-export function resolveCostUsd(card: WorkspaceCard): number | null {
-  const cost = card.session?.costUsd ?? card.intention?.costUsd;
-  return cost === undefined ? null : cost;
-}
-
-export function formatCost(costUsd: number | null): string | null {
-  return costUsd === null ? null : `$${costUsd.toFixed(2)}`;
+  return { dirty, requiresForce: dirty || unpushed, isRepoCheckout };
 }
 
 // A running task's elapsed time, e.g. "7m 12s" / "45s".

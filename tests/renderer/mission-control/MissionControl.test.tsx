@@ -1,13 +1,11 @@
 jest.mock('@mantine/notifications', () => ({ notifications: { show: jest.fn() } }));
 
-import type { ReactElement } from 'react';
-import { MantineProvider } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MissionControl } from '../../../src/renderer/components/mission-control/MissionControl';
 import { installMockElectronAPI } from '../../mocks/electron-api';
-import { makeCard, makeRepository, makeWorkspace, REPO_ID } from './fixtures';
+import { makeCard, makeRepository, makeWorkspace, renderWithMantine, REPO_ID } from './fixtures';
 import type { WorkspaceModelSnapshot } from '../../../src/shared/types';
 
 const OTHER_REPO_ID = '44444444-4444-4444-8444-444444444444';
@@ -69,7 +67,7 @@ function installApi(repositories = [makeRepository()]): Api {
 }
 
 function renderContainer(): void {
-  render((<MantineProvider>{<MissionControl />}</MantineProvider>) as ReactElement);
+  renderWithMantine(<MissionControl />);
 }
 
 describe('MissionControl container', () => {

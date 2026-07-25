@@ -722,9 +722,8 @@ describe('WorkspaceService', () => {
       const present = workspaces.find(w => w.path === workspaceDir);
       const gone = workspaces.find(w => w.path === goneDir);
       expect(present?.instanceId).toBe('inst-1');
-      expect(present?.stale).toBe(false);
       expect(present?.revision).toBe('r1');
-      expect(gone?.stale).toBe(true);
+      expect(gone?.revision).toBe('');
       expect(gone?.branchName).toBe('agent-y');
       expect(workspaces.every(w => w.repositoryId === repo.id)).toBe(true);
 
@@ -752,7 +751,7 @@ describe('WorkspaceService', () => {
       // When/Then: list degrades to a stale row rather than throwing
       const workspaces = await service.list(repo.id);
       expect(workspaces).toHaveLength(1);
-      expect(workspaces[0]?.stale).toBe(true);
+      expect(workspaces[0]?.revision).toBe('');
     });
 
     it('returns an empty list when nothing is registered', async () => {
@@ -802,7 +801,6 @@ describe('WorkspaceService', () => {
       expect(sibling).toBeDefined();
       expect(sibling?.instanceId).toBe('inst-adfa');
       expect(sibling?.branchName).toBe('main');
-      expect(sibling?.stale).toBe(false);
       expect(sibling?.repositoryId).toBe(repo.id);
       // And: it never claims a provisionedAt it never had
       expect(sibling?.provisionedAt).toBeUndefined();
@@ -879,10 +877,10 @@ describe('WorkspaceService', () => {
       // When: listing the anchor repo's workspaces
       const workspaces = await service.list(repo.id);
 
-      // Then: it is still listed, flagged stale rather than dropped or throwing
+      // Then: it is still listed as a stale row rather than dropped or throwing
       const gone = workspaces.find(w => w.path === goneDir);
       expect(gone).toBeDefined();
-      expect(gone?.stale).toBe(true);
+      expect(gone?.revision).toBe('');
       expect(gone?.branchName).toBe('gone-adfa');
     });
   });
@@ -1012,7 +1010,7 @@ describe('WorkspaceService', () => {
       await registeredWorkspace(true);
 
       // When: tearing it down
-      const result = await service.teardown({ workspaceId: 'inst-1', force: false });
+      await service.teardown({ workspaceId: 'inst-1', force: false });
 
       // Then: guards ran, the dir is gone, and the registry entry is removed
       expect(loreRepositoryService.getFileStatus).toHaveBeenCalledWith(workspaceDir);
@@ -1031,13 +1029,6 @@ describe('WorkspaceService', () => {
         { repositoryPath: siblingDir },
         { branch: BRANCH }
       );
-      expect(result).toEqual({
-        workspaceId: 'inst-1',
-        path: workspaceDir,
-        directoryRemoved: true,
-        localBranchRemoved: true,
-        remoteBranchRemoved: false,
-      });
     });
 
     it('skips prune + archive (logging) when tearing down the last workspace of a repo', async () => {
@@ -1045,15 +1036,13 @@ describe('WorkspaceService', () => {
       await registeredWorkspace(false);
 
       // When: tearing it down
-      const result = await service.teardown({ workspaceId: 'inst-1', force: false });
+      await service.teardown({ workspaceId: 'inst-1', force: false });
 
       // Then: the dir is removed and the entry dropped, but no store handle
       // remains to prune/archive against
       expect(fs.existsSync(workspaceDir)).toBe(false);
       expect(mockLore.repositoryInstancePrune).not.toHaveBeenCalled();
       expect(mockLore.branchArchive).not.toHaveBeenCalled();
-      expect(result.localBranchRemoved).toBe(false);
-      expect(result.directoryRemoved).toBe(true);
       expect((mockLog as unknown as { info: jest.Mock }).info).toHaveBeenCalledWith(
         expect.stringContaining('no sibling workspace'),
         expect.objectContaining({ operation: 'workspace:teardown' })
@@ -1065,10 +1054,9 @@ describe('WorkspaceService', () => {
       await registeredWorkspace(true);
 
       // When: tearing it down by path
-      const result = await service.teardown({ path: workspaceDir, force: false });
+      await service.teardown({ path: workspaceDir, force: false });
 
       // Then: it is removed
-      expect(result.directoryRemoved).toBe(true);
       expect(fs.existsSync(workspaceDir)).toBe(false);
     });
 
@@ -1174,10 +1162,9 @@ describe('WorkspaceService', () => {
       );
 
       // When: unforced teardown
-      const result = await service.teardown({ workspaceId: 'inst-1', force: false });
+      await service.teardown({ workspaceId: 'inst-1', force: false });
 
       // Then: allowed — the guard must not false-positive a clean fresh worktree
-      expect(result.directoryRemoved).toBe(true);
       expect(fs.existsSync(workspaceDir)).toBe(false);
     });
 
@@ -1208,11 +1195,10 @@ describe('WorkspaceService', () => {
       });
 
       // When: tearing down with force
-      const result = await service.teardown({ workspaceId: 'inst-1', force: true });
+      await service.teardown({ workspaceId: 'inst-1', force: true });
 
       // Then: the clean guard is skipped and the workspace is removed
       expect(loreRepositoryService.getFileStatus).not.toHaveBeenCalled();
-      expect(result.directoryRemoved).toBe(true);
       expect(fs.existsSync(workspaceDir)).toBe(false);
     });
 
@@ -1268,15 +1254,14 @@ describe('WorkspaceService', () => {
       );
 
       // When: tearing down
-      const result = await service.teardown({ workspaceId: 'inst-1', force: false });
+      await service.teardown({ workspaceId: 'inst-1', force: false });
 
       // Then: the directory is still removed and the branch archived
-      expect(result.directoryRemoved).toBe(true);
-      expect(result.localBranchRemoved).toBe(true);
+      expect(fs.existsSync(workspaceDir)).toBe(false);
       expect(mockLore.branchArchive).toHaveBeenCalled();
     });
 
-    it('reports the local branch as not removed when archiving fails', async () => {
+    it('continues (logging) when archiving the branch fails', async () => {
       // Given: a clean workspace with a sibling whose branch archive fails
       await registeredWorkspace(true);
       mockLore.branchArchive.mockReturnValue(
@@ -1284,11 +1269,14 @@ describe('WorkspaceService', () => {
       );
 
       // When: tearing down
-      const result = await service.teardown({ workspaceId: 'inst-1', force: false });
+      await service.teardown({ workspaceId: 'inst-1', force: false });
 
-      // Then: the directory is gone but the local branch removal is reported false
-      expect(result.directoryRemoved).toBe(true);
-      expect(result.localBranchRemoved).toBe(false);
+      // Then: the directory is gone despite the failed archive (logged)
+      expect(fs.existsSync(workspaceDir)).toBe(false);
+      expect((mockLog as unknown as { error: jest.Mock }).error).toHaveBeenCalledWith(
+        expect.stringContaining('archive'),
+        expect.objectContaining({ operation: 'workspace:teardown' })
+      );
     });
 
     async function registerAttachedSibling(): Promise<string> {
@@ -1334,12 +1322,11 @@ describe('WorkspaceService', () => {
       const siblingDir = await registerAttachedSibling();
 
       // When: tearing it down with explicit confirmation
-      const result = await service.teardown({ workspaceId: 'inst-adfa', force: true });
+      await service.teardown({ workspaceId: 'inst-adfa', force: true });
 
       // Then: the "repo's own checkout" guard does not (wrongly) refuse an
       // attached entry that legitimately IS its own repo record, and the
       // directory + registry entry are removed
-      expect(result.directoryRemoved).toBe(true);
       expect(fs.existsSync(siblingDir)).toBe(false);
       await expect(
         new WorkspaceRegistry(mockLog).findByLocalPath(siblingDir)
@@ -1355,7 +1342,7 @@ describe('WorkspaceService', () => {
       await registeredWorkspace(false);
 
       // When: force-closing the attached checkout
-      const result = await service.teardown({ workspaceId: 'inst-adfa', force: true });
+      await service.teardown({ workspaceId: 'inst-adfa', force: true });
 
       // Then: the shared store is still pruned via the provisioned sibling...
       expect(fs.existsSync(attachedDir)).toBe(false);
@@ -1366,7 +1353,6 @@ describe('WorkspaceService', () => {
       // ...but NO branch is archived: the display name must never be used as
       // a branch name against the shared store (it could match a real branch)
       expect(mockLore.branchArchive).not.toHaveBeenCalled();
-      expect(result.localBranchRemoved).toBe(false);
     });
 
     it('provisioned entries keep the existing behavior: no force required when clean', async () => {
@@ -1375,10 +1361,9 @@ describe('WorkspaceService', () => {
       await registeredWorkspace(true);
 
       // When: tearing down without force
-      const result = await service.teardown({ workspaceId: 'inst-1', force: false });
+      await service.teardown({ workspaceId: 'inst-1', force: false });
 
       // Then: it succeeds exactly as before (provisioned behavior unchanged)
-      expect(result.directoryRemoved).toBe(true);
       expect(fs.existsSync(workspaceDir)).toBe(false);
     });
   });

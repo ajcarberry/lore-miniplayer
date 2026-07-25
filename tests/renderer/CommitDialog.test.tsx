@@ -1,9 +1,8 @@
-import type { ReactElement } from 'react';
-import { MantineProvider } from '@mantine/core';
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { CommitDialog } from '../../src/renderer/components/CommitDialog';
 import type { CommitDialogProps } from '../../src/renderer/components/CommitDialog';
+import { renderWithMantine } from './test-utils';
 
 function baseProps(overrides: Partial<CommitDialogProps> = {}): CommitDialogProps {
   return {
@@ -20,7 +19,7 @@ function baseProps(overrides: Partial<CommitDialogProps> = {}): CommitDialogProp
 }
 
 function renderDialog(props: CommitDialogProps): void {
-  render((<MantineProvider>{<CommitDialog {...props} />}</MantineProvider>) as ReactElement);
+  renderWithMantine(<CommitDialog {...props} />);
 }
 
 describe('CommitDialog', () => {

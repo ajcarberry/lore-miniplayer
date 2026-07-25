@@ -1,4 +1,4 @@
-import { lore, LoreError } from '@lore-vcs/sdk';
+import { lore } from '@lore-vcs/sdk';
 import type { LoreFluentApi } from '@lore-vcs/sdk';
 import { LoreEventTag } from '@lore-vcs/sdk/types/enums';
 import * as path from 'node:path';
@@ -11,30 +11,19 @@ import type { LoreEventDataOf } from './lore-events';
 // into the service's own error class with a context message. Each service
 // declares only its error subclass and derives the helpers from it.
 
-// Base of the per-service operation errors. `errorType` carries the first
-// LoreError's numeric type. A subclass may accept the undecorated SDK message
-// as a third constructor param (LoreOperationError's `innerError`); the
-// helpers always pass it, and two-param subclasses simply ignore it.
+// Base of the per-service operation errors.
 export class OperationError extends Error {
-  constructor(
-    message: string,
-    public readonly errorType?: number
-  ) {
+  constructor(message: string) {
     super(message);
     this.name = 'OperationError';
   }
 }
 
-type OperationErrorClass<E extends OperationError> = new (
-  message: string,
-  errorType?: number,
-  innerError?: string
-) => E;
+type OperationErrorClass<E extends OperationError> = new (message: string) => E;
 
 export interface OperationHelpers<E extends OperationError> {
   // Wraps any failure as the service's error class, passing an already-typed
-  // error of that class through untouched. A LoreError contributes its first
-  // error's numeric type and its raw message.
+  // error of that class through untouched.
   toOperationError(context: string, error: unknown): E;
   // Runs a fluent SDK operation, wrapping any failure.
   run(operation: LoreFluentApi, context: string): Promise<void>;
@@ -55,16 +44,8 @@ export function operationHelpers<E extends OperationError>(
     if (error instanceof ErrorClass) {
       return error;
     }
-    if (error instanceof LoreError) {
-      const firstError = error.loreErrors?.[0];
-      return new ErrorClass(
-        `${context}: ${error.message}`,
-        firstError?.data.errorType,
-        error.message
-      );
-    }
     const message = error instanceof Error ? error.message : String(error);
-    return new ErrorClass(`${context}: ${message}`, undefined, message);
+    return new ErrorClass(`${context}: ${message}`);
   };
   return {
     toOperationError,

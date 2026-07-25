@@ -1,17 +1,12 @@
-import type { ReactElement } from 'react';
-import { MantineProvider } from '@mantine/core';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AddRepositoryModal } from '../../src/renderer/components/AddRepositoryModal';
 import { installMockElectronAPI } from '../mocks/electron-api';
+import { renderWithMantine } from './test-utils';
 
-function renderModal(serverUrl = 'lore.example.com'): ReturnType<typeof render> {
-  return render(
-    (
-      <MantineProvider>
-        <AddRepositoryModal serverUrl={serverUrl} opened onClose={jest.fn()} onAdd={jest.fn()} />
-      </MantineProvider>
-    ) as ReactElement
+function renderModal(serverUrl = 'lore.example.com'): ReturnType<typeof renderWithMantine> {
+  return renderWithMantine(
+    <AddRepositoryModal serverUrl={serverUrl} opened onClose={jest.fn()} onAdd={jest.fn()} />
   );
 }
 

@@ -12,7 +12,6 @@ import {
   WorkspaceSchema,
   WorkspaceBandSchema,
   WorkspaceAttentionSchema,
-  AgentSessionStateSchema,
   AgentTaskSchema,
   AgentIntentionSchema,
   FileDiffResultSchema,
@@ -25,7 +24,6 @@ import {
   WorkspaceModelSnapshotSchema,
   WorkspaceProvisionRequestSchema,
   WorkspaceTeardownRequestSchema,
-  WorkspaceTeardownResultSchema,
   WorkspaceMarkActiveRequestSchema,
   WorkspaceForgetRequestSchema,
   DiffRequestSchema,
@@ -487,34 +485,16 @@ describe('RepositoryNotificationSchema', () => {
     }
   });
 
-  it.each(['resourceLocked', 'resourceUnlocked'])(
-    'accepts a %s notification with branch and paths',
-    kind => {
-      // When: parsing a lock notification carrying branch + paths
-      const result = RepositoryNotificationSchema.safeParse({
-        repositoryPath: '/repos/a',
-        kind,
-        userId: 'mara-voss',
-        branch: 'feat/agent-1',
-        paths: ['src/index.ts'],
-      });
-
-      // Then: parsing succeeds
-      expect(result.success).toBe(true);
-    }
-  );
-
-  it('accepts a lock notification with an empty paths array', () => {
-    // When: parsing a lock notification with no locked paths
+  it('rejects a removed lock-notification kind', () => {
+    // When: parsing a kind the app no longer recognizes (locks feature removed)
     const result = RepositoryNotificationSchema.safeParse({
       repositoryPath: '/repos/a',
       kind: 'resourceLocked',
-      branch: 'feat/agent-1',
-      paths: [],
+      userId: 'mara-voss',
     });
 
-    // Then: parsing succeeds
-    expect(result.success).toBe(true);
+    // Then: parsing fails
+    expect(result.success).toBe(false);
   });
 
   it('rejects an empty userId string', () => {
@@ -565,7 +545,6 @@ const validWorkspace = {
   branchName: 'feat/agent-1',
   name: 'feat/agent-1',
   revision: 'a1b2c3',
-  stale: false,
   repositoryId: '4f8f2c9e-4b1f-4b7e-9a1a-1c2d3e4f5a6b',
   origin: 'provisioned',
 };
@@ -617,7 +596,7 @@ describe('WorkspaceSchema', () => {
     expect(result.success).toBe(false);
   });
 
-  it.each(['instanceId', 'path', 'branchName', 'name', 'stale', 'origin'])(
+  it.each(['instanceId', 'path', 'branchName', 'name', 'origin'])(
     'rejects a workspace missing %s',
     field => {
       // When: parsing without a required field
@@ -692,58 +671,6 @@ describe('WorkspaceBandSchema and WorkspaceAttentionSchema', () => {
   });
 });
 
-describe('AgentSessionStateSchema', () => {
-  const validState = {
-    sessionId: 'sess-1',
-    workspacePath: '/repos/a/.lore-instances/inst-1',
-    status: 'active',
-    lastEventAt: 1700000000000,
-  };
-
-  it.each(['active', 'waitingOnUser', 'stopped', 'ended'])('accepts the %s status', status => {
-    // When: parsing each valid status
-    const result = AgentSessionStateSchema.safeParse({ ...validState, status });
-
-    // Then: parsing succeeds
-    expect(result.success).toBe(true);
-  });
-
-  it('rejects an unrecognized status', () => {
-    // When: parsing a status outside the four-state union
-    const result = AgentSessionStateSchema.safeParse({ ...validState, status: 'paused' });
-
-    // Then: parsing fails
-    expect(result.success).toBe(false);
-  });
-
-  it('accepts a state with the optional costUsd populated', () => {
-    // When: parsing with costUsd present
-    const result = AgentSessionStateSchema.safeParse({ ...validState, costUsd: 1.23 });
-
-    // Then: parsing succeeds
-    expect(result.success).toBe(true);
-  });
-
-  it('round-trips without costUsd (optional field omitted)', () => {
-    // When: parsing without costUsd
-    const result = AgentSessionStateSchema.safeParse(validState);
-
-    // Then: parsing succeeds and costUsd stays absent
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.costUsd).toBeUndefined();
-    }
-  });
-
-  it('rejects a negative costUsd', () => {
-    // When: parsing with a negative cost
-    const result = AgentSessionStateSchema.safeParse({ ...validState, costUsd: -1 });
-
-    // Then: parsing fails
-    expect(result.success).toBe(false);
-  });
-});
-
 describe('AgentTaskSchema and AgentIntentionSchema', () => {
   it.each(['pending', 'running', 'done'])('accepts a task with %s status', status => {
     // When: parsing each valid task status
@@ -785,12 +712,10 @@ describe('AgentTaskSchema and AgentIntentionSchema', () => {
     // When: parsing an intention with every field present
     const result = AgentIntentionSchema.safeParse({
       prompt: 'Add validation to the form',
-      title: 'Form validation',
       tasks: [{ subject: 'Write tests', status: 'done' }],
       commentary: [{ at: 1700000000000, text: 'Starting with the failing test.' }],
       summary: 'Added Zod validation and tests.',
       sessionId: 'sess-1',
-      costUsd: 0.42,
     });
 
     // Then: parsing succeeds
@@ -1115,20 +1040,6 @@ describe('Workspace IPC request/response schemas', () => {
 
     // Then: parsing fails
     expect(result.success).toBe(false);
-  });
-
-  it('accepts a teardown result carrying what was removed', () => {
-    // When: parsing a full-cleanup teardown result
-    const result = WorkspaceTeardownResultSchema.safeParse({
-      workspaceId: 'inst-1',
-      path: '/repos/a/.lore-instances/inst-1',
-      directoryRemoved: true,
-      localBranchRemoved: true,
-      remoteBranchRemoved: false,
-    });
-
-    // Then: parsing succeeds
-    expect(result.success).toBe(true);
   });
 
   it('accepts a valid markActive request', () => {

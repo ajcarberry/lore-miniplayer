@@ -55,11 +55,7 @@ function handleRepositoryNotification(
   if (notification.kind !== 'branchPushed') {
     void branches.refresh();
   }
-  if (
-    notification.kind === 'branchPushed' ||
-    notification.kind === 'resourceLocked' ||
-    notification.kind === 'resourceUnlocked'
-  ) {
+  if (notification.kind === 'branchPushed') {
     agentAttention.pushToast(notification);
   }
 }

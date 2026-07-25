@@ -56,20 +56,17 @@ describe('AgentTranscriptService', () => {
   });
 
   describe('full extraction from a realistic fixture', () => {
-    it('extracts prompt, title, tasks, commentary, and summary', async () => {
+    it('extracts prompt, tasks, commentary, and summary', async () => {
       // Given: a realistic transcript + tasks dir
       // When: extracting
       const intention = await newService().extract(REALISTIC_TRANSCRIPT);
 
       // Then: every derived field matches the fixture
       expect(intention.prompt).toBe('Add a dark mode toggle to the settings panel.');
-      expect(intention.title).toBe('Add dark mode toggle to settings');
       expect(intention.sessionId).toBe(SESSION_ID);
       expect(intention.summary).toBe(
         'Done. The toggle persists via config and both themes render correctly.'
       );
-      // costUsd is never present in transcripts
-      expect(intention.costUsd).toBeUndefined();
 
       // The output is a valid AgentIntention (P2 schema)
       expect(() => AgentIntentionSchema.parse(intention)).not.toThrow();

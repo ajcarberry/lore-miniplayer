@@ -1,6 +1,3 @@
-import type { ReactElement, ReactNode } from 'react';
-import { MantineProvider } from '@mantine/core';
-import { render } from '@testing-library/react';
 import type {
   Repository,
   Workspace,
@@ -36,7 +33,6 @@ export function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {
     // overrides it to exercise the distinct-name disambiguation.
     name: branchName,
     revision: 'r130',
-    stale: false,
     repositoryId: REPO_ID,
     origin: 'provisioned',
     provisionedAt: '2026-07-20T00:00:00.000Z',
@@ -64,6 +60,4 @@ export function makeCard(
   };
 }
 
-export function renderWithMantine(ui: ReactNode): ReturnType<typeof render> {
-  return render((<MantineProvider>{ui}</MantineProvider>) as ReactElement);
-}
+export { renderWithMantine } from '../test-utils';

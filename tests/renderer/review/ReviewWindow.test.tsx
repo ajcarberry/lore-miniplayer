@@ -1,34 +1,20 @@
 jest.mock('@mantine/notifications', () => ({ notifications: { show: jest.fn() } }));
 
 import { notifications } from '@mantine/notifications';
-import type { ReactElement } from 'react';
-import { MantineProvider } from '@mantine/core';
-import { render, screen, waitFor } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ReviewWindow } from '../../../src/renderer/components/review/ReviewWindow';
 import { installMockElectronAPI } from '../../mocks/electron-api';
+import { REPO_ID } from '../mission-control/fixtures';
+import { renderWithMantine } from '../test-utils';
+import { makeReviewRequest } from './fixtures';
 import type {
   FileDiffResult,
   LoreFileStatusGroup,
   ReviewOpenRequest,
 } from '../../../src/shared/types';
 
-const REPO_ID = '11111111-1111-4111-8111-111111111111';
 const WORKSPACE_PATH = '/wt/act2-balance';
-
-function makeRequest(overrides: Partial<ReviewOpenRequest> = {}): ReviewOpenRequest {
-  return {
-    workspacePath: WORKSPACE_PATH,
-    repositoryId: REPO_ID,
-    branchName: 'agent/act2-balance',
-    workflow: 'commit',
-    compare: {
-      source: { kind: 'revision', revision: 'r128' },
-      target: { kind: 'workingTree' },
-    },
-    ...overrides,
-  };
-}
 
 const DIFFS: FileDiffResult[] = [
   {
@@ -93,7 +79,7 @@ interface Api {
   push: jest.Mock;
 }
 
-function installApi(request: ReviewOpenRequest = makeRequest()): Api {
+function installApi(request: ReviewOpenRequest = makeReviewRequest()): Api {
   const api = installMockElectronAPI();
   const requestContext = jest.fn().mockResolvedValue({ success: true, data: request });
   const onContext = jest.fn().mockReturnValue(jest.fn());
@@ -164,7 +150,7 @@ function installApi(request: ReviewOpenRequest = makeRequest()): Api {
 }
 
 function renderWindow(): void {
-  render((<MantineProvider>{<ReviewWindow />}</MantineProvider>) as ReactElement);
+  renderWithMantine(<ReviewWindow />);
 }
 
 describe('ReviewWindow — commit workflow', () => {
@@ -308,7 +294,7 @@ describe('ReviewWindow — commit workflow', () => {
 describe('ReviewWindow — merge workflow routing', () => {
   it('routes the merge workflow to the merge view without the commit compare picker', async () => {
     installApi(
-      makeRequest({
+      makeReviewRequest({
         workflow: 'merge',
         compare: {
           source: { kind: 'branchHead', branch: 'agent/act2-balance' },

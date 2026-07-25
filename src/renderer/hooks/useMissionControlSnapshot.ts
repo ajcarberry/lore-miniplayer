@@ -46,9 +46,8 @@ export function useMissionControlSnapshot(repositoryId: string | null): Workspac
         });
         return;
       }
-      if (result.data.repositoryId === repositoryId) {
-        setSnapshot({ repositoryId, cards: result.data.cards });
-      }
+      // watch() echoes the requested repository id back by construction.
+      setSnapshot({ repositoryId, cards: result.data.cards });
     });
 
     return (): void => {

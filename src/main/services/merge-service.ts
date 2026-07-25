@@ -18,8 +18,8 @@ import type {
 } from '../../shared/types';
 
 export class MergeOperationError extends OperationError {
-  constructor(message: string, errorType?: number) {
-    super(message, errorType);
+  constructor(message: string) {
+    super(message);
     this.name = 'MergeOperationError';
   }
 }
@@ -245,8 +245,7 @@ export class MergeService {
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       throw new MergeOperationError(
-        `Merge committed on '${record.sourceBranch}' (${record.committedRevision}) but failed to land on '${record.targetBranch}': ${detail}`,
-        error instanceof MergeOperationError ? error.errorType : undefined
+        `Merge committed on '${record.sourceBranch}' (${record.committedRevision}) but failed to land on '${record.targetBranch}': ${detail}`
       );
     }
 

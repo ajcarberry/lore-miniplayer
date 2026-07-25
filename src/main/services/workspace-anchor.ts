@@ -1,5 +1,4 @@
 import type { MainLogger } from '../ipc/logger';
-import { WorkspaceSchema } from '../../shared/schemas';
 import type { Repository, Workspace } from '../../shared/types';
 import type { WorkspaceRevisionStatus } from './lore-status';
 import { samePath } from './path-utils';
@@ -40,17 +39,16 @@ export async function resolveAnchorWorkspace(
   if (!status || status.branchName.length === 0) {
     return undefined;
   }
-  return WorkspaceSchema.parse({
+  return {
     instanceId: repo.id,
     path: repo.localPath,
     branchName: status.branchName,
     name: repo.name,
     revision: status.revision,
-    stale: false,
     repositoryId: repo.id,
     origin: repo.origin,
     ...(repo.provisionedAt ? { provisionedAt: repo.provisionedAt } : {}),
-  });
+  };
 }
 
 // Compose the Mission Control member list: the repository's sibling workspaces

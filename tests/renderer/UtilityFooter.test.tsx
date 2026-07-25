@@ -1,11 +1,10 @@
-import type { ReactElement } from 'react';
-import { MantineProvider } from '@mantine/core';
-import { render, screen, waitFor } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { UtilityFooter } from '../../src/renderer/components/UtilityFooter';
 import type { Repository } from '../../src/shared/types';
 import { installMockElectronAPI } from '../mocks/electron-api';
 import { makeRepository } from '../mocks/repository-fixture';
+import { renderWithMantine } from './test-utils';
 
 // Popover/Menu open involves a floating-ui position calculation; under heavy
 // parallel test load this occasionally exceeds Jest's default 5s test
@@ -41,23 +40,19 @@ function renderFooter(options: RenderOptions = {}): {
   const onChangeServer = options.onChangeServer ?? jest.fn();
   const onOpenMissionControl = options.onOpenMissionControl ?? jest.fn();
 
-  render(
-    (
-      <MantineProvider>
-        <UtilityFooter
-          selectedRepo={options.selectedRepo ?? null}
-          repositories={options.repositories ?? []}
-          isLoadingRepos={false}
-          onSelectRepo={onSelectRepo}
-          onAddRepo={onAddRepo}
-          onEditRepo={onEditRepo}
-          onRefreshRepos={onRefreshRepos}
-          serverUrl={options.serverUrl ?? 'lores://lore.example.com'}
-          onChangeServer={onChangeServer}
-          onOpenMissionControl={onOpenMissionControl}
-        />
-      </MantineProvider>
-    ) as ReactElement
+  renderWithMantine(
+    <UtilityFooter
+      selectedRepo={options.selectedRepo ?? null}
+      repositories={options.repositories ?? []}
+      isLoadingRepos={false}
+      onSelectRepo={onSelectRepo}
+      onAddRepo={onAddRepo}
+      onEditRepo={onEditRepo}
+      onRefreshRepos={onRefreshRepos}
+      serverUrl={options.serverUrl ?? 'lores://lore.example.com'}
+      onChangeServer={onChangeServer}
+      onOpenMissionControl={onOpenMissionControl}
+    />
   );
 
   return {

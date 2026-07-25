@@ -1,11 +1,10 @@
-import type { ReactElement, ReactNode } from 'react';
-import { MantineProvider } from '@mantine/core';
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ComparePicker } from '../../../src/renderer/components/review/ComparePicker';
 import { FileList } from '../../../src/renderer/components/review/FileList';
 import type { ReviewFile } from '../../../src/renderer/components/review/reviewModel';
 import type { ReviewCompare, RevisionSummary } from '../../../src/shared/types';
+import { renderWithMantine } from '../test-utils';
 
 function makeFile(overrides: Partial<ReviewFile> = {}): ReviewFile {
   return {
@@ -19,10 +18,6 @@ function makeFile(overrides: Partial<ReviewFile> = {}): ReviewFile {
     conflictUnresolved: false,
     ...overrides,
   };
-}
-
-function renderWithMantine(ui: ReactNode): void {
-  render((<MantineProvider>{ui}</MantineProvider>) as ReactElement);
 }
 
 // RightPanel was folded into IntentionPanel (its placeholder branch was dead

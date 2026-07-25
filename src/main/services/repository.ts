@@ -223,12 +223,12 @@ export class RepositoryService {
       if (nextUrl === entry.url && nextId === entry.loreRepositoryId) {
         continue;
       }
-      const healed = RepositorySchema.parse({
+      const healed: Repository = {
         ...entry,
         url: nextUrl,
         ...(nextId ? { loreRepositoryId: nextId } : {}),
         updatedAt: new Date().toISOString(),
-      });
+      };
       await this.registry.upsertById(healed);
       this.log.info('Healed workspace identity to its true Lore repository', {
         operation: 'repository:heal-identity',

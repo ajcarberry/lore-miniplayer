@@ -1,9 +1,8 @@
-import type { ReactElement } from 'react';
-import { MantineProvider } from '@mantine/core';
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Transport } from '../../src/renderer/components/Transport';
 import type { TransportProps } from '../../src/renderer/components/Transport';
+import { renderWithMantine } from './test-utils';
 
 function baseProps(overrides: Partial<TransportProps> = {}): TransportProps {
   return {
@@ -25,7 +24,7 @@ function baseProps(overrides: Partial<TransportProps> = {}): TransportProps {
 }
 
 function renderTransport(props: TransportProps): void {
-  render((<MantineProvider>{<Transport {...props} />}</MantineProvider>) as ReactElement);
+  renderWithMantine(<Transport {...props} />);
 }
 
 describe('Transport', () => {

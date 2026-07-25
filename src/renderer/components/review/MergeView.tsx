@@ -8,11 +8,13 @@ import type {
   ReviewOpenRequest,
 } from '../../../shared/types';
 import { notifyError } from '../../utils/notify';
+import { IconGitMerge } from '@tabler/icons-react';
+import { pluralize } from '../../utils/pluralize';
 import { AbortMergeModal } from './AbortMergeModal';
 import { MergeBar } from './MergeBar';
 import { MergeFileArea } from './MergeFileArea';
-import { MergeHeader } from './MergeHeader';
 import { MergeSidebar } from './MergeSidebar';
+import { ReviewHeader } from './ReviewHeader';
 import { useReviewMeta } from './useReviewMeta';
 
 export interface MergeViewProps {
@@ -176,12 +178,12 @@ export function MergeView(props: MergeViewProps): ReactElement {
 
   return (
     <Stack gap={0} style={{ flex: 1, minHeight: 0 }}>
-      <MergeHeader
-        sourceBranch={sourceBranch}
-        targetBranch={targetBranch}
-        repositoryName={repositoryName}
-        commitCount={revisions.length}
-        conflictCount={conflictCount}
+      {/* Merge header (design 2c): "Merge — <branch> → <target>" with a
+          "<repo> · N commits · M conflicts" eyebrow, on the shared shell. */}
+      <ReviewHeader
+        title={`Merge — ${sourceBranch} → ${targetBranch}`}
+        eyebrow={`${repositoryName ? `${repositoryName} · ` : ''}${revisions.length} ${pluralize(revisions.length, 'commit')} · ${conflictCount} ${pluralize(conflictCount, 'conflict')}`}
+        icon={<IconGitMerge size={18} color='var(--acc-deep, #7a5b1e)' />}
       />
 
       <Group gap={0} align='stretch' wrap='nowrap' style={{ flex: 1, minHeight: 0 }}>
@@ -219,7 +221,7 @@ export function MergeView(props: MergeViewProps): ReactElement {
       <MergeBar
         conflictCount={conflictCount}
         resolvedCount={conflictFiles.filter(file => file.resolution !== undefined).length}
-        allResolved={mergeState?.allResolved ?? false}
+        allResolved={mergeState.allResolved}
         hasChangesToLand={hasChangesToLand}
         completing={completing}
         landedRevision={landedRevision}

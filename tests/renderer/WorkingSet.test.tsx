@@ -1,9 +1,8 @@
-import type { ReactElement } from 'react';
-import { MantineProvider } from '@mantine/core';
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { WorkingSet } from '../../src/renderer/components/WorkingSet';
 import type { WorkingSetFile, WorkingSetProps } from '../../src/renderer/components/WorkingSet';
+import { renderWithMantine } from './test-utils';
 
 const files: WorkingSetFile[] = [
   { path: 'src/deep/nested/dir/changed.ts', kind: 'edit', staged: true },
@@ -23,7 +22,7 @@ function baseProps(overrides: Partial<WorkingSetProps> = {}): WorkingSetProps {
 }
 
 function renderWorkingSet(props: WorkingSetProps): void {
-  render((<MantineProvider>{<WorkingSet {...props} />}</MantineProvider>) as ReactElement);
+  renderWithMantine(<WorkingSet {...props} />);
 }
 
 describe('WorkingSet', () => {

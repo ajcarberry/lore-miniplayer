@@ -34,7 +34,6 @@ function workspace(overrides: Partial<Workspace> = {}): Workspace {
     branchName: 'feature-a',
     name: 'feature-a',
     revision: 'rev-a',
-    stale: false,
     repositoryId: REPO_ID,
     origin: 'provisioned',
     provisionedAt: '2026-07-22T10:00:00.000Z',
@@ -318,7 +317,6 @@ describe('WorkspaceModelService.snapshot — card data', () => {
     expect(snapshot.cards).toHaveLength(1);
     const card = onlyCard(snapshot);
     expect(card.attention.band).toBe('inProgress');
-    expect(card.session?.status).toBe('active');
     expect(card.intention?.prompt).toBe('do the thing');
   });
 
@@ -369,11 +367,11 @@ describe('WorkspaceModelService.snapshot — card data', () => {
     expect(card.fileStats).toEqual({ added: 0, removed: 0 });
   });
 
-  it('keeps stale instances listed (flagged) and idle', async () => {
-    const stale = workspace({ instanceId: 'inst-stale', stale: true });
+  it('keeps stale instances (empty revision, synthetic id) listed and idle', async () => {
+    const stale = workspace({ instanceId: 'inst-stale', revision: '' });
     const { model } = makeHarness([stale]);
     const card = onlyCard(await model.snapshot(REPO_ID));
-    expect(card.workspace.stale).toBe(true);
+    expect(card.workspace.instanceId).toBe('inst-stale');
     expect(card.attention.band).toBe('idle');
   });
 
@@ -775,7 +773,6 @@ describe('WorkspaceModelService.snapshot — anchor workspace (packet U3)', () =
     expect(anchorCard?.workspace.branchName).toBe('main');
     expect(anchorCard?.workspace.path).toBe('/repo/anchor');
     expect(anchorCard?.workspace.revision).toBe('rev-anchor');
-    expect(anchorCard?.workspace.stale).toBe(false);
 
     const provisionedCard = snapshot.cards.find(card => card.workspace.instanceId === 'inst-a');
     expect(provisionedCard?.isActive).toBe(false);
@@ -820,7 +817,6 @@ describe('WorkspaceModelService.snapshot — anchor workspace (packet U3)', () =
     expect(card.attention.band).toBe('awaitingReview');
     expect(card.attention.reasons).toEqual(['uncommitted']);
     // Never claim agent knowledge that doesn't exist for a hookless anchor.
-    expect(card.session).toBeUndefined();
     expect(card.intention).toBeUndefined();
   });
 
@@ -897,7 +893,6 @@ describe('WorkspaceModelService.refresh — serialization + coalescing (C58)', (
     // agent — never a stale inProgress card from the slower older build.
     const last = emitted.at(-1);
     expect(last).toBeDefined();
-    expect(onlyCard(last as WorkspaceModelSnapshot).session?.status).toBe('stopped');
     expect(onlyCard(last as WorkspaceModelSnapshot).attention.band).toBe('idle');
 
     model.unwatch();

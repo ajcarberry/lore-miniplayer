@@ -199,11 +199,10 @@ export class WorkspaceRegistry {
   }
 
   private async save(): Promise<void> {
-    const validated = RegistryFileSchema.parse({
-      version: STORE_VERSION,
-      workspaces: this.entries,
-    });
-    await fs.writeFile(this.storePath, JSON.stringify(validated, null, 2), 'utf-8');
+    // Entries are validated on the way in (load's parse at the disk boundary,
+    // upsertWhere's parse on writes) — no re-parse needed here.
+    const file = { version: STORE_VERSION, workspaces: this.entries };
+    await fs.writeFile(this.storePath, JSON.stringify(file, null, 2), 'utf-8');
   }
 
   // Fold the legacy `repositories.json` (the one legacy store that shipped)

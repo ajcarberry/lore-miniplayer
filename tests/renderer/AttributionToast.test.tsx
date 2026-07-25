@@ -1,23 +1,18 @@
-import type { ReactElement } from 'react';
-import { MantineProvider } from '@mantine/core';
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AttributionToast } from '../../src/renderer/components/AttributionToast';
+import { renderWithMantine } from './test-utils';
 
 function renderToast(overrides: Partial<Parameters<typeof AttributionToast>[0]> = {}): {
   onDismiss: jest.Mock;
 } {
   const onDismiss = overrides.onDismiss ?? jest.fn();
-  render(
-    (
-      <MantineProvider>
-        <AttributionToast
-          message='Mara Voss pushed r128 to feature/act-two'
-          {...overrides}
-          onDismiss={onDismiss}
-        />
-      </MantineProvider>
-    ) as ReactElement
+  renderWithMantine(
+    <AttributionToast
+      message='Mara Voss pushed r128 to feature/act-two'
+      {...overrides}
+      onDismiss={onDismiss}
+    />
   );
   return { onDismiss };
 }
@@ -89,12 +84,8 @@ describe('AttributionToast', () => {
   it('clears its timer on unmount so a stale dismiss never fires', () => {
     // Given: a rendered toast
     const onDismiss = jest.fn();
-    const { unmount } = render(
-      (
-        <MantineProvider>
-          <AttributionToast message='test' onDismiss={onDismiss} />
-        </MantineProvider>
-      ) as ReactElement
+    const { unmount } = renderWithMantine(
+      <AttributionToast message='test' onDismiss={onDismiss} />
     );
 
     // When: unmounting before the duration elapses, then letting time pass

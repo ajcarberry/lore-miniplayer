@@ -46,58 +46,6 @@ describe('formatAttributionMessage', () => {
     expect(message).toBe('Someone pushed r1 to main');
   });
 
-  it('formats a lock notification naming the locked path', () => {
-    // When: a resourceLocked notification arrives with one path
-    const message = formatAttributionMessage(
-      notification({ kind: 'resourceLocked', userId: 'rowan', paths: ['levels/act2/pacing.toml'] }),
-      'main',
-      undefined
-    );
-
-    // Then: it names who locked which file
-    expect(message).toBe('rowan locked levels/act2/pacing.toml');
-  });
-
-  it('formats an unlock notification with the "unlocked" verb', () => {
-    // When: a resourceUnlocked notification arrives
-    const message = formatAttributionMessage(
-      notification({ kind: 'resourceUnlocked', userId: 'rowan', paths: ['file.txt'] }),
-      'main',
-      undefined
-    );
-
-    // Then: the verb flips to unlocked
-    expect(message).toBe('rowan unlocked file.txt');
-  });
-
-  it('summarizes multiple locked paths with a "+N more" suffix', () => {
-    // When: a lock notification carries several paths
-    const message = formatAttributionMessage(
-      notification({
-        kind: 'resourceLocked',
-        userId: 'rowan',
-        paths: ['a.txt', 'b.txt', 'c.txt'],
-      }),
-      'main',
-      undefined
-    );
-
-    // Then: only the first path is named, with a count of the rest
-    expect(message).toBe('rowan locked a.txt (+2 more)');
-  });
-
-  it('falls back to a generic file mention when a lock notification carries no paths', () => {
-    // When: a lock notification with an empty paths array
-    const message = formatAttributionMessage(
-      notification({ kind: 'resourceLocked', userId: 'rowan', paths: [] }),
-      'main',
-      undefined
-    );
-
-    // Then: a generic sentence still renders
-    expect(message).toBe('rowan locked a file');
-  });
-
   it('returns null for branchCreated — nothing attributable to toast', () => {
     // When: a branchCreated notification arrives (no userId ever)
     const message = formatAttributionMessage(notification({ kind: 'branchCreated' }), 'main', 1);

@@ -3,16 +3,13 @@ import { MantineProvider } from '@mantine/core';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { RevisionSyncModal } from '../../src/renderer/components/RevisionSyncModal';
+import { renderWithMantine } from './test-utils';
 
 function renderModal(): ReturnType<typeof render> & { onSync: jest.Mock; onClose: jest.Mock } {
   const onSync = jest.fn();
   const onClose = jest.fn();
-  const utils = render(
-    (
-      <MantineProvider>
-        <RevisionSyncModal opened onClose={onClose} onSync={onSync} currentBranch='main' />
-      </MantineProvider>
-    ) as ReactElement
+  const utils = renderWithMantine(
+    <RevisionSyncModal opened onClose={onClose} onSync={onSync} currentBranch='main' />
   );
   return { ...utils, onSync, onClose };
 }
@@ -88,18 +85,14 @@ describe('RevisionSyncModal', () => {
   it('should prefill the revision field from initialRevision when opened', async () => {
     // Given: the modal opened with a prefilled revision hash
     const onSync = jest.fn();
-    render(
-      (
-        <MantineProvider>
-          <RevisionSyncModal
-            opened
-            onClose={jest.fn()}
-            onSync={onSync}
-            currentBranch='main'
-            initialRevision='abc123def456'
-          />
-        </MantineProvider>
-      ) as ReactElement
+    renderWithMantine(
+      <RevisionSyncModal
+        opened
+        onClose={jest.fn()}
+        onSync={onSync}
+        currentBranch='main'
+        initialRevision='abc123def456'
+      />
     );
 
     // Then: the field carries the prefilled hash and the action is enabled

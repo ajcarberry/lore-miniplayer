@@ -1,9 +1,9 @@
 import type { ReactElement } from 'react';
 import { Box, Group, Stack, Text } from '@mantine/core';
 import type { AgentIntention, AgentTask } from '../../../shared/types';
+import { useMissionControlSnapshot } from '../../hooks/useMissionControlSnapshot';
 import { TASK_GLYPH } from '../../utils/taskGlyph';
 import { SectionLabel } from '../SectionLabel';
-import { useIntention } from './useIntention';
 
 export interface IntentionPanelProps {
   readonly repositoryId: string;
@@ -81,30 +81,30 @@ function IntentionBody({ intention }: { readonly intention: AgentIntention }): R
   );
 }
 
-// "from transcript · session <id> · $<cost>" (design 2b); cost is omitted
-// when the intention carries no costUsd (P8 doesn't always produce one —
-// never fabricated). No sessionId means nothing to attribute the intention
-// to, so the footer renders nothing at all.
+// "from transcript · session <id>" (design 2b). No sessionId means nothing
+// to attribute the intention to, so the footer renders nothing at all.
 function sessionFooter(intention: AgentIntention): ReactElement | undefined {
   if (!intention.sessionId) {
     return undefined;
   }
-  const cost = intention.costUsd !== undefined ? ` · $${intention.costUsd.toFixed(2)}` : '';
   return (
     <Text size='xs' c='dimmed' ff='var(--font-mono)'>
-      {`from transcript · session ${intention.sessionId}${cost}`}
+      {`from transcript · session ${intention.sessionId}`}
     </Text>
   );
 }
 
 // The review window's right pane (design 2b, P12): the intention column.
 // Sources the workspace's AgentIntention from the workspace model snapshot
-// (P9/P10 — the richest existing IPC surface for it, see useIntention).
-// Degrades to a diff-only placeholder when no intention was recorded, and to
-// only the sections a partial intention actually carries otherwise — never a
-// raw thinking stream.
+// (P9/P10 — the richest existing IPC surface for it, already carrying
+// WorkspaceCard.intention), selecting the one card matching this review
+// window's workspace path. Degrades to a diff-only placeholder when no
+// intention was recorded, and to only the sections a partial intention
+// actually carries otherwise — never a raw thinking stream.
 export function IntentionPanel(props: IntentionPanelProps): ReactElement {
-  const intention = useIntention(props.repositoryId, props.workspacePath);
+  const cards = useMissionControlSnapshot(props.repositoryId);
+  const intention =
+    cards.find(candidate => candidate.workspace.path === props.workspacePath)?.intention ?? null;
   const hasContent =
     intention !== null &&
     (Boolean(intention.prompt) || intention.tasks.length > 0 || Boolean(intention.summary));

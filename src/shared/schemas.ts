@@ -119,20 +119,10 @@ export const BranchDivergenceSchema = z.object({
 
 export const RepositoryNotificationSchema = z.object({
   repositoryPath: z.string().min(1),
-  kind: z.enum([
-    'branchPushed',
-    'branchCreated',
-    'branchDeleted',
-    'resourceLocked',
-    'resourceUnlocked',
-  ]),
-  // Populated on branchPushed (attribution toast) and the lock kinds
-  // (who locked/unlocked); absent on branchCreated/branchDeleted.
+  kind: z.enum(['branchPushed', 'branchCreated', 'branchDeleted']),
+  // Populated on branchPushed (attribution toast); absent on
+  // branchCreated/branchDeleted.
   userId: z.string().min(1).optional(),
-  // Populated on the lock kinds only, mirroring
-  // LoreNotificationResourceLocked/UnlockedEventData.
-  branch: z.string().min(1).optional(),
-  paths: z.array(z.string().min(1)).optional(),
 });
 
 export const CloneProgressSchema = z.object({
@@ -180,9 +170,8 @@ export const BranchGraphSchema = z.object({
 // ---------------------------------------------------------------------------
 
 // A Lore shared-store instance (repositoryInstanceList — instanceId, path,
-// branchName, revision, stale) checked out for one agent or manual
-// workspace, enriched with the app's own repository link and provisioning
-// timestamp.
+// branchName, revision) checked out for one agent or manual workspace,
+// enriched with the app's own repository link and provisioning timestamp.
 export const WorkspaceSchema = z.object({
   instanceId: z.string().min(1),
   path: z.string().min(1),
@@ -194,7 +183,6 @@ export const WorkspaceSchema = z.object({
   // (attached/cloned) entry carries its own registry name here.
   name: RepositorySchema.shape.name,
   revision: z.string(),
-  stale: z.boolean(),
   repositoryId: RepositorySchema.shape.id,
   provisionedAt: z.string().datetime().optional(),
   // How this workspace was created (packet U1 origins) — the renderer needs
@@ -223,17 +211,6 @@ export const WorkspaceAttentionSchema = z.object({
   reasons: z.array(WorkspaceAttentionReasonSchema),
 });
 
-// Agent observability (research note): hook-driven session lifecycle state.
-export const AgentSessionStatusSchema = z.enum(['active', 'waitingOnUser', 'stopped', 'ended']);
-
-export const AgentSessionStateSchema = z.object({
-  sessionId: z.string().min(1),
-  workspacePath: z.string().min(1),
-  status: AgentSessionStatusSchema,
-  lastEventAt: z.number().nonnegative(),
-  costUsd: z.number().nonnegative().optional(),
-});
-
 export const AgentTaskStatusSchema = z.enum(['pending', 'running', 'done']);
 
 export const AgentTaskSchema = z.object({
@@ -252,12 +229,10 @@ export const AgentCommentaryEntrySchema = z.object({
 // diff in the review window (design 2b/2c).
 export const AgentIntentionSchema = z.object({
   prompt: z.string().optional(),
-  title: z.string().optional(),
   tasks: z.array(AgentTaskSchema),
   commentary: z.array(AgentCommentaryEntrySchema),
   summary: z.string().optional(),
   sessionId: z.string().optional(),
-  costUsd: z.number().nonnegative().optional(),
 });
 
 // Per-file diff result (fileDiff / fileDump fallback), rendered in the
@@ -337,7 +312,7 @@ export const ReviewOpenRequestSchema = z.object({
 });
 
 // Mission Control's per-workspace card (design 2a): the workspace, its
-// derived attention (band + reasons), the live agent session (when observed),
+// derived attention (band + reasons),
 // the transcript-derived intention (when enriched), aggregate +/- line stats
 // and changed-file count over the workspace's DIRTY files (what
 // `lore status --scan` identifies — uncommitted working-set changes; committed
@@ -352,7 +327,6 @@ export const WorkspaceCardSchema = z.object({
   workspace: WorkspaceSchema,
   attention: WorkspaceAttentionSchema,
   isActive: z.boolean(),
-  session: AgentSessionStateSchema.optional(),
   intention: AgentIntentionSchema.optional(),
   fileStats: LineStatsSchema,
   changedFileCount: z.number().int().nonnegative(),
@@ -383,14 +357,6 @@ export const WorkspaceTeardownRequestSchema = z.union([
   z.object({ workspaceId: z.string().min(1), force: z.boolean() }),
   z.object({ path: z.string().min(1), force: z.boolean() }),
 ]);
-
-export const WorkspaceTeardownResultSchema = z.object({
-  workspaceId: z.string().min(1),
-  path: z.string().min(1),
-  directoryRemoved: z.boolean(),
-  localBranchRemoved: z.boolean(),
-  remoteBranchRemoved: z.boolean(),
-});
 
 export const WorkspaceMarkActiveRequestSchema = z.object({
   workspaceId: z.string().min(1),
@@ -432,16 +398,6 @@ export const MergeCompleteRequestSchema = z.object({
   repositoryPath: z.string().min(1),
 });
 
-// Resolves a notification's raw `userId` to a display name (P5's
-// LoreRepositoryService.resolveUserName, exposed to the renderer so the
-// attribution toast can show a name instead of a raw id). Server-dependent
-// (P1c): offline/no-auth-endpoint requests are reported as a failure result,
-// never a fabricated name.
-export const ResolveUserNameRequestSchema = z.object({
-  repositoryPath: z.string().min(1),
-  userId: z.string().min(1),
-});
-
 // IPC channel names, grouped by domain and colon-namespaced to match the
 // existing 'lore:...' channels declared at their call sites in preload.ts /
 // lore-handlers.ts. `workspaceModel.snapshot` and `review.context` are the
@@ -462,11 +418,6 @@ export const IPC_CHANNELS = {
     resolve: 'merge:resolve',
     abort: 'merge:abort',
     complete: 'merge:complete',
-  },
-  // Attribution name resolution (P5's resolveUserName, exposed for the P15
-  // toast). One request/response invoke; no push involved.
-  identity: {
-    resolveUserName: 'identity:resolveUserName',
   },
   // Mission Control window (P10, design 2a). `open` manages the secondary
   // window; `watch` (invoke) targets the workspace model at a repo and

@@ -5,16 +5,6 @@ import {
   RepositorySchema,
   RepositoryCreateInputSchema,
   RepositoryUpdateInputSchema,
-  WorkspaceProvisionRequestSchema,
-  WorkspaceTeardownRequestSchema,
-  WorkspaceMarkActiveRequestSchema,
-  WorkspaceForgetRequestSchema,
-  DiffRequestSchema,
-  MergeStartRequestSchema,
-  MergeResolveRequestSchema,
-  MergeAbortRequestSchema,
-  MergeCompleteRequestSchema,
-  ResolveUserNameRequestSchema,
 } from '../../shared/schemas';
 
 export const ThemeModeSchema = z.enum(['auto', 'light', 'dark']);
@@ -30,15 +20,11 @@ export const ConfigSchema = z.object({
 });
 
 // Both fields share one message: it is what the renderer surfaces when a
-// branch info/graph request payload is malformed in any way.
+// branch info/graph request payload is malformed in any way. One schema
+// serves both channels — the request shapes are identical.
 const invalidBranchRequest = 'Invalid repository path or branch';
 
-export const BranchInfoRequestSchema = z.object({
-  repositoryPath: z.string(invalidBranchRequest).min(1, invalidBranchRequest),
-  branch: z.string(invalidBranchRequest).min(1, invalidBranchRequest),
-});
-
-export const BranchGraphRequestSchema = z.object({
+export const BranchRequestSchema = z.object({
   repositoryPath: z.string(invalidBranchRequest).min(1, invalidBranchRequest),
   branch: z.string(invalidBranchRequest).min(1, invalidBranchRequest),
 });
@@ -53,10 +39,7 @@ export const PathBasenameInputSchema = z.object({
 });
 
 export type ValidatedConfig = z.infer<typeof ConfigSchema>;
-export type ValidatedThemeMode = z.infer<typeof ThemeModeSchema>;
 export type ValidatedWindowPosition = z.infer<typeof WindowPositionSchema>;
-export type ValidatedBranchInfoRequest = z.infer<typeof BranchInfoRequestSchema>;
-export type ValidatedBranchGraphRequest = z.infer<typeof BranchGraphRequestSchema>;
 
 // Per-channel argument schemas for handleResult: each invoke channel's
 // positional arguments are validated as one tuple, so the boundary has a
@@ -140,20 +123,6 @@ export const LoreCommitArgsSchema = z.tuple([
     .refine(message => message.trim().length > 0, 'Invalid commit message'),
 ]);
 
-export const LoreBranchInfoArgsSchema = z.tuple([BranchInfoRequestSchema]);
-export const LoreBranchGraphArgsSchema = z.tuple([BranchGraphRequestSchema]);
-
-// path:*
-export const PathJoinArgsSchema = z.tuple([PathJoinInputSchema]);
-export const PathBasenameArgsSchema = z.tuple([PathBasenameInputSchema]);
-
-// workspace:* — each channel double-validates its request with the P2
-// contract schema (the renderer already validates before invoking).
-export const WorkspaceProvisionArgsSchema = z.tuple([WorkspaceProvisionRequestSchema]);
-export const WorkspaceTeardownArgsSchema = z.tuple([WorkspaceTeardownRequestSchema]);
-export const WorkspaceMarkActiveArgsSchema = z.tuple([WorkspaceMarkActiveRequestSchema]);
-export const WorkspaceForgetArgsSchema = z.tuple([WorkspaceForgetRequestSchema]);
-
 // missionControl:* / workspace:model:* (P10) — the Mission Control window is
 // opened for a repository (id optional: focuses an already-open window) and the
 // workspace model is watched at a repository, returning its current snapshot.
@@ -163,17 +132,3 @@ const repositoryIdArg = RepositorySchema.shape.id;
 export const MissionControlOpenArgsSchema = z.tuple([repositoryIdArg.optional()]);
 export const WorkspaceModelWatchArgsSchema = z.tuple([repositoryIdArg]);
 export const WorkspaceModelRefreshArgsSchema = z.tuple([repositoryIdArg]);
-
-// diff:* — the review window's compare picker
-export const DiffCompareArgsSchema = z.tuple([DiffRequestSchema]);
-
-// --- merge:* (P13) — the review window's merge workflow (design 2c) --------
-// Each channel re-validates its request with the P2 contract schema.
-export const MergeStartArgsSchema = z.tuple([MergeStartRequestSchema]);
-export const MergeResolveArgsSchema = z.tuple([MergeResolveRequestSchema]);
-export const MergeAbortArgsSchema = z.tuple([MergeAbortRequestSchema]);
-export const MergeCompleteArgsSchema = z.tuple([MergeCompleteRequestSchema]);
-
-// identity:resolveUserName — resolves a notification's userId to a display
-// name (P5's LoreRepositoryService.resolveUserName).
-export const ResolveUserNameArgsSchema = z.tuple([ResolveUserNameRequestSchema]);

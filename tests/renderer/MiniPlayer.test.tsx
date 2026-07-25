@@ -3,15 +3,14 @@ jest.mock('../../src/renderer/utils/notify', () => ({
   notifySuccess: jest.fn(),
 }));
 
-import type { ReactElement } from 'react';
-import { MantineProvider } from '@mantine/core';
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MiniPlayer } from '../../src/renderer/components/MiniPlayer';
 import { notifyError } from '../../src/renderer/utils/notify';
 import { installMockElectronAPI } from '../mocks/electron-api';
 import { makeRepository } from '../mocks/repository-fixture';
 import type { WorkspaceBand, WorkspaceCard } from '../../src/shared/types';
+import { renderWithMantine } from './test-utils';
 
 // A minimal Mission Control workspace card for chip/notice wiring tests —
 // only the fields useMissionControlSnapshot/computeAgentAttention read.
@@ -23,7 +22,6 @@ function missionCard(band: WorkspaceBand, needsYou: boolean): WorkspaceCard {
       branchName: 'agent/task',
       name: 'agent/task',
       revision: 'r1',
-      stale: false,
       repositoryId: makeRepository().id,
       origin: 'provisioned',
     },
@@ -44,8 +42,8 @@ jest.setTimeout(15000);
 
 const SERVER_ADDRESS_STORAGE_KEY = 'lore-server-address';
 
-function renderMiniPlayer(): ReturnType<typeof render> {
-  return render((<MantineProvider>{<MiniPlayer />}</MantineProvider>) as ReactElement);
+function renderMiniPlayer(): ReturnType<typeof renderWithMantine> {
+  return renderWithMantine(<MiniPlayer />);
 }
 
 describe('MiniPlayer', () => {
@@ -957,20 +955,19 @@ describe('MiniPlayer', () => {
         });
         fireNotification({
           repositoryPath: '/tmp/my-repo',
-          kind: 'resourceLocked',
+          kind: 'branchPushed',
           userId: 'second-user',
-          paths: ['file.txt'],
         });
         await screen.findByText('first-user pushed to main');
 
         // Then: only the first toast shows — the second stays queued
-        expect(screen.queryByText('second-user locked file.txt')).not.toBeInTheDocument();
+        expect(screen.queryByText('second-user pushed to main')).not.toBeInTheDocument();
 
         // When: dismissing the first
         await user.click(screen.getByRole('button', { name: 'Dismiss' }));
 
         // Then: the second toast now shows
-        expect(await screen.findByText('second-user locked file.txt')).toBeInTheDocument();
+        expect(await screen.findByText('second-user pushed to main')).toBeInTheDocument();
       });
     });
   });

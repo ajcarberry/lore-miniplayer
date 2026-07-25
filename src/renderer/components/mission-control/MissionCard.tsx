@@ -1,17 +1,11 @@
 import type { ReactElement } from 'react';
 import { Badge, Box, Button, Group, Paper, Stack, Text } from '@mantine/core';
-import type { AgentTask, WorkspaceCard } from '../../../shared/types';
+import type { AgentCommentaryEntry, AgentTask, WorkspaceCard } from '../../../shared/types';
 import { pluralize } from '../../utils/pluralize';
 import { TASK_GLYPH } from '../../utils/taskGlyph';
 import { SectionLabel } from '../SectionLabel';
 import type { OpenReviewIntent } from './reviewIntent';
-import {
-  deriveWorkspaceFlags,
-  formatCommitAge,
-  formatCost,
-  formatElapsed,
-  resolveCostUsd,
-} from './format';
+import { deriveWorkspaceFlags, formatCommitAge, formatElapsed } from './format';
 import { WorkspaceIdentity, WorkspaceRemovalActions } from './WorkspaceRowChrome';
 
 export interface MissionCardProps {
@@ -40,7 +34,6 @@ export function MissionCard({
     card;
   const inProgress = attention.band === 'inProgress';
   const flags = deriveWorkspaceFlags(card);
-  const cost = formatCost(resolveCostUsd(card));
 
   const showTasks = inProgress && intention !== undefined && intention.tasks.length > 0;
   const showSummary = !inProgress && intention?.summary !== undefined;
@@ -61,7 +54,6 @@ export function MissionCard({
           inProgress={inProgress}
           isActive={isActive}
           dirty={flags.dirty}
-          cost={cost}
           onTeardown={() => onTeardown(card)}
           onForget={() => onForget(card)}
         />
@@ -94,7 +86,7 @@ export function MissionCard({
           sessionCommits={sessionCommits}
         />
 
-        {showCommentary && <Commentary card={card} />}
+        {showCommentary && <Commentary commentary={intention.commentary} />}
 
         {attention.band === 'awaitingReview' && (
           <CardActions
@@ -114,7 +106,6 @@ function CardHeader({
   inProgress,
   isActive,
   dirty,
-  cost,
   onTeardown,
   onForget,
 }: {
@@ -122,7 +113,6 @@ function CardHeader({
   readonly inProgress: boolean;
   readonly isActive: boolean;
   readonly dirty: boolean;
-  readonly cost: string | null;
   readonly onTeardown: () => void;
   readonly onForget: () => void;
 }): ReactElement {
@@ -147,11 +137,6 @@ function CardHeader({
       ) : (
         <Text size='xs' c='dimmed' ff='var(--font-mono)'>
           clean
-        </Text>
-      )}
-      {cost !== null && (
-        <Text size='xs' c='dimmed' ff='var(--font-mono)'>
-          {cost}
         </Text>
       )}
       <WorkspaceRemovalActions
@@ -263,9 +248,13 @@ function TaskList({ tasks }: { readonly tasks: AgentTask[] }): ReactElement {
   );
 }
 
-function Commentary({ card }: { readonly card: WorkspaceCard }): ReactElement {
+function Commentary({
+  commentary,
+}: {
+  readonly commentary: readonly AgentCommentaryEntry[];
+}): ReactElement {
   // Newest two commentary entries (design 2a "Recent commentary").
-  const recent = [...(card.intention?.commentary ?? [])].slice(-2).reverse();
+  const recent = [...commentary].slice(-2).reverse();
   return (
     <Stack gap={2} style={{ borderTop: '1px dashed var(--hair)', paddingTop: 8 }}>
       <SectionLabel>Recent commentary</SectionLabel>

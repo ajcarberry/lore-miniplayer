@@ -92,8 +92,6 @@ interface ParsedTranscript {
   // First real user prompt (string content, or the first text block; never a
   // tool_result, never isMeta) — the initiating task.
   firstUserPrompt?: string;
-  // Latest `ai-title` record's aiTitle.
-  title?: string;
   // Latest `last-prompt` record's lastPrompt — the resilient prompt fallback.
   lastPrompt?: string;
   // All assistant text blocks (thinking excluded), chronological.
@@ -176,9 +174,8 @@ export class AgentTranscriptService {
       tasks,
       commentary,
       ...(prompt !== undefined ? { prompt } : {}),
-      ...(parsed.title !== undefined ? { title: parsed.title } : {}),
       ...(parsed.summary !== undefined ? { summary: parsed.summary } : {}),
-      ...(sessionId.length > 0 ? { sessionId } : {}),
+      sessionId,
     };
   }
 
@@ -302,8 +299,8 @@ export class AgentTranscriptService {
 
   // Routes one parsed record to its field extractor. Kept separate from the
   // per-line loop so each stays within the complexity budget. Transcripts are
-  // append-only chronological JSONL, so for the sidecar records (`ai-title`,
-  // `last-prompt`) plain last-assignment IS newest-wins.
+  // append-only chronological JSONL, so for the sidecar `last-prompt` record
+  // plain last-assignment IS newest-wins.
   private dispatchRecord(record: Record<string, unknown>, result: ParsedTranscript): void {
     switch (record['type']) {
       case 'user':
@@ -312,13 +309,6 @@ export class AgentTranscriptService {
       case 'assistant':
         this.consumeAssistantRecord(record, result, parseTimestamp(record['timestamp']));
         break;
-      case 'ai-title': {
-        const title = asString(record['aiTitle']);
-        if (title !== undefined) {
-          result.title = title;
-        }
-        break;
-      }
       case 'last-prompt': {
         const lastPrompt = asString(record['lastPrompt']);
         if (lastPrompt !== undefined) {
@@ -344,7 +334,7 @@ export class AgentTranscriptService {
       return;
     }
     const content = message['content'];
-    const text = asString(content) ?? firstTextBlock(content);
+    const text = asString(content) ?? textBlocks(content)[0];
     if (text !== undefined) {
       result.firstUserPrompt = text;
     }
@@ -389,9 +379,6 @@ export class AgentTranscriptService {
   // is derivable only when a running task exists, from the newest assistant
   // record timestamp delta; otherwise omitted.
   private async readTasks(sessionId: string, newestAssistantMs?: number): Promise<AgentTask[]> {
-    if (sessionId.length === 0) {
-      return [];
-    }
     // Confine the task read to the tasks root the same way the transcript read
     // is confined to the projects root: a strict shape gate on the id, plus a
     // resolved-path containment check as belt-and-braces. Fail closed — an
@@ -464,12 +451,6 @@ function resolveEnabledFromEnv(): boolean {
 function parseTimestamp(value: unknown): number {
   const iso = asString(value);
   return iso === undefined ? NaN : Date.parse(iso);
-}
-
-// The first `text` block's text from a content array, or undefined. tool_result
-// and thinking blocks are ignored.
-function firstTextBlock(content: unknown): string | undefined {
-  return textBlocks(content)[0];
 }
 
 // All non-empty `text` block texts from a content array (thinking excluded).

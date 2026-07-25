@@ -1,11 +1,10 @@
-import type { ReactElement } from 'react';
-import { MantineProvider } from '@mantine/core';
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Pill } from '../../src/renderer/components/Pill';
 import type { PillProps } from '../../src/renderer/components/Pill';
 import type { ActionSignals } from '../../src/renderer/utils/actionSignals';
 import { makeRepository } from '../mocks/repository-fixture';
+import { renderWithMantine } from './test-utils';
 
 const QUIET: ActionSignals = { syncNeeded: false, uncommitted: false, unpushed: false };
 
@@ -24,10 +23,8 @@ function baseProps(overrides: Partial<PillProps> = {}): PillProps {
   };
 }
 
-function renderPill(overrides: Partial<PillProps> = {}): ReturnType<typeof render> {
-  return render(
-    (<MantineProvider>{<Pill {...baseProps(overrides)} />}</MantineProvider>) as ReactElement
-  );
+function renderPill(overrides: Partial<PillProps> = {}): ReturnType<typeof renderWithMantine> {
+  return renderWithMantine(<Pill {...baseProps(overrides)} />);
 }
 
 // Read the -webkit-app-region inline style off an element (jsdom stores unknown
@@ -250,14 +247,10 @@ describe('Pill', () => {
       const user = userEvent.setup();
       const onOpenMissionControl = jest.fn();
       const outerClick = jest.fn();
-      render(
-        (
-          <MantineProvider>
-            <div onClick={outerClick}>
-              <Pill {...baseProps({ needsYouCount: 1, onOpenMissionControl })} />
-            </div>
-          </MantineProvider>
-        ) as ReactElement
+      renderWithMantine(
+        <div onClick={outerClick}>
+          <Pill {...baseProps({ needsYouCount: 1, onOpenMissionControl })} />
+        </div>
       );
 
       // When: clicking the chip

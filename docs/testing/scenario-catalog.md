@@ -174,15 +174,19 @@ Notices & progress (`live-server.spec.ts`)
 Behaviors the suite documents but does not paper over (assert actual behavior, or
 mark `todo`, and file a follow-up):
 
-- **Intermittent app-launch hang.** The app's main process occasionally does not
-  emit its window within 30s on launch (`firstWindow()` timeout), independent of
-  the test harness — a product-side `src/main` issue (SDK/FFI init). Absorbed for
-  now by `retries: 1`; filed as a follow-up.
+- **Slow blocking quit — fixed.** `will-quit` used to run a synchronous unbounded
+  `lore.shutdown()` (a ~10s native drain) that hung quit and forced the harness to
+  SIGKILL the app. The `will-quit` shutdown was removed (the OS reclaims native
+  resources on exit); quit is now prompt (≤2.6s, graceful).
+- **Rare launch stall (residual).** Independently of the above, `firstWindow()`
+  occasionally isn't emitted (~1 in several full runs). App init is ~3ms, so this
+  is in Electron/Chromium window creation, not app code; `retries: 1` on the
+  live-* describes absorbs it. When it stalls the harness still force-kills the
+  instance, so global setup disables macOS window-state restoration for the dev
+  Electron bundle (`support/macos-restore.ts`) to suppress the "reopening windows"
+  crash dialog.
 - **Notifier surfaces disagree pre-stage.** The pill's "uncommitted" glyph fires on
   the total dirty-file count, but the card's Commit cell accents only when
   something is *staged* — so with unstaged changes the pill signals and the card
   does not (`live-working-set.spec.ts` asserts the actual behavior).
-- **Slow blocking shutdown.** `will-quit` runs a synchronous unbounded
-  `lore.shutdown()` that can make app quit slow; the e2e harness bounds close
-  (`closeAppBounded`) so it can't hang teardown.
 - **Conflict visibility** (service-layer) — see the E4 `todo` above.

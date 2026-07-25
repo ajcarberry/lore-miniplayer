@@ -48,19 +48,36 @@ export default defineConfig({
   globalSetup: './tests/e2e/electron/support/global-setup.ts',
   globalTeardown: './tests/e2e/electron/support/global-teardown.ts',
 
-  // Better reporter setup for humans. The HTML report itself is always
-  // written on failure (for the trace/video/screenshot artifacts below); only
-  // whether Playwright auto-opens a browser tab for it is gated. Concurrent
-  // runs (two worktrees, a background run) must never pop a browser over
-  // whatever the developer is doing, so `open` defaults to 'never' — set
+  // Better reporter setup for humans. The HTML report (which carries the
+  // trace/video/screenshot artifacts below) is written on success and failure
+  // alike; only whether Playwright auto-opens a browser tab for it is gated.
+  // Concurrent runs (two worktrees, a background run) must never pop a browser
+  // over whatever the developer is doing, so `open` defaults to 'never' — set
   // LORE_MINIPLAYER_E2E_OPEN_REPORT=1 to opt back into the old on-failure pop.
+  // In CI the report is uploaded as a per-OS artifact on every run (see
+  // ci.yml), and the `github` reporter annotates failures on the PR diff. The
+  // electron-focus run writes to its own folder so CI's second `playwright
+  // test` invocation doesn't clobber the main run's report.
   reporter: process.env.CI
-    ? [['list']]
+    ? [
+        ['list'],
+        ['github'],
+        [
+          'html',
+          {
+            open: 'never',
+            outputFolder: focusProjectRequested ? 'playwright-report-focus' : 'playwright-report',
+          },
+        ],
+      ]
     : [
         ['list'],
         [
           'html',
-          { open: process.env['LORE_MINIPLAYER_E2E_OPEN_REPORT'] === '1' ? 'on-failure' : 'never' },
+          {
+            open: process.env['LORE_MINIPLAYER_E2E_OPEN_REPORT'] === '1' ? 'on-failure' : 'never',
+            outputFolder: focusProjectRequested ? 'playwright-report-focus' : 'playwright-report',
+          },
         ],
       ],
 

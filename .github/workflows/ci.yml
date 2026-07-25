@@ -104,6 +104,21 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm exec playwright test --project=electron-focus
 
+      # The HTML report is uploaded on success and failure alike, so every
+      # run's report — traces and videos included when something failed — is
+      # reviewable from the run page linked in the PR's checks. The
+      # electron-focus run writes to its own folder (see the reporter config)
+      # so the second invocation doesn't clobber the main report.
+      - name: Upload Playwright HTML report
+        if: always() && runner.os != 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ matrix.os }}
+          if-no-files-found: ignore
+          path: |
+            playwright-report/
+            playwright-report-focus/
+
       # Harness server logs (tests/integration/harness/server.ts) live under
       # the OS temp dir and are normally deleted by the harness's own
       # stop()/afterAll cleanup, so this only catches the log on a crash that

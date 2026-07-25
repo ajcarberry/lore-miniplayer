@@ -21,6 +21,15 @@ if (focusProjectRequested) {
   process.env['LORE_MINIPLAYER_E2E_SHOW'] = '1';
 }
 
+// Playwright's --headed flag is a no-op for Electron (there is no headless
+// Electron for it to negate), but it's still how `pnpm test:play` and
+// `test:play:debug` say "let me watch". Map it onto the same visible-window
+// switch so those commands keep their meaning — cross-platform, unlike
+// prefixing the env var in package.json scripts.
+if (process.argv.includes('--headed')) {
+  process.env['LORE_MINIPLAYER_E2E_SHOW'] = '1';
+}
+
 export default defineConfig({
   testDir: './tests/e2e',
   fullyParallel: false, // Fallback for projects that don't opt into parallelism below (electron-diag's single sequential-launch test; electron-focus's real-OS-focus assertions, which stay workers:1)

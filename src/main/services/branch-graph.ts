@@ -113,6 +113,64 @@ export async function getCurrentRevision(
   }
 }
 
+// The current checkout branch's own newest revisions, straight from the SDK:
+// an unqualified revisionHistory walk from the working copy's revision with
+// `onlyBranch` ("stop when reaching a different branch"), so the parent
+// lineage is excluded natively — no branch-graph assembly. Valid for the
+// checkout's CURRENT branch (the workspace cards' only case).
+//
+// The walk stops ON the fork point, i.e. it always emits one revision that
+// belongs to the PARENT branch (verified live: a brand-new branch's walk
+// returns exactly that one entry). Session commits are the branch's OWN work,
+// so the branch point — read from branchInfo with no branch argument, which
+// answers for the current branch — is excluded; the walk asks for one entry
+// past `limit` so dropping it never shortens the answer. A branchInfo failure
+// degrades to no exclusion rather than emptying the list.
+export async function getSessionCommits(
+  deps: BranchGraphDeps,
+  repositoryPath: string,
+  limit: number
+): Promise<RevisionSummary[]> {
+  const [raw, branchPoint] = await Promise.all([
+    collectEvents(
+      lore.revisionHistory({ repositoryPath }, { length: limit + 1, onlyBranch: true }),
+      LoreEventTag.REVISION_HISTORY_ENTRY,
+      (data): RawRevision => ({
+        revision: data.revision,
+        revisionNumber: data.revisionNumber,
+        parent: data.parent,
+      }),
+      error => deps.wrapError('Failed to walk session commits', error)
+    ),
+    readCurrentBranchPoint(deps, repositoryPath),
+  ]);
+  const own = raw.filter(entry => entry.revision !== branchPoint).slice(0, limit);
+  return enrichAll(deps, repositoryPath, own);
+}
+
+// The current branch's creation fork point. Degrades to '' (matching nothing)
+// with a logged note — a card listing one extra commit is far better than a
+// card listing none.
+async function readCurrentBranchPoint(
+  deps: BranchGraphDeps,
+  repositoryPath: string
+): Promise<string> {
+  try {
+    const points = await collectEvents(
+      lore.branchInfo({ repositoryPath }, {}),
+      LoreEventTag.BRANCH_INFO,
+      data => data.branchPoint
+    );
+    return points[points.length - 1] ?? '';
+  } catch (error) {
+    deps.emitLog(
+      LoreLogLevel.ERROR,
+      `Failed to resolve the branch point for session commits: ${errorMessage(error)}`
+    );
+    return '';
+  }
+}
+
 // Collect branchList entries reduced to the fields the graph needs. Both
 // local and remote listings are kept; pickBestEntry chooses between them.
 async function collectBranchEntries(

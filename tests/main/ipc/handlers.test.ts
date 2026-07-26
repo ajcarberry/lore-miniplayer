@@ -38,6 +38,8 @@ import log from 'electron-log/main.js';
 import { registerIpcHandlers } from '../../../src/main/ipc/handlers';
 import type { RepositoryService } from '../../../src/main/services/repository';
 import type { LoreRepositoryService } from '../../../src/main/services/lore-repository';
+import type { DiffService } from '../../../src/main/services/diff-service';
+import type { MergeService } from '../../../src/main/services/merge-service';
 
 const mockRepositoryService = {
   getAll: jest.fn(),
@@ -64,6 +66,17 @@ const mockLoreRepositoryService = {
   getCurrentRevision: jest.fn(),
 } as unknown as jest.Mocked<LoreRepositoryService>;
 
+const mockDiffService = {
+  compare: jest.fn(),
+} as unknown as jest.Mocked<DiffService>;
+
+const mockMergeService = {
+  start: jest.fn(),
+  resolve: jest.fn(),
+  abort: jest.fn(),
+  complete: jest.fn(),
+} as unknown as jest.Mocked<MergeService>;
+
 function invoke(channel: string, ...args: unknown[]): unknown {
   const handler = registeredHandlers.get(channel);
   if (!handler) {
@@ -74,7 +87,13 @@ function invoke(channel: string, ...args: unknown[]): unknown {
 
 beforeAll(() => {
   mockUserData.dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lore-miniplayer-handlers-test-'));
-  registerIpcHandlers(log, mockRepositoryService, mockLoreRepositoryService);
+  registerIpcHandlers(
+    log,
+    mockRepositoryService,
+    mockLoreRepositoryService,
+    mockDiffService,
+    mockMergeService
+  );
 });
 
 afterAll(() => {
@@ -433,16 +452,16 @@ describe('lore repository happy paths', () => {
   });
 
   it('should commit through the service without pushing', async () => {
-    // Given: a successful commit
-    mockLoreRepositoryService.commit.mockResolvedValue(undefined);
+    // Given: a successful commit (the service resolves the committed revision)
+    mockLoreRepositoryService.commit.mockResolvedValue('rev-1');
 
     // When: committing
     const result = await invoke('lore:repository:commit', '/repo', 'A message');
 
-    // Then: the service is called and a void success returned
+    // Then: the service is called and the committed revision returned
     expect(mockLoreRepositoryService.commit).toHaveBeenCalledWith('/repo', 'A message');
     expect(mockLoreRepositoryService.push).not.toHaveBeenCalled();
-    expect(result).toEqual({ success: true, data: undefined });
+    expect(result).toEqual({ success: true, data: 'rev-1' });
   });
 
   it('should push through the service without committing', async () => {

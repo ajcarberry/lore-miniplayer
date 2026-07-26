@@ -130,3 +130,143 @@ export const BranchGraphSchema = z.object({
   mergesFromParent: z.array(MergeFromParentSchema),
   mergesToParent: z.array(MergeToParentSchema),
 });
+
+// ---------------------------------------------------------------------------
+// Review window: diff/merge review of the working directory (commit and merge
+// workflows).
+// ---------------------------------------------------------------------------
+
+// Per-file diff result (fileDiff / fileDump fallback), rendered in the
+// review window's center pane.
+export const FileDiffActionSchema = z.enum(['added', 'modified', 'deleted', 'moved']);
+
+export const LineStatsSchema = z.object({
+  added: z.number().int().nonnegative(),
+  removed: z.number().int().nonnegative(),
+});
+
+export const FileDiffResultSchema = z.object({
+  path: z.string().min(1),
+  action: FileDiffActionSchema,
+  patch: z.string().optional(),
+  binary: z.boolean(),
+  truncated: z.boolean(),
+  lineStats: LineStatsSchema.optional(),
+});
+
+// The review window's compare picker: a revision, the working tree, or a
+// branch's head.
+export const CompareTargetSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('revision'), revision: z.string().min(1) }),
+  z.object({ kind: z.literal('workingTree') }),
+  z.object({ kind: z.literal('branchHead'), branch: z.string().min(1) }),
+]);
+
+// Merge workflow: per-file resolution state (v1 ships per-file granularity).
+export const MergeFileResolutionSchema = z.enum(['mine', 'theirs']);
+
+export const MergeFileStateSchema = z.object({
+  path: z.string().min(1),
+  state: z.enum(['merged', 'conflict']),
+  resolution: MergeFileResolutionSchema.optional(),
+});
+
+export const MergeStateSchema = z.object({
+  sourceBranch: z.string().min(1),
+  targetBranch: z.string().min(1),
+  // The revision of the target branch that the merge actually brought in — the
+  // branch's REMOTE tip, which is what `branchMergeStart` merges. BRANCH_INFO's
+  // `latest` names the LOCAL store's tip of a branch that isn't checked out,
+  // and that lags whatever another client has pushed since. Consumers that want
+  // to show "theirs" must diff against THIS revision, not the branch head, or
+  // they show the pre-merge base content instead of what really conflicted.
+  targetRevision: z.string(),
+  files: z.array(MergeFileStateSchema),
+  allResolved: z.boolean(),
+  // Whether the source branch has revisions the target lacks — i.e. the merge
+  // would actually land something. This is NOT implied by `files`: when the
+  // target has not moved since the branch diverged, phase 1 (merging the target
+  // into the branch) legitimately reports no conflicts and no auto-merges, yet
+  // the branch's own commits still need to land. Distinguishes "ahead, nothing
+  // to reconcile — ready to land" (true) from "branch tip already on the target
+  // — nothing to merge" (false).
+  hasChangesToLand: z.boolean(),
+});
+
+// Which contextual primary action the review window's bottom bar shows.
+export const ReviewWorkflowModeSchema = z.enum(['commit', 'merge']);
+
+// The review window's initial compare picker selection: a source revision on
+// the left, a target on the right — a later revision or the working tree.
+export const ReviewCompareSchema = z.object({
+  source: CompareTargetSchema,
+  target: CompareTargetSchema,
+});
+
+// The typed "open the review window" request the card view's Review / Merge
+// actions emit: the repository to review (its `repositoryPath` is what every
+// diff/status/stage/commit IPC call targets), the branch under review, the
+// workflow that fixes the bottom bar's one contextual action, and the compare
+// picker's preloaded selection.
+export const ReviewOpenRequestSchema = z.object({
+  repositoryPath: z.string().min(1),
+  repositoryId: RepositorySchema.shape.id,
+  branchName: z.string().min(1),
+  workflow: ReviewWorkflowModeSchema,
+  compare: ReviewCompareSchema,
+});
+
+// --- IPC request/response payloads ------------------------------------------
+
+export const DiffRequestSchema = z.object({
+  repositoryPath: z.string().min(1),
+  source: CompareTargetSchema,
+  target: CompareTargetSchema,
+  paths: z.array(z.string().min(1)).optional(),
+});
+
+export const MergeStartRequestSchema = z.object({
+  repositoryPath: z.string().min(1),
+  sourceBranch: z.string().min(1),
+  targetBranch: z.string().min(1),
+});
+
+export const MergeResolveRequestSchema = z.object({
+  repositoryPath: z.string().min(1),
+  path: z.string().min(1),
+  resolution: MergeFileResolutionSchema,
+});
+
+export const MergeAbortRequestSchema = z.object({
+  repositoryPath: z.string().min(1),
+});
+
+export const MergeCompleteRequestSchema = z.object({
+  repositoryPath: z.string().min(1),
+});
+
+// IPC channel names, grouped by domain and colon-namespaced to match the
+// existing 'lore:...' channels declared at their call sites in preload.ts /
+// lore-handlers.ts. `review.context` is a push channel (main -> renderer);
+// every other channel is request/response (invoke) or a one-way renderer send.
+export const IPC_CHANNELS = {
+  diff: {
+    compare: 'diff:compare',
+  },
+  merge: {
+    start: 'merge:start',
+    resolve: 'merge:resolve',
+    abort: 'merge:abort',
+    complete: 'merge:complete',
+  },
+  // Review window. `open` (send) creates or focuses the per-repository window
+  // with its targets + workflow preloaded; `requestContext` (invoke) lets the
+  // window pull its open request on mount; `context` is the one-way push
+  // re-delivered when an already-open window is re-targeted (e.g. Merge
+  // pressed while its commit review is open).
+  review: {
+    open: 'review:open',
+    requestContext: 'review:requestContext',
+    context: 'review:context',
+  },
+} as const;

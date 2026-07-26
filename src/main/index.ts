@@ -6,6 +6,8 @@ import { attachFocusDimming } from './ipc/window-handlers';
 import { RepositoryService } from './services/repository';
 import { initializeLoreSdk } from './services/lore-sdk';
 import { LoreRepositoryService } from './services/lore-repository';
+import { DiffService } from './services/diff-service';
+import { MergeService } from './services/merge-service';
 import { loadWindowPosition, saveWindowPosition } from './ipc/config-handlers';
 import { hardenSession, hardenWebContents } from './security';
 import { COLLAPSED_WINDOW_SIZE, resolveRestorePosition } from '../shared/window-position';
@@ -170,7 +172,11 @@ app.whenReady().then(async () => {
 
   // Register IPC handlers before any renderer loads
   repositoryService = new RepositoryService(log);
-  registerIpcHandlers(log, repositoryService, loreRepositoryService);
+  const diffService = new DiffService(loreRepositoryService);
+  // Owns the review window's merge workflow: start/resolve/abort/complete a
+  // branch→target merge, one in flight per repository.
+  const mergeService = new MergeService(log, loreRepositoryService);
+  registerIpcHandlers(log, repositoryService, loreRepositoryService, diffService, mergeService);
 
   // Then initialize the services
   await repositoryService.initialize();

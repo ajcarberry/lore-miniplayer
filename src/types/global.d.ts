@@ -53,6 +53,13 @@ declare global {
         branchInfo: (repositoryPath: string, branch: string) => Promise<Result<BranchDivergence>>;
         branchGraph: (repositoryPath: string, branch: string) => Promise<Result<BranchGraph>>;
         currentRevision: (repositoryPath: string) => Promise<Result<string>>;
+        // The card's merge-entry gate: whether sourceBranch carries revisions
+        // targetBranch lacks (false once landed, even by another client).
+        revisionsToLand: (request: {
+          repositoryPath: string;
+          sourceBranch: string;
+          targetBranch: string;
+        }) => Promise<Result<boolean>>;
         repository: {
           listBranches: (repositoryPath: string) => Promise<Result<LoreBranch[]>>;
           listRemoteRepositories: (

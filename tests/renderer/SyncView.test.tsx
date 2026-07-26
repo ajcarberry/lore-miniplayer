@@ -1,4 +1,8 @@
-import { buildReviewEntryProps, buildTransportProps } from '../../src/renderer/components/SyncView';
+import {
+  buildReviewEntryProps,
+  buildTransportProps,
+  resolveMergeTarget,
+} from '../../src/renderer/components/SyncView';
 import type { ReviewEntryInputs, TransportInputs } from '../../src/renderer/components/SyncView';
 import { installMockElectronAPI } from '../mocks/electron-api';
 import type { Repository } from '../../src/shared/types';
@@ -80,6 +84,20 @@ describe('buildTransportProps sync accent', () => {
   });
 });
 
+describe('resolveMergeTarget', () => {
+  it('prefers the parent lane, then the default branch, then main', () => {
+    const branches = [
+      { name: 'trunk', isDefault: true, isCurrent: false },
+      { name: 'feat/topic', isDefault: false, isCurrent: true },
+    ];
+
+    // When/Then: parent lane wins; without one the default branch; bare 'main' last
+    expect(resolveMergeTarget('release/1.0', branches)).toBe('release/1.0');
+    expect(resolveMergeTarget(undefined, branches)).toBe('trunk');
+    expect(resolveMergeTarget(undefined, [])).toBe('main');
+  });
+});
+
 describe('buildReviewEntryProps', () => {
   const repository = {
     id: '4f8f2c9e-4b1f-4b7e-9a1a-1c2d3e4f5a6b',
@@ -97,17 +115,15 @@ describe('buildReviewEntryProps', () => {
       showClone: false,
       branchName: 'feat/topic',
       currentRevision: 'r128',
-      parentLaneName: 'main',
-      branches: [
-        { name: 'main', isDefault: true, isCurrent: false },
-        { name: 'feat/topic', isDefault: false, isCurrent: true },
-      ],
+      mergeTarget: 'main',
+      dirtyFileCount: 2,
+      hasRevisionsToLand: true,
       ...overrides,
     };
   }
 
-  it('offers Review and Merge when the branch has a distinct parent-lane target', () => {
-    // When: building the entry props on a feature branch forked from main
+  it('offers Review and Merge when files are dirty and the branch has work to land', () => {
+    // When: building the entry props on a dirty feature branch ahead of main
     const entry = buildReviewEntryProps(baseEntryInputs());
 
     // Then: both entry points are offered
@@ -115,15 +131,32 @@ describe('buildReviewEntryProps', () => {
     expect(entry.onMerge).toBeDefined();
   });
 
+  it('withholds Review while the working set is clean', () => {
+    // When: building with no dirty files
+    const entry = buildReviewEntryProps(baseEntryInputs({ dirtyFileCount: 0 }));
+
+    // Then: there is nothing to review — no Review entry; Merge is unaffected
+    expect(entry.onReview).toBeUndefined();
+    expect(entry.onMerge).toBeDefined();
+  });
+
+  it('withholds Merge when the branch has nothing the target lacks', () => {
+    // When: building with the land predicate false (in sync, or already
+    // landed — by this app or another client)
+    const entry = buildReviewEntryProps(baseEntryInputs({ hasRevisionsToLand: false }));
+
+    // Then: no Merge entry that would land nothing; Review is unaffected
+    expect(entry.onMerge).toBeUndefined();
+    expect(entry.onReview).toBeDefined();
+  });
+
   it('withholds Merge when the merge target IS the current branch', () => {
-    // When: building the entry props on main itself (parent lane absent, main
-    // is the default branch)
+    // When: building on main itself, even if the predicate were true
     const entry = buildReviewEntryProps(
-      baseEntryInputs({ branchName: 'main', parentLaneName: undefined })
+      baseEntryInputs({ branchName: 'main', mergeTarget: 'main' })
     );
 
-    // Then: Review stays, Merge is withheld — it would merge main into main
-    expect(entry.onReview).toBeDefined();
+    // Then: Merge is withheld — it would merge main into main
     expect(entry.onMerge).toBeUndefined();
   });
 
@@ -137,23 +170,22 @@ describe('buildReviewEntryProps', () => {
     expect(clonePending).toEqual({});
   });
 
-  it('falls back to the default branch as the merge target when no parent lane resolved', () => {
+  it('opens the merge workflow toward the resolved target', () => {
     // Given: the review bridge is observable
     installMockElectronAPI();
     const open = jest.fn();
     Object.assign(window.electronAPI, { review: { open } });
 
-    // When: opening the merge workflow with no parent lane
-    const entry = buildReviewEntryProps(baseEntryInputs({ parentLaneName: undefined }));
-    entry.onMerge?.();
+    // When: opening the merge workflow
+    buildReviewEntryProps(baseEntryInputs({ mergeTarget: 'trunk' })).onMerge?.();
 
-    // Then: the request targets the default branch's head
+    // Then: the request targets the resolved branch's head
     expect(open).toHaveBeenCalledWith(
       expect.objectContaining({
         workflow: 'merge',
         compare: {
           source: { kind: 'branchHead', branch: 'feat/topic' },
-          target: { kind: 'branchHead', branch: 'main' },
+          target: { kind: 'branchHead', branch: 'trunk' },
         },
       })
     );

@@ -91,6 +91,9 @@ test.describe('Live review — commit workflow', () => {
     await connect(window, server.grpcUrl);
     const { clonePath } = await addAndClone(window, electronApp, repoName);
 
+    // Then: with a clean working set there is nothing to review — no entry
+    await expect(window.getByRole('button', { name: 'Review', exact: true })).toHaveCount(0);
+
     // And: one of each change kind in the checkout — an edit, an add, a
     // delete, and a real binary rewrite.
     await writeInClone(clonePath, {
@@ -99,8 +102,10 @@ test.describe('Live review — commit workflow', () => {
       'textures/rock-diffuse.tga': EDITED_TEXTURE,
     });
     await rm(join(clonePath, 'meshes/old-room.mesh'));
+    await refreshWorkingSet(window);
 
     // When: the review window is opened from the card's WorkingSet header
+    // (the Review entry appears once the working set reads dirty)
     const review = await openReviewWindow(electronApp, window, 'Review');
 
     // Then: the default compare (current revision → working tree) lists

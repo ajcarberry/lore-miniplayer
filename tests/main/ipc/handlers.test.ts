@@ -64,6 +64,7 @@ const mockLoreRepositoryService = {
   subscribeNotifications: jest.fn(),
   unsubscribeNotifications: jest.fn(),
   getCurrentRevision: jest.fn(),
+  hasRevisionsToLand: jest.fn(),
 } as unknown as jest.Mocked<LoreRepositoryService>;
 
 const mockDiffService = {
@@ -475,6 +476,39 @@ describe('lore repository happy paths', () => {
     expect(mockLoreRepositoryService.push).toHaveBeenCalledWith('/repo');
     expect(mockLoreRepositoryService.commit).not.toHaveBeenCalled();
     expect(result).toEqual({ success: true, data: undefined });
+  });
+
+  it('should answer whether a branch carries revisions its target lacks', async () => {
+    // Given: the ancestry gate reports work to land
+    mockLoreRepositoryService.hasRevisionsToLand.mockResolvedValue(true);
+
+    // When: asking through the merge-entry gate channel
+    const result = await invoke('lore:revisionsToLand', {
+      repositoryPath: '/repo',
+      sourceBranch: 'feat/topic',
+      targetBranch: 'main',
+    });
+
+    // Then: the service predicate answers and passes through
+    expect(mockLoreRepositoryService.hasRevisionsToLand).toHaveBeenCalledWith(
+      '/repo',
+      'feat/topic',
+      'main'
+    );
+    expect(result).toEqual({ success: true, data: true });
+  });
+
+  it('should reject a revisionsToLand request missing a branch', async () => {
+    // When: asking with an empty source branch
+    const result = await invoke('lore:revisionsToLand', {
+      repositoryPath: '/repo',
+      sourceBranch: '',
+      targetBranch: 'main',
+    });
+
+    // Then: the boundary refuses it and the service is never called
+    expect(result).toEqual(expect.objectContaining({ success: false }));
+    expect(mockLoreRepositoryService.hasRevisionsToLand).not.toHaveBeenCalled();
   });
 
   it('should convert clone failures into failure results', async () => {

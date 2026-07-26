@@ -32,6 +32,16 @@ export const BranchGraphRequestSchema = z.object({
   branch: z.string(invalidBranchRequest).min(1, invalidBranchRequest),
 });
 
+// lore:revisionsToLand — the card's merge-entry gate: does `sourceBranch`
+// carry revisions `targetBranch` lacks? (See useRevisionsToLand.)
+const invalidRevisionsToLandRequest = 'Invalid repository path or branches';
+
+export const RevisionsToLandRequestSchema = z.object({
+  repositoryPath: z.string(invalidRevisionsToLandRequest).min(1, invalidRevisionsToLandRequest),
+  sourceBranch: z.string(invalidRevisionsToLandRequest).min(1, invalidRevisionsToLandRequest),
+  targetBranch: z.string(invalidRevisionsToLandRequest).min(1, invalidRevisionsToLandRequest),
+});
+
 // Path utility request schemas
 export const PathJoinInputSchema = z.object({
   segments: z.array(z.string()).min(1, 'At least one path segment is required'),

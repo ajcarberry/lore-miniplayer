@@ -107,6 +107,12 @@ async function arrange(
   const user2 = await secondClient(server, repo.url, 'main-author');
   await user2.commitAndPush({ [MESH]: MAIN_MESH }, 'another author raises the budget to 512');
 
+  // The Merge entry appears once the card has re-derived the branch AND the
+  // land predicate reads true — the gate itself is part of the arrangement.
+  await expect(window.getByRole('button', { name: 'Merge', exact: true })).toBeVisible({
+    timeout: 60_000,
+  });
+
   return { clonePath, user2 };
 }
 
@@ -188,14 +194,11 @@ test.describe('Live merge — the branch lands on main', () => {
 
     await review.close();
 
-    // And: re-opening the merge afterwards reports the branches in sync —
-    // the view never offers to land work that already landed.
-    const second = await openReviewWindow(electronApp, window, 'Merge');
-    await expect(
-      second.getByText(/Nothing to merge — the branches are already in sync/i)
-    ).toBeVisible({ timeout: 60_000 });
-    await expect(second.getByRole('button', { name: 'Merge', exact: true })).toBeDisabled();
-    await second.close();
+    // And: the card withdraws its Merge entry — the branch has nothing left
+    // that main lacks, so a merge that would land nothing is never offered.
+    await expect(window.getByRole('button', { name: 'Merge', exact: true })).toHaveCount(0, {
+      timeout: 60_000,
+    });
   });
 
   test('a conflicted merge resolved as THEIRS lands main’s content on main', async ({

@@ -95,6 +95,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     currentRevision: async (repositoryPath: string): Promise<Result<string>> => {
       return ipcRenderer.invoke('lore:currentRevision', repositoryPath) as Promise<Result<string>>;
     },
+    // The card's merge-entry gate: whether sourceBranch carries revisions
+    // targetBranch lacks (false once landed, even by another client).
+    revisionsToLand: async (request: {
+      repositoryPath: string;
+      sourceBranch: string;
+      targetBranch: string;
+    }): Promise<Result<boolean>> => {
+      return ipcRenderer.invoke('lore:revisionsToLand', request) as Promise<Result<boolean>>;
+    },
     repository: {
       listBranches: async (repositoryPath: string): Promise<Result<LoreBranch[]>> => {
         return ipcRenderer.invoke('lore:branches:list', repositoryPath) as Promise<

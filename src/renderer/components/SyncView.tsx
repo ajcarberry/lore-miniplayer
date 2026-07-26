@@ -11,6 +11,7 @@ import type { FileStagingState } from '../hooks/useFileStaging';
 import { WorkingSet } from './WorkingSet';
 import type { WorkingSetFile, WorkingSetProps } from './WorkingSet';
 import { requestOpenReviewWindow } from './review/openReview';
+import { useRevisionsToLand } from '../hooks/useRevisionsToLand';
 import type { LoreBranch, Repository, ReviewWorkflowMode } from '../../shared/types';
 import { HistorySection } from './HistorySection';
 import { PlayerHeader } from './PlayerHeader';
@@ -117,27 +118,41 @@ export function buildTransportProps(inputs: TransportInputs): TransportProps {
   };
 }
 
+// The merge workflow's landing target: the branch's parent lane when the
+// graph resolves one, else the server's default branch, else 'main'.
+export function resolveMergeTarget(
+  parentLaneName: string | undefined,
+  branches: LoreBranch[]
+): string {
+  return parentLaneName ?? branches.find(branch => branch.isDefault)?.name ?? 'main';
+}
+
 export interface ReviewEntryInputs {
   readonly selectedRepo: Repository | null;
   readonly showClone: boolean;
   readonly branchName: string;
   readonly currentRevision: string;
-  readonly parentLaneName: string | undefined;
-  readonly branches: LoreBranch[];
+  readonly mergeTarget: string;
+  // Dirty (working-set) file count: with nothing dirty there is nothing to
+  // review, so the Review entry is withheld.
+  readonly dirtyFileCount: number;
+  // The merge service's ancestry predicate (useRevisionsToLand): Merge is
+  // offered only when the branch really carries revisions the target lacks —
+  // never a merge that would land nothing.
+  readonly hasRevisionsToLand: boolean;
 }
 
-// The WorkingSet header's Review/Merge entry props: the merge target is the
-// branch's parent lane when the graph resolves one, else the server's default
-// branch, and Merge is offered only when that target is a different branch.
-// Kept out of the component body (complexity limit), like buildTransportProps.
+// The WorkingSet header's Review/Merge entry props. Each entry appears only
+// with a reason to: Review when the working set has dirty files, Merge when
+// the target is a different branch AND the branch is ahead of it. Kept out of
+// the component body (complexity limit), like buildTransportProps.
 export function buildReviewEntryProps(
   inputs: ReviewEntryInputs
 ): Pick<WorkingSetProps, 'onReview' | 'onMerge'> {
-  const { selectedRepo, showClone, branchName, currentRevision, parentLaneName, branches } = inputs;
+  const { selectedRepo, showClone, branchName, currentRevision, mergeTarget } = inputs;
   if (selectedRepo === null || showClone) {
     return {};
   }
-  const mergeTarget = parentLaneName ?? branches.find(branch => branch.isDefault)?.name ?? 'main';
   const open = (workflow: ReviewWorkflowMode): void =>
     requestOpenReviewWindow({
       repository: selectedRepo,
@@ -147,8 +162,10 @@ export function buildReviewEntryProps(
       workflow,
     });
   return {
-    onReview: () => open('commit'),
-    ...(mergeTarget !== branchName ? { onMerge: () => open('merge') } : {}),
+    ...(inputs.dirtyFileCount > 0 ? { onReview: () => open('commit') } : {}),
+    ...(mergeTarget !== branchName && inputs.hasRevisionsToLand
+      ? { onMerge: () => open('merge') }
+      : {}),
   };
 }
 
@@ -220,13 +237,23 @@ export function SyncView({
   const branchGraph = graph.graph;
   const revisions = branchGraph.branch.revisions;
   const [selectedRevisionIndex, setSelectedRevisionIndex] = useSelectedRevisionIndex(revisions);
+  const mergeTarget = resolveMergeTarget(branchGraph.parent?.name, branches.branches);
+  // SyncView is only mounted while connected, so the hook's flag is constant.
+  const revisionsToLand = useRevisionsToLand(
+    repos.selectedRepo,
+    branches.currentBranch,
+    mergeTarget,
+    true,
+    revisions[0]?.revision ?? ''
+  );
   const reviewEntry = buildReviewEntryProps({
     selectedRepo: repos.selectedRepo,
     showClone,
     branchName: branches.currentBranch,
     currentRevision: branchGraph.current,
-    parentLaneName: branchGraph.parent?.name,
-    branches: branches.branches,
+    mergeTarget,
+    dirtyFileCount: workingSetFiles.length,
+    hasRevisionsToLand: revisionsToLand.hasRevisionsToLand,
   });
   // Push refreshes branch divergence on success — it typically flips from
   // "out of sync" to "up to date".

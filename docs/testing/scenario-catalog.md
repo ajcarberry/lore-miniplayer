@@ -199,8 +199,9 @@ Reset, repo management, shortcuts (`live-reset-and-mgmt.spec.ts`)
 
 Review window — commit workflow (`live-review.spec.ts`)
 - **Compare picker, file rows, staging, and commit → push seen by a second
-  client** — opened from the card's WorkingSet-header Review action: the
-  default compare (current revision → working tree) lists exactly the dirty
+  client** — opened from the card's WorkingSet-header Review action, which
+  appears only once the working set reads dirty (a clean checkout offers no
+  Review entry — asserted first): the default compare (current revision → working tree) lists exactly the dirty
   set with one badge per change kind (M/A/D + binary sentinel), the compare
   endpoints move across revisions and back, staged state survives full
   refetches because it lives in Lore, and a commit + push from the review bar
@@ -214,8 +215,11 @@ Review window — merge workflow (`live-merge.spec.ts`)
   main** — opened from the card's Merge action with the checkout on a feature
   branch; theirs/mine content is read back through the diff bridge, diff3
   markers really exist on disk, the gate lifts on resolution, and a second
-  client syncing main sees the branch's content; re-opening afterwards reports
-  the branches in sync.
+  client syncing main sees the branch's content; afterwards the card withdraws
+  the Merge entry — the branch has nothing left that main lacks. The entry
+  itself is gated on the merge service's own ancestry predicate
+  (`lore:revisionsToLand` via `useRevisionsToLand`), so a merge that would
+  land nothing is never offered.
 - **Resolved as THEIRS lands main's own content** — the branch's edit does not
   win.
 - **Aborting restores the working tree and frees a fresh merge** — cancel keeps

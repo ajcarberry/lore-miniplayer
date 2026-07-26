@@ -75,6 +75,7 @@ detailed assertions live in the [Scenario catalog](./scenario-catalog.md).
 | Empty repository shows a clean no-history state | empty-repo | `live-server.spec.ts` |
 | Clone progress streams to completion | clone-progress | `live-server.spec.ts` |
 | Open the review window from the card (Review / Merge) | review-commit, merge-mine | `live-review.spec.ts`, `live-merge.spec.ts` |
+| Review entry only while the working set is dirty; Merge only with revisions to land (withdrawn after landing) | review-commit, merge-mine | `live-review.spec.ts`, `live-merge.spec.ts` |
 | Review compare picker (revision ↔ working tree) | review-commit | `live-review.spec.ts` |
 | Review file rows (badges, binary), stage/unstage, commit, push | review-commit | `live-review.spec.ts` |
 | Conflicted files blocked from staging (card ⚠ + review file list) | review-conflict | `live-review.spec.ts` |

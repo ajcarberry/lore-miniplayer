@@ -39,8 +39,11 @@ export default defineConfig({
   // instances no longer race each other: since P1, test-mode windows launch hidden
   // (no dock/activation), and every launch already gets an isolated userData dir,
   // isolated HOME, and OS-assigned loreserver/CDP ports (see launch.ts) — so parallel
-  // launches are independent throwaway universes. CI machines are 2-core.
-  workers: process.env.CI ? 2 : 3,
+  // launches are independent throwaway universes. CI stays at 1 worker: the measured
+  // 1.7× speedup is local-only, CI runners are 2-core with each worker a full
+  // Electron process tree, and CI's retries would mask any oversubscription flakes —
+  // revisit with CI timing data.
+  workers: process.env.CI ? 1 : 3,
 
   // Reap any suite Electron trees left by a previously aborted run before we
   // start, and guarantee none outlive the run at the end. Scoped strictly to
@@ -99,7 +102,7 @@ export default defineConfig({
       // of this worker — run it explicitly (`--grep "launch isolation model"`).
       testIgnore: ['**/live-*.spec.ts', '**/*.diag.spec.ts', '**/window-behavior-focus.spec.ts'],
       fullyParallel: true,
-      workers: process.env.CI ? 2 : 3,
+      workers: process.env.CI ? 1 : 3,
       use: {},
     },
     {
@@ -107,7 +110,7 @@ export default defineConfig({
       testDir: './tests/e2e/electron',
       testMatch: '**/live-*.spec.ts',
       fullyParallel: true,
-      workers: process.env.CI ? 2 : 3,
+      workers: process.env.CI ? 1 : 3,
       use: {},
     },
     {

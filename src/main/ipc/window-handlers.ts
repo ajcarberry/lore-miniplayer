@@ -21,8 +21,7 @@ const UNFOCUSED_OPACITY = 0.7;
 
 let noticeActive = false;
 
-// Pure decision extracted from applyFocusOpacity so the dim/notice matrix has
-// fast local unit coverage with no Electron imports required to test it.
+// Pure so the dim/notice matrix is unit-testable without Electron.
 export function computeFocusOpacity(state: { focused: boolean; noticeActive: boolean }): number {
   return state.noticeActive || state.focused ? FOCUSED_OPACITY : UNFOCUSED_OPACITY;
 }

@@ -1,9 +1,8 @@
 import { test, expect } from '@playwright/test';
 import { launchApp, removeTempUserDataDir } from './launch';
 
-// The harness contract for every e2e launch: the app runs fully, but nothing
-// appears on screen and nothing steals focus. Set LORE_MINIPLAYER_E2E_SHOW=1 to
-// watch a run instead — this probe is meaningless then, so it skips.
+// Harness contract: every e2e launch runs the full app with nothing on screen
+// and no stolen focus. Skips under LORE_MINIPLAYER_E2E_SHOW=1.
 test.describe('Hidden test mode', () => {
   test.skip(
     process.env['LORE_MINIPLAYER_E2E_SHOW'] === '1',
@@ -32,9 +31,8 @@ test.describe('Hidden test mode', () => {
       expect(state.dockVisible).toBe(false);
     }
 
-    // And: Chromium's background throttling is off — a never-shown window would
-    // otherwise throttle timers/rAF, so the suite would exercise a degraded mode
-    // no user (whose window is visible) ever runs
+    // And: background throttling is off (never-shown windows otherwise
+    // throttle timers/rAF)
     expect(state.backgroundThrottling).toBe(false);
 
     // And: The renderer still renders and accepts input on the never-shown window

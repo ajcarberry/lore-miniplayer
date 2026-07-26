@@ -1,48 +1,34 @@
 import { defineConfig } from '@playwright/test';
 
-// electron-focus (below) exercises real OS focus/blur, which needs a visible
-// window and must stay out of a bare local `playwright test` run. Playwright
-// runs every project in `projects: []` whenever `--project` is omitted from
-// the CLI — there's no per-project "excluded from default" flag — so the only
-// way to keep this project's tests from running unrequested is to detect the
-// explicit `--project=electron-focus` (or `--project electron-focus`) CLI
-// selection ourselves and gate the project's testMatch on it.
+// Playwright runs every project when `--project` is omitted and has no
+// per-project "excluded by default" flag, so electron-focus (which needs a
+// visible window) is gated on detecting its explicit CLI selection.
 const focusProjectRequested = process.argv.some(
   (arg, i) =>
     arg === '--project=electron-focus' ||
     (arg === '--project' && process.argv[i + 1] === 'electron-focus')
 );
 if (focusProjectRequested) {
-  // See tests/e2e/electron/launch.ts: LORE_MINIPLAYER_E2E_SHOW=1 restores the
-  // visible window the focus/blur and notice-dim assertions depend on. Set
-  // here, before Playwright forks its worker processes (which inherit
-  // process.env from this config-eval step), so `--project=electron-focus`
-  // is visible wherever it's invoked from — no separate env var required.
+  // Set before Playwright forks workers (they inherit this env) so the focus
+  // specs get the visible window they assert against (see launch.ts).
   process.env['LORE_MINIPLAYER_E2E_SHOW'] = '1';
 }
 
-// Playwright's --headed flag is a no-op for Electron (there is no headless
-// Electron for it to negate), but it's still how `pnpm test:play` and
-// `test:play:debug` say "let me watch". Map it onto the same visible-window
-// switch so those commands keep their meaning — cross-platform, unlike
-// prefixing the env var in package.json scripts.
+// --headed is a no-op for Electron; map it onto the visible-window switch so
+// `pnpm test:play` keeps its "let me watch" meaning.
 if (process.argv.includes('--headed')) {
   process.env['LORE_MINIPLAYER_E2E_SHOW'] = '1';
 }
 
 export default defineConfig({
   testDir: './tests/e2e',
-  fullyParallel: false, // Fallback for projects that don't opt into parallelism below (electron-diag's single sequential-launch test; electron-focus's real-OS-focus assertions, which stay workers:1)
+  fullyParallel: false, // Projects opt in below; electron-diag and electron-focus stay serial
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  // Upper bound on total worker processes across all projects. Concurrent Electron
-  // instances no longer race each other: since P1, test-mode windows launch hidden
-  // (no dock/activation), and every launch already gets an isolated userData dir,
-  // isolated HOME, and OS-assigned loreserver/CDP ports (see launch.ts) — so parallel
-  // launches are independent throwaway universes. CI stays at 1 worker: the measured
-  // 1.7× speedup is local-only, CI runners are 2-core with each worker a full
-  // Electron process tree, and CI's retries would mask any oversubscription flakes —
-  // revisit with CI timing data.
+  // Total worker cap across projects. Launches are hidden and isolated (own
+  // userData, HOME, and OS-assigned ports — see launch.ts), so parallel runs
+  // can't interfere. CI stays at 1: 2-core runners, each worker a full
+  // Electron process tree, and retries would mask oversubscription flakes.
   workers: process.env.CI ? 1 : 3,
 
   // Reap any suite Electron trees left by a previously aborted run before we
@@ -51,16 +37,11 @@ export default defineConfig({
   globalSetup: './tests/e2e/electron/support/global-setup.ts',
   globalTeardown: './tests/e2e/electron/support/global-teardown.ts',
 
-  // Better reporter setup for humans. The HTML report (which carries the
-  // trace/video/screenshot artifacts below) is written on success and failure
-  // alike; only whether Playwright auto-opens a browser tab for it is gated.
-  // Concurrent runs (two worktrees, a background run) must never pop a browser
-  // over whatever the developer is doing, so `open` defaults to 'never' — set
-  // LORE_MINIPLAYER_E2E_OPEN_REPORT=1 to opt back into the old on-failure pop.
-  // In CI the report is uploaded as a per-OS artifact on every run (see
-  // ci.yml), and the `github` reporter annotates failures on the PR diff. The
-  // electron-focus run writes to its own folder so CI's second `playwright
-  // test` invocation doesn't clobber the main run's report.
+  // The HTML report is always written; only the auto-open is gated, so a
+  // concurrent or background run never pops a browser tab
+  // (LORE_MINIPLAYER_E2E_OPEN_REPORT=1 opts in). CI uploads the report per-OS
+  // (see ci.yml) and annotates PR diffs via the github reporter. The focus
+  // run gets its own folder so it doesn't clobber the main report.
   reporter: process.env.CI
     ? [
         ['list'],
@@ -125,14 +106,9 @@ export default defineConfig({
       use: {},
     },
     {
-      // Focus/blur and unfocused-dim assertions need a real OS-granted window
-      // focus, which in turn needs a visible window (LORE_MINIPLAYER_E2E_SHOW=1,
-      // set above) — unlike every other project here, that means it can't run
-      // silently as part of a developer's default `playwright test`. Kept out
-      // of the default set by the focusProjectRequested gate above; run it
-      // explicitly with `playwright test --project=electron-focus`. CI runs it
-      // as its own step, where a visible window is expected, not a surprise on
-      // someone's laptop.
+      // Needs real OS-granted focus, hence a visible window — excluded from
+      // the default run by the focusProjectRequested gate above; run with
+      // `playwright test --project=electron-focus`. CI runs it as its own step.
       name: 'electron-focus',
       testDir: './tests/e2e/electron',
       testMatch: focusProjectRequested ? '**/window-behavior-focus.spec.ts' : [],

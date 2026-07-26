@@ -1,22 +1,15 @@
 import { execFileSync } from 'node:child_process';
 
-// Playwright's electron.launch runs the dev Electron binary, whose bundle id is
-// com.github.Electron (not the developer's real apps).
+// Playwright launches the dev Electron binary; this is its bundle id, not the
+// packaged app's.
 const ELECTRON_BUNDLE_ID = 'com.github.Electron';
 
-// The suite force-kills wedged Electron instances (see reaper.ts / closeAppBounded)
-// when a launch/quit stalls. macOS then flags the bundle as having crashed and, on
-// the next launch, shows "Electron unexpectedly quit while reopening windows".
-// Disabling AppKit window-state restoration for that one bundle suppresses the
-// dialog.
-//
-// The key is written idempotently on every setup and deliberately never deleted:
-// it's global to the machine (keyed by bundle id, not pid or working directory),
-// so a teardown-time delete would need cross-run coordination to avoid clearing
-// it out from under a concurrent sibling run (another worktree, a manual
-// invocation). Leaving it set costs nothing — the bundle id only ever belongs to
-// throwaway dev/test Electron instances, which nobody wants state restoration
-// for. Undo by hand if ever needed:
+// After the reaper force-kills a wedged instance, macOS shows "Electron
+// unexpectedly quit while reopening windows" on the next launch unless AppKit
+// state restoration is off for the bundle. The key is machine-global (keyed by
+// bundle id), so it's written idempotently every setup and never deleted —
+// concurrent runs then have nothing to coordinate, and the bundle id only ever
+// belongs to throwaway dev/test instances. Undo by hand:
 //   defaults delete com.github.Electron ApplePersistenceIgnoreState
 export function suppressMacWindowRestore(): void {
   if (process.platform !== 'darwin') {

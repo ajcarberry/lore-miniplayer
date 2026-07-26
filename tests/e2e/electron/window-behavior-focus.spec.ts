@@ -1,12 +1,9 @@
 import { test, expect } from '@playwright/test';
 import { launchApp, removeTempUserDataDir } from './launch';
 
-// Moved out of window-behavior.spec.ts (unchanged apart from the move) into
-// their own electron-focus project: these two need a real OS-granted window
-// focus, which needs a visible window, so they can't run as part of the
-// default hidden-mode local suite. Run with
-// `playwright test --project=electron-focus`; see playwright.config.ts.
-// Requires `pnpm build` first — launches the built app at out/main/index.js.
+// These tests need real OS-granted focus, hence a visible window, so they run
+// only in the electron-focus project: `playwright test --project=electron-focus`
+// (see playwright.config.ts). Requires `pnpm build` first.
 
 test.describe('Electron Window Behavior (focus)', () => {
   test('window should change opacity on focus/blur', async () => {

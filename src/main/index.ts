@@ -21,11 +21,9 @@ if (testUserDataOverride) {
   app.setPath('userData', testUserDataOverride);
 }
 
-// Silent test mode: when set (by the e2e harness), the window is never shown and
-// macOS gets no dock icon, so a test run neither flashes UI nor steals focus.
-// The app otherwise runs in full — Playwright drives the never-shown window over
-// CDP. Dropping the dock icon here, before app.whenReady(), avoids the launch
-// bounce. Inert when unset; see tests/e2e/electron/launch.ts.
+// E2e harness flag: never show the window and (on macOS) no dock icon, so
+// test runs don't flash UI or steal focus. Dock hidden before
+// app.whenReady() to avoid the launch bounce.
 const isHiddenTestMode = process.env['LORE_MINIPLAYER_E2E_HIDDEN'] === '1';
 if (isHiddenTestMode && process.platform === 'darwin') {
   app.dock?.hide();
@@ -153,9 +151,7 @@ async function createWindow(): Promise<void> {
       webSecurity: true,
       allowRunningInsecureContent: false,
       preload: preloadPath,
-      // A never-shown window would otherwise get Chromium's background
-      // throttling (timers, rAF), making tests exercise a degraded mode no
-      // user with a visible window ever runs.
+      // Never-shown windows otherwise get Chromium timer/rAF throttling.
       ...(isHiddenTestMode ? { backgroundThrottling: false } : {}),
     },
   });

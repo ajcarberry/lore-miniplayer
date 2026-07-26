@@ -1,7 +1,5 @@
-import { execFile } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 import type { ElectronApplication, Locator, Page } from '@playwright/test';
 import {
   test,
@@ -10,6 +8,7 @@ import {
   connect,
   addAndClone,
   writeInClone,
+  loreInClone,
   openProjectView,
   exitProjectView,
   acceptMine,
@@ -21,10 +20,6 @@ import {
 } from './support/ui';
 import { seedRepo, secondClient, type LoreTestServer } from './live-server.setup';
 import type { SecondClient } from '../../integration/support/world';
-import { ensureLoreBinaries } from '../../integration/harness/binaries';
-import { isolatedHomeEnv } from '../../integration/harness/server';
-
-const execFileAsync = promisify(execFile);
 
 // The review window's MERGE workflow against a real Electron app, a real
 // `loreserver`, and real working copies, opened from the card's WorkingSet
@@ -53,21 +48,6 @@ function conflictSide(page: Page, path: string, label: string): Locator {
 interface MergeScenario {
   readonly clonePath: string;
   readonly user2: SecondClient;
-}
-
-// Run the real `lore` CLI against the app's own clone, under the app's
-// isolated HOME (the clone's store lives there) — the out-of-band way an
-// agent or terminal user moves a checkout onto its own branch.
-async function loreInClone(
-  homeDir: string,
-  clonePath: string,
-  ...invocations: string[][]
-): Promise<void> {
-  const { lore } = await ensureLoreBinaries();
-  const env = { ...process.env, ...isolatedHomeEnv(homeDir) };
-  for (const args of invocations) {
-    await execFileAsync(lore, [...args, '--repository', clonePath], { env });
-  }
 }
 
 // The shared arrangement for every scenario below: the app connected and
@@ -135,15 +115,6 @@ test.describe('Live merge — the branch lands on main', () => {
       'merge-mine',
       branchName
     );
-
-    // The history constellation anchors the fork at one x on both lanes with
-    // a vertical connector (regression: a fresh branch off main's tip used to
-    // misplace the fork against the child lane's oldest node).
-    // (toBeAttached, not toBeVisible: a vertical line has a zero-width
-    // bounding box, which Playwright's visibility check reads as hidden.)
-    const connector = window.getByTestId('branch-connector');
-    await expect(connector).toBeAttached({ timeout: 30_000 });
-    expect(await connector.getAttribute('x1')).toBe(await connector.getAttribute('x2'));
 
     // When: the merge is opened from the card's WorkingSet header
     const review = await openProjectView(window, 'Merge');

@@ -230,6 +230,17 @@ Project View — merge workflow (`live-merge.spec.ts`)
   file, and a new merge starts clean; backing out of the fresh merge routes
   through the same discard confirmation.
 
+Timeline constellation (`live-timeline.spec.ts`)
+
+- **The fork anchors at the same main revision on both lanes** — main carries
+  two commits before a branch is created at its tip with one commit of its
+  own; the two-lane constellation renders the full parent trunk, and the
+  fork connector drops vertically from the parent's branch-point node to the
+  child lane's copy of that SAME revision — not the repo root. (Two pre-fork
+  commits are required: with one, root == fork and a mis-anchored fork is
+  indistinguishable.) Proven discriminating — the spec fails against the
+  pre-fix renderer.
+
 Notices & progress (`live-server.spec.ts`)
 - **Empty repository shows a clean no-history state** — a zero-revision repo lands
   with "No history yet" and no stuck loader.

@@ -10,8 +10,28 @@ import {
   createCloneBaseDir,
   type LoreTestServer,
 } from '../live-server.setup';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { writeSeedFiles, type SeedFiles } from '../../../integration/support/world';
 import { isolatedHomeEnv } from '../../../integration/harness/server';
+import { ensureLoreBinaries } from '../../../integration/harness/binaries';
+
+const execFileAsync = promisify(execFile);
+
+// Run the real `lore` CLI against the app's own clone, under the app's
+// isolated HOME (the clone's store lives there) — the out-of-band way an
+// agent or terminal user moves a checkout onto its own branch.
+export async function loreInClone(
+  homeDir: string,
+  clonePath: string,
+  ...invocations: string[][]
+): Promise<void> {
+  const { lore } = await ensureLoreBinaries();
+  const env = { ...process.env, ...isolatedHomeEnv(homeDir) };
+  for (const args of invocations) {
+    await execFileAsync(lore, [...args, '--repository', clonePath], { env });
+  }
+}
 
 // Page-object helper layer over the live Electron app, so each selector lives in
 // one place. Launch model: workers:1 / fullyParallel:false sustains many

@@ -83,6 +83,7 @@ their detailed assertions live in the [Scenario catalog](./scenario-catalog.md).
 | Conflicted files blocked from staging (card ⚠ + review file list) | review-conflict | `live-review.spec.ts` |
 | Merge with per-file mine/theirs resolution lands on main | merge-mine, merge-theirs | `live-merge.spec.ts` |
 | Abort a merge, restoring the working tree | merge-abort | `live-merge.spec.ts` |
+| Timeline constellation anchors the fork at the right main revision | timeline-fork | `live-timeline.spec.ts` |
 
 
 Cosmetic / window-shell (mocked e2e, no live server): theme toggle and card

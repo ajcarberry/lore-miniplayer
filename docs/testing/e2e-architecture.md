@@ -43,8 +43,7 @@ over CDP gets you a `Page`, not an `ElectronApplication`
 `app.evaluate()` (main-process code execution, which `support/ui.ts` and the
 live-server specs rely on for state assertions) and `app.firstWindow()` (the
 window-ready handshake every spec's launch fixture depends on). This suite needs
-the main-process surface, so the spec listed CDP-attach as explicitly out of
-scope. See `.claude/mission/spec.md`'s "Out of scope" list.
+the main-process surface, so CDP-attach was ruled explicitly out of scope.
 
 **Conclusion:** per-test `_electron.launch()` is not a stopgap waiting on a
 better primitive — it is the only primitive Playwright offers for Electron. The
@@ -52,7 +51,7 @@ architecture below works within that constraint instead of around it.
 
 ## The chosen architecture
 
-### Hidden by default (P1)
+### Hidden by default
 
 The product window is `alwaysOnTop` by design (it's an ambient pill), so a
 visible test launch steals real macOS focus on every boot — Electron's own
@@ -70,7 +69,7 @@ Two mechanisms were considered:
 - **Harness-owned wrapper** (preferred going in): patch `BrowserWindow`'s
   defaults to `show: false` and call `app.dock.hide()` from a Playwright-side
   module, before importing the built `out/main/index.js` — no `src/` changes.
-  **Ruled out during the P1 spike**: electron-vite's CJS output re-exports
+  **Ruled out during a spike**: electron-vite's CJS output re-exports
   `electron`'s named exports as non-configurable getters, so nothing in the
   harness can intercept or override `BrowserWindow` before the app's own
   `createWindow()` reads it. Separately, even a post-hoc hide (calling
@@ -85,42 +84,44 @@ Two mechanisms were considered:
   `src/main/index.ts`, on by default from `tests/e2e/electron/launch.ts`,
   restorable with `LORE_MINIPLAYER_E2E_SHOW=1`.
 
-### Parallel per-test launches (P4)
+### Parallel per-test launches
 
 `workers: 1` used to exist solely to keep concurrent _visible_ windows from
-racing each other for OS focus. With every launch hidden (P1), that race is gone
-— each launch is still its own throwaway universe (own temp `userData`, own
-env), so `fullyParallel: true` was safe to turn on for the `electron` and
+racing each other for OS focus. With every launch hidden, that race is gone —
+each launch is still its own throwaway universe (own temp `userData`, own env),
+so `fullyParallel: true` was safe to turn on for the `electron` and
 `electron-live-server` projects. Measured (clean env, this repo):
 
 | Run                            | Wall-clock                   |
 | ------------------------------ | ---------------------------- |
 | Serial baseline (`workers: 1`) | 97.75s                       |
 | Parallel, 5 consecutive runs   | 49.6–67.7s (avg ~57.6s)      |
-| Orchestrator confirmation run  | 42.8s, 25 passed, no retries |
+| Follow-up confirmation run     | 42.8s, 25 passed, no retries |
 
 About a 1.7× average speedup, no flakes introduced across the sampled runs.
 `electron-diag` (sequential-launch reliability check) and `electron-focus`
 (below) stay serial by design — see the per-project comments in
 `playwright.config.ts`.
 
-### CI-only visible focus project (P2)
+### CI-only visible focus project
 
-Three tests assert real OS focus/blur behavior (the unfocused-window dim, the
+Two tests assert real OS focus/blur behavior (the unfocused-window dim, the
 notice-suspends-dim override), which needs a window that can actually receive
-focus — a hidden window can't. Rather than let them silently self-skip forever
-in an all-hidden future, they live in their own `electron-focus` project:
-excluded from a bare `playwright test` by an explicit `--project` argv gate
-(Playwright has no "excluded by default" project flag), run visibly via
+focus — a hidden window can't. (A third, partial assertion — the dim-suspension
+half of the live sync-notice scenario — stays in `live-server.spec.ts` behind
+its own self-skip.) Rather than let them silently self-skip forever in an
+all-hidden future, they live in their own `electron-focus` project: excluded
+from a bare `playwright test` by an explicit `--project` argv gate (Playwright
+has no "excluded by default" project flag), run visibly via
 `LORE_MINIPLAYER_E2E_SHOW=1`, and executed as a named CI step on every non-Linux
 runner. The opacity decision logic itself (`computeFocusOpacity`) also has a
-fast Jest matrix (P3) so a regression is caught locally without a visible window
-at all.
+fast Jest matrix so a regression is caught locally without a visible window at
+all.
 
-## Multi-worktree isolation model (P4/P5)
+## Multi-worktree isolation model
 
 Two checkouts running `playwright test` at once must not interfere. Per launch
-and per repo, that already held before this packet:
+and per repo, that already held before this change:
 
 - **Temp `userData` and `HOME`-scoped state** — every `launchApp()` call gets
   its own `fs.mkdtempSync` directory (`tests/e2e/electron/launch.ts`), so two
@@ -139,9 +140,9 @@ One piece wasn't worktree-safe: the macOS `defaults` key
 "unexpectedly quit" dialog after a reaper force-kill. That key is global to the
 machine — keyed by bundle id, not pid or path — so the old
 set-in-setup/delete-in-teardown pair let one worktree's teardown clear the key
-while a sibling worktree's suite was still relying on it being set. **Fixed in
-this packet**: `support/macos-restore.ts` now tracks a refcount via sentinel
-files (one per active run, named for its pid) in a shared lock directory under
+while a sibling worktree's suite was still relying on it being set. **Fixed
+here**: `support/macos-restore.ts` now tracks a refcount via sentinel files (one
+per active run, named for its pid) in a shared lock directory under
 `os.tmpdir()`. Teardown deletes only its own sentinel and checks whether any
 others remain (pruning any whose owning process has already died, so a crashed
 run can't wedge the key set forever); only the last finisher deletes the

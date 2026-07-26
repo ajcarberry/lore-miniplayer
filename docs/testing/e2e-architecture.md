@@ -145,12 +145,14 @@ One piece wasn't worktree-safe: the macOS `defaults` key
 machine — keyed by bundle id, not pid or path — so the old
 set-in-setup/delete-in-teardown pair let one worktree's teardown clear the key
 while a sibling worktree's suite was still relying on it being set. **Fixed
-here**: `support/macos-restore.ts` now tracks a refcount via sentinel files (one
-per active run, named for its pid) in a shared lock directory under
-`os.tmpdir()`. Teardown deletes only its own sentinel and checks whether any
-others remain (pruning any whose owning process has already died, so a crashed
-run can't wedge the key set forever); only the last finisher deletes the
-`defaults` key. The reporter's HTML auto-open was also disabled by default
+here**: `support/macos-restore.ts` writes the key idempotently on every setup
+and never deletes it, so there is nothing for concurrent runs to coordinate.
+Leaving it set is deliberate and benign — the `com.github.Electron` bundle id
+only ever belongs to throwaway dev/test Electron instances, which nobody wants
+AppKit window-state restoration for (a packaged MiniPlayer has its own bundle
+id, `com.lore.miniplayer`, and is unaffected). Undo by hand if ever needed:
+`defaults delete com.github.Electron ApplePersistenceIgnoreState`. The
+reporter's HTML auto-open was also disabled by default
 (`open: 'never'`, opt back in with `LORE_MINIPLAYER_E2E_OPEN_REPORT=1`) so a
 background or concurrent run never pops a browser tab over whatever else is on
 screen; failure artifacts (trace/video/screenshot) are unaffected.

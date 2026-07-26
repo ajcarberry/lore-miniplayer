@@ -100,11 +100,11 @@ declare global {
         join: (segments: string[]) => Promise<Result<string>>;
         basename: (path: string) => Promise<Result<string>>;
       };
-      // The review window's compare picker.
+      // The Project View's compare picker.
       diff: {
         compare: (request: DiffRequest) => Promise<Result<DiffResponse>>;
       };
-      // The review window's merge workflow; one merge in flight per
+      // The Project View's merge workflow; one merge in flight per
       // repository.
       merge: {
         start: (request: MergeStartRequest) => Promise<Result<MergeStartResponse>>;

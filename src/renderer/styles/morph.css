@@ -134,9 +134,9 @@
 /* Once the crossfade has run, the card leaves the accessibility tree and tab
    order too — the Project View owns the window; the card's controls must not
    be reachable underneath it. Sequenced by a renderer timer
-   (data-card-hidden), NOT a CSS transition delay: transition clocks stall in
-   the transparent window right after the review resize (observed live on
-   macOS), so a delayed visibility flip never fires. */
+   (data-card-hidden), NOT a CSS transition delay: transition clocks can stall
+   in the transparent window during the review resize, so a delayed
+   visibility flip may never fire. */
 .morph-root[data-card-hidden='true'] .morph-card {
   visibility: hidden;
 }

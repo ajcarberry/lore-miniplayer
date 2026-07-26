@@ -59,13 +59,12 @@ test('diverged (non-overlapping) histories read behindOrDiverged and a plain syn
   });
 });
 
-// REFUTED on this branch. When user1 and user2 both edit the same region of
-// the same file, the SDK surfaces the pending merge (flagConflict /
-// flagConflictUnresolved on the REPOSITORY_STATUS_FILE event, plus
-// ~mine/~theirs/~base sibling files), and getFileStatus() now maps
-// flagConflict/flagConflictUnresolved/flagConflictAutomerged/flagConflictMine/
-// flagConflictTheirs onto LoreFileStatus (conflict is a required field), so a
-// conflicted file is no longer indistinguishable from an ordinary staged file.
+// When user1 and user2 both edit the same region of the same file, the SDK
+// surfaces the pending merge (flagConflict / flagConflictUnresolved on the
+// REPOSITORY_STATUS_FILE event, plus ~mine/~theirs/~base sibling files), and
+// getFileStatus() maps the flagConflict* family onto LoreFileStatus
+// (conflict is a required field), so a conflicted file is distinguishable
+// from an ordinary staged file.
 test('an overlapping conflict must be visibly surfaced, not reported as a plain staged file', async () => {
   await withServer(async ({ server, service }) => {
     const { repo, clonePath: user1Path } = await seedAndClone(
@@ -107,9 +106,8 @@ test('an overlapping conflict must be visibly surfaced, not reported as a plain 
       `expected the conflicting file to appear staged (pending merge), got: ${JSON.stringify(statusAfter)}`
     );
 
-    // getFileStatus() now maps REPOSITORY_STATUS_FILE's flagConflict /
-    // flagConflictUnresolved onto LoreFileStatus.conflict / conflictUnresolved
-    // (not the never-existent `isConflicted` this test used to assert on).
+    // getFileStatus() maps REPOSITORY_STATUS_FILE's flagConflict /
+    // flagConflictUnresolved onto LoreFileStatus.conflict / conflictUnresolved.
     assert.equal(
       conflictedFile.conflict,
       true,

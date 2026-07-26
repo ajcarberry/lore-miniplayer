@@ -19,7 +19,7 @@ export interface MergeFileAreaProps {
   readonly onResolve: (path: string, resolution: MergeFileResolution) => void;
 }
 
-// The review window's merge center pane (design 2c): a landed-merge banner once
+// The merge workflow's center pane: a landed-merge banner once
 // the merge completes, the inert auto-merged files list with its guidance note,
 // then a conflict block per unresolved/resolved conflicted file.
 export function MergeFileArea(props: MergeFileAreaProps): ReactElement {

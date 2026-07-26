@@ -25,10 +25,10 @@ export interface CommitReviewProps {
 
 const EMPTY_STATUS: LoreFileStatusGroup = { untracked: [], unstaged: [], staged: [] };
 
-// The review window's commit workflow (design 2b): the compare picker drives a
-// diff.compare over the workspace checkout, the file list stages/unstages via
+// The Project View's commit workflow: the compare picker drives a
+// diff.compare over the checkout, the file list stages/unstages via
 // the working-tree status, and the bottom bar commits the staged files (then
-// offers Push). All Lore IPC targets the workspace path (the checkout is the
+// offers Push). All Lore IPC targets the repository path (the checkout is the
 // repository for these calls).
 export function CommitReview(props: CommitReviewProps): ReactElement {
   const { request } = props;

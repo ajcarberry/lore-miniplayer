@@ -184,7 +184,7 @@ app.whenReady().then(async () => {
   // Register IPC handlers before any renderer loads
   repositoryService = new RepositoryService(log);
   const diffService = new DiffService(loreRepositoryService);
-  // Owns the review window's merge workflow: start/resolve/abort/complete a
+  // Owns the Project View's merge workflow: start/resolve/abort/complete a
   // branch→target merge, one in flight per repository.
   const mergeService = new MergeService(log, loreRepositoryService);
   registerIpcHandlers(log, repositoryService, loreRepositoryService, diffService, mergeService);

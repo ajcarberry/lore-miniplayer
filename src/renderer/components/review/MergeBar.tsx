@@ -17,7 +17,7 @@ export interface MergeBarProps {
   readonly onMerge: () => void;
 }
 
-// The review window's bottom bar in the merge workflow (design 2c): the
+// The merge workflow's bottom bar: the
 // resolved/total conflict tally, the affordance note that the merge lands on
 // the target, and the single contextual primary action. Merge is gated until every conflict is
 // resolved; once it lands, the actions give way to the landed-revision line.

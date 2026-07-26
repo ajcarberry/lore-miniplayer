@@ -28,7 +28,7 @@ export function hasConflict(status: LoreFileStatusGroup): boolean {
 // A status row the SDK flags as part of a pending merge, whether it conflicted,
 // was resolved, or automerged. NOT every file the merge touched: a file the
 // TARGET added which the source branch never had is staged by the merge with
-// every one of these flags false (probed live: `{isUntracked: true, isStaged:
+// every one of these flags false (`{isUntracked: true, isStaged:
 // true, conflict*: false}`), which is why the merge service also carries the
 // paths its own merge staged (see unrelatedStagedPaths).
 export function isMergeFile(file: LoreFileStatus): boolean {
@@ -84,7 +84,7 @@ async function readBranchTips(
 // tip. BRANCH_INFO's `latest` is the LOCAL store's tip, which for a branch that
 // isn't checked out lags whatever another client pushed — and a landing through
 // `branchMergeInto` advances the remote tip WITHOUT advancing the local one
-// (probed live), so the local tip is stale even for this app's own landings.
+// so the local tip is stale even for this app's own landings.
 // Falls back to `latest` when there is no known remote revision (a branch that
 // has never been pushed).
 export async function readMergeTargetRevision(

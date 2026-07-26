@@ -148,7 +148,7 @@ export interface PathValidationResult {
 }
 
 // ---------------------------------------------------------------------------
-// Review window: diff/merge review of the working directory (commit and merge
+// Project View: diff/merge review of the working directory (commit and merge
 // workflows).
 // ---------------------------------------------------------------------------
 
@@ -166,10 +166,10 @@ export type MergeFileState = z.infer<typeof MergeFileStateSchema>;
 
 export type MergeState = z.infer<typeof MergeStateSchema>;
 
-// Which contextual primary action the review window's bottom bar shows.
+// Which contextual primary action the Project View's bottom bar shows.
 export type ReviewWorkflowMode = z.infer<typeof ReviewWorkflowModeSchema>;
 
-// The review window's compare picker selection and the full open-review
+// The Project View's compare picker selection and the full open-review
 // request the card view emits.
 export type ReviewCompare = z.infer<typeof ReviewCompareSchema>;
 

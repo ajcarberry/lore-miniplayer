@@ -7,7 +7,7 @@ export interface SectionLabelProps extends TextProps {
 }
 
 // The shared uppercase section-label recipe (xs, 600, dimmed, uppercase) used
-// across the review window's panes. Extra Mantine Text props
+// across the Project View's panes. Extra Mantine Text props
 // (padding, tracking, color overrides) pass straight through.
 export function SectionLabel({ children, ...textProps }: SectionLabelProps): ReactElement {
   return (

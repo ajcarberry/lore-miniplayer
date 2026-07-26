@@ -6,7 +6,7 @@ import type {
   LoreFileStatusGroup,
 } from '../../../shared/types';
 
-// A short human label for a compare picker target (design 2b: "r128",
+// A short human label for a compare picker target ("r128",
 // "working tree", or a branch name).
 export function compareTargetLabel(target: CompareTarget): string {
   switch (target.kind) {
@@ -19,7 +19,7 @@ export function compareTargetLabel(target: CompareTarget): string {
   }
 }
 
-// The review window's per-file view model: the diff facts (action, stats,
+// The Project View's per-file view model: the diff facts (action, stats,
 // binary/truncation) merged with the working-tree status facts (staged flag,
 // unresolved-conflict flag) the file list and commit bar need. One row per
 // changed file in the compare result.
@@ -31,7 +31,7 @@ export interface ReviewFile {
   readonly truncated: boolean;
   readonly patch: string | undefined;
   readonly staged: boolean;
-  // A conflict Lore still reports as unresolved (P6): the file cannot be staged
+  // A conflict Lore still reports as unresolved: the file cannot be staged
   // until it is resolved, so its checkbox is disabled and marked with a warning.
   readonly conflictUnresolved: boolean;
 }
@@ -109,7 +109,7 @@ const HUNK_HEADER = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
 
 // Parses a unified-diff patch into hunks with per-line numbering, discarding
 // the file header lines (---/+++). Only the selected file's patch is ever
-// parsed, so large diffs stay cheap (packet: only render the selected file).
+// parsed, so large diffs stay cheap (only the selected file renders).
 export function parseHunks(patch: string): DiffHunk[] {
   const hunks: DiffHunk[] = [];
   let current: { header: string; lines: DiffLine[]; oldNo: number; newNo: number } | null = null;

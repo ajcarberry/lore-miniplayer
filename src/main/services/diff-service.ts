@@ -21,7 +21,7 @@ import { allStatusFiles } from './lore-status';
 
 // Unified-diff patches over this many lines are stored/returned truncated
 // (head only); 4000 lines comfortably covers any single file that is still
-// reasonably reviewable as text in the review window's diff pane, while
+// reasonably reviewable as text in the Project View's diff pane, while
 // keeping the IPC payload bounded for pathological cases (generated files,
 // lockfiles, etc.). lineStats is always computed from the FULL patch before
 // truncation, since fileDiff returns the whole patch as one string (no
@@ -80,8 +80,7 @@ export function computeLineStats(patch: string): LineStats {
 }
 
 // The SDK emits a literal `Binary files differ` sentinel as the patch for a
-// binary content change (probed against a live binary file — P1 Findings (i)),
-// NOT unified-diff text and NOT an empty patch. That sentinel is the primary
+// binary content change — NOT unified-diff text and NOT an empty patch. That sentinel is the primary
 // binary signal. The empty-patch guard is retained as a secondary heuristic
 // for a non-move change that diffs to nothing (a pure rename, MOVE with
 // unchanged content, legitimately diffs to empty and is NOT binary).
@@ -128,9 +127,9 @@ export class DiffService {
   constructor(private readonly repository: DiffRepositorySource) {}
 
   // Resolves a compare-picker target to the revision string `fileDiff`
-  // takes: a literal revision, '' for the working tree (P1 finding a —
-  // omitting the revision compares the source against uncommitted edits),
-  // or a branch's tip resolved via branchInfo.
+  // takes: a literal revision, '' for the working tree (omitting the revision
+  // compares the source against uncommitted edits), or a branch's tip
+  // resolved via branchInfo.
   private async resolveRevision(repositoryPath: string, target: CompareTarget): Promise<string> {
     switch (target.kind) {
       case 'revision':
@@ -177,9 +176,9 @@ export class DiffService {
     return raw.map(toFileDiffResult);
   }
 
-  // The review window's compare picker (design 2b): resolves both
-  // CompareTarget sides to revisions and diffs them with fileDiff. The
-  // working-tree side never needs the fileDump fallback (P1 finding a).
+  // The Project View's compare picker: resolves both CompareTarget sides to
+  // revisions and diffs them with fileDiff. The working-tree side never needs
+  // the fileDump fallback.
   async compare(request: DiffRequest): Promise<DiffResponse> {
     // Validated at the IPC boundary (validators.ts); typed in-process here.
     const { repositoryPath, source, target, paths } = request;
@@ -188,10 +187,10 @@ export class DiffService {
       this.resolveRevision(repositoryPath, target),
     ]);
     const diffs = await this.diffRevisions(repositoryPath, sourceRevision, targetRevision, paths);
-    // An unfiltered compare against the WORKING TREE (the review window's commit
-    // workflow) must list every file the status scan reports dirty, so the
-    // reviewer can stage/commit it and the list matches the scan-driven Mission
-    // Control card exactly. `fileDiff(source -> working tree)` OMITS a dirty file
+    // An unfiltered compare against the WORKING TREE (the commit workflow)
+    // must list every file the status scan reports dirty, so the reviewer can
+    // stage/commit it and the list matches the card's working set exactly.
+    // `fileDiff(source -> working tree)` OMITS a dirty file
     // whose working tree matches the source revision — e.g. a change staged, then
     // reverted on disk: the scan still flags it dirty (staged), but there is no
     // working-tree delta to enumerate. Backfill those as zero-delta entries so
@@ -205,7 +204,7 @@ export class DiffService {
   }
 
   // Appends any status-scan dirty file the working-tree diff did not enumerate
-  // (see `compare`), as a zero-delta entry — so the review window's file list
+  // (see `compare`), as a zero-delta entry — so the Project View's file list
   // and the card's working set never disagree about what is dirty.
   private async backfillDirtySet(
     repositoryPath: string,
@@ -223,7 +222,7 @@ export class DiffService {
 }
 
 // De-duplicates status entries to distinct paths (a path can carry both a
-// staged and a dirty flag — count it once, P1 Findings (i) edge (c)), keeping
+// staged and a dirty flag — count it once), keeping
 // first-seen order.
 function dedupePaths(files: ReadonlyArray<{ path: string }>): string[] {
   const seen = new Set<string>();

@@ -14,7 +14,7 @@ export interface ReviewHeaderProps {
   readonly right?: ReactNode;
 }
 
-// The review window's shared header shell (designs 2b/2c): hairline-bottomed
+// The Project View's shared header shell: hairline-bottomed
 // row with the display-face title over a mono eyebrow, plus optional leading
 // icon and right-aligned slot.
 export function ReviewHeader(props: ReviewHeaderProps): ReactElement {

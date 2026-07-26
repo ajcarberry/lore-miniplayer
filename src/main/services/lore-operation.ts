@@ -90,7 +90,7 @@ export async function branchTip<E extends OperationError>(
 // lore-handlers.ts). A repo-relative path such as 'Content/Caves/pass_1.txt'
 // would otherwise become '<app-cwd>/Content/Caves/pass_1.txt' and the op
 // rejects (fileDiff) or silently PATH_IGNOREs it (the merge resolve ops,
-// P1e-addendum probe 06b). Every path handed to an SDK op must be
+// Every path handed to an SDK op must be
 // repo-absolute. Idempotent for a path that is already absolute.
 export function toRepoAbsolutePath(repositoryPath: string, filePath: string): string {
   return path.isAbsolute(filePath) ? filePath : path.join(repositoryPath, filePath);

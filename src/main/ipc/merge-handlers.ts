@@ -9,7 +9,7 @@ import {
 import { handleRequest } from './result-helpers';
 import type { MainLogger } from './logger';
 
-// The review window's merge workflow: start a merge of a branch toward its
+// The Project View's merge workflow: start a merge of a branch toward its
 // target, resolve conflicts accept-mine/accept-theirs per file, abort to back
 // out, or complete to land the merge (commit + push). Each request is
 // re-validated at the boundary with its schema.

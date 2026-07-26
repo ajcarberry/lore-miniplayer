@@ -8,7 +8,7 @@ export interface ReviewBottomBarProps {
   readonly children: ReactNode;
 }
 
-// The review window's shared bottom-bar shell (designs 2b/2c): hairline-topped
+// The Project View's shared bottom-bar shell: hairline-topped
 // raised strip holding the mono tally and the workflow's own controls.
 export function ReviewBottomBar(props: ReviewBottomBarProps): ReactElement {
   return (

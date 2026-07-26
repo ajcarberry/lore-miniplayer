@@ -53,10 +53,10 @@ function SideColumn(props: {
   );
 }
 
-// The review window's per-file conflict block (design 2c): the conflicted file's
+// The merge workflow's per-file conflict block: the conflicted file's
 // two sides side by side — THEIRS (the target/main branch) and MINE (the
-// workspace/source branch) — with accept-theirs / accept-mine resolution.
-// Native resolution is per FILE (P1e), so one choice applies to the whole file;
+// source branch) — with accept-theirs / accept-mine resolution.
+// Native resolution is per FILE, so one choice applies to the whole file;
 // when the diff spans more than one region that is stated explicitly. The
 // accepted side persists (the button stays filled and a badge marks it) so a
 // re-review is unambiguous.

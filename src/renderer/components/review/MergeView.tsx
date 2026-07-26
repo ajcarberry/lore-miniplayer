@@ -53,12 +53,12 @@ export interface MergeViewProps {
   readonly onExit: () => void;
 }
 
-// The review window's merge workflow (design 2c). Truthful semantics: the merge
-// runs IN the workspace checkout (mine = the workspace/source branch, theirs =
+// The Project View's merge workflow. Truthful semantics: the merge
+// runs IN the checkout (mine = the source branch, theirs =
 // the target branch, main); resolution is per FILE; and completion lands the
 // merge revision on the TARGET branch and pushes it. On mount it starts the
 // merge through the merge bridge, fetches both sides of each conflicted file via
-// the diff bridge (P2's MergeState carries no content), and drives resolve /
+// the diff bridge (MergeState carries no content), and drives resolve /
 // abort / complete. Errors from start and complete surface as Mantine alerts,
 // never silently.
 export function MergeView(props: MergeViewProps): ReactElement {
@@ -226,7 +226,7 @@ export function MergeView(props: MergeViewProps): ReactElement {
 
   return (
     <Stack gap={0} style={{ flex: 1, minHeight: 0 }}>
-      {/* Merge header (design 2c): "Merge — <branch> → <target>" with a
+      {/* Merge header: "Merge — <branch> → <target>" with a
           "<repo> · N commits · M conflicts" eyebrow, on the shared shell. */}
       <ReviewHeader
         onBack={handleBack}
@@ -261,7 +261,7 @@ export function MergeView(props: MergeViewProps): ReactElement {
 
       {completeError !== null && (
         <Alert mx='md' mt='sm' color='red' variant='light' title='Merge could not be completed'>
-          {`${completeError} The workspace merge is intact — you can retry.`}
+          {`${completeError} The merge is intact — you can retry.`}
         </Alert>
       )}
 

@@ -69,10 +69,9 @@ export function useProjectViewMorph(forcePillCollapse: () => void): ProjectViewM
     }, PROJECT_VIEW_MORPH_MS);
   }, []);
 
-  // A live merge is backed out first (fire-and-forget, the old window-close
-  // semantics): leaving it in flight would strand the on-disk merge with no
-  // surface driving it. Aborting a merge that already landed is a tolerated
-  // no-op.
+  // A live merge is backed out first (fire-and-forget): leaving it in flight
+  // would strand the on-disk merge with no surface driving it. Aborting a
+  // merge that already landed is a tolerated no-op.
   const collapseToPill = useCallback((): void => {
     if (request?.workflow === 'merge') {
       void window.electronAPI.merge.abort({ repositoryPath: request.repositoryPath });

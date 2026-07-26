@@ -22,7 +22,7 @@ export interface FileListProps {
   readonly onToggleStage: (path: string, nextStaged: boolean) => void;
 }
 
-// Maps a diff action to its single-letter badge and semantic colour (design 2b:
+// Maps a diff action to its single-letter badge and semantic colour (
 // M amber, A green, D/moved muted).
 const ACTION_BADGE: Record<ReviewFile['action'], { letter: string; color: string }> = {
   modified: { letter: 'M', color: 'var(--acc-deep, #7a5b1e)' },
@@ -48,10 +48,10 @@ function statsLabel(file: ReviewFile): string {
   return parts.join(' ');
 }
 
-// The review window's left pane (design 2b): a header summarising the changed
+// The commit workflow's left pane: a header summarising the changed
 // files and aggregate line stats, then a stage-checkbox row per file. Binary
 // rows show "binary" instead of stats; a still-unresolved conflict disables its
-// checkbox and flags it with a warning (P6) — it cannot be staged until
+// checkbox and flags it with a warning — it cannot be staged until
 // resolved.
 export function FileList(props: FileListProps): ReactElement {
   const { files, selectedPath } = props;

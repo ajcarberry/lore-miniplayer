@@ -132,12 +132,12 @@ export const BranchGraphSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
-// Review window: diff/merge review of the working directory (commit and merge
+// Project View: diff/merge review of the working directory (commit and merge
 // workflows).
 // ---------------------------------------------------------------------------
 
 // Per-file diff result (fileDiff / fileDump fallback), rendered in the
-// review window's center pane.
+// Project View's center pane.
 export const FileDiffActionSchema = z.enum(['added', 'modified', 'deleted', 'moved']);
 
 export const LineStatsSchema = z.object({
@@ -154,7 +154,7 @@ export const FileDiffResultSchema = z.object({
   lineStats: LineStatsSchema.optional(),
 });
 
-// The review window's compare picker: a revision, the working tree, or a
+// The Project View's compare picker: a revision, the working tree, or a
 // branch's head.
 export const CompareTargetSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('revision'), revision: z.string().min(1) }),
@@ -193,10 +193,10 @@ export const MergeStateSchema = z.object({
   hasChangesToLand: z.boolean(),
 });
 
-// Which contextual primary action the review window's bottom bar shows.
+// Which contextual primary action the Project View's bottom bar shows.
 export const ReviewWorkflowModeSchema = z.enum(['commit', 'merge']);
 
-// The review window's initial compare picker selection: a source revision on
+// The Project View's initial compare picker selection: a source revision on
 // the left, a target on the right — a later revision or the working tree.
 export const ReviewCompareSchema = z.object({
   source: CompareTargetSchema,

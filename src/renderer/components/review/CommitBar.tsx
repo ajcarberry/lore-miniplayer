@@ -16,7 +16,7 @@ export interface CommitBarProps {
   readonly pushing: boolean;
 }
 
-// The review window's bottom bar in the commit workflow (design 2b): staged
+// The commit workflow's bottom bar: staged
 // count, message input, and the single contextual primary action. Commit is
 // gated on a non-empty message and at least one staged file; after it lands the
 // action becomes Push.

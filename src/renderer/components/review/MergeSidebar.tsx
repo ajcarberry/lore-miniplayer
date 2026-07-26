@@ -9,7 +9,7 @@ export interface MergeSidebarProps {
   readonly conflictFiles: readonly MergeFileState[];
 }
 
-// The review window's merge sidebar: the commits the merge brings onto the
+// The Project View's merge sidebar: the commits the merge brings onto the
 // target ("Merging commits") and the per-file conflicts ledger recording
 // which side was kept.
 export function MergeSidebar(props: MergeSidebarProps): ReactElement {

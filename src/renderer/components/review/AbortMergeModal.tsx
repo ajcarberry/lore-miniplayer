@@ -9,8 +9,8 @@ export interface AbortMergeModalProps {
   readonly onConfirm: () => void;
 }
 
-// Confirms the destructive abort of an in-flight merge (design 2c): aborting
-// restores the workspace branch to its pre-merge state and discards every
+// Confirms the destructive abort of an in-flight merge: aborting
+// restores the source branch to its pre-merge state and discards every
 // conflict resolution, so it is gated behind an explicit confirm.
 export function AbortMergeModal(props: AbortMergeModalProps): ReactElement {
   return (

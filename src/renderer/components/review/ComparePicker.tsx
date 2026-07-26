@@ -56,7 +56,7 @@ function Endpoint(props: EndpointProps): ReactElement {
   );
 }
 
-// The review window header's compare picker (design 2b: "compare r128 ▾ →
+// The header's compare picker ("compare r128 ▾ →
 // working tree ▾"). Selecting either endpoint hands the full new compare to the
 // container, which refetches the diff.
 export function ComparePicker(props: ComparePickerProps): ReactElement {

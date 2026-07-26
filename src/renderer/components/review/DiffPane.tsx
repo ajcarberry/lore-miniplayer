@@ -7,7 +7,7 @@ import { DIFF_TONE_BG, parseHunks } from './reviewModel';
 export interface DiffPaneProps {
   readonly file: ReviewFile | null;
   // The compare picker's current source→target label, echoed above the diff
-  // (design 2b: "levels/.../encounters.toml · r128 → working tree").
+  // ("levels/.../encounters.toml · r128 → working tree").
   readonly compareLabel: string;
 }
 
@@ -19,9 +19,9 @@ const LINE_BG: Record<DiffLineKind, string> = {
 
 const MARK: Record<DiffLineKind, string> = { add: '+', del: '−', context: '' };
 
-// The review window's center pane (design 2b): the selected file's unified diff
+// The commit workflow's center pane: the selected file's unified diff
 // rendered hunk by hunk. Binary files and empty diffs show a notice instead of
-// a patch; a truncated patch (P4's cap) is flagged so the reviewer knows the
+// a patch; a truncated patch is flagged so the reviewer knows the
 // tail is elided. Only the selected file's patch is ever parsed/rendered, which
 // keeps large multi-file compares cheap.
 export function DiffPane(props: DiffPaneProps): ReactElement {

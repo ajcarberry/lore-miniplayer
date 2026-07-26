@@ -17,17 +17,11 @@ import type {
   BranchDivergence,
   BranchGraph,
   CloneProgress,
-  RevisionSummary,
   RepositoryNotification,
   RepositoryNotificationKind,
 } from '../../shared/types';
 import type { LoreEventFFITyped } from '@lore-vcs/sdk/types/events';
-import {
-  assembleBranchGraph,
-  getCurrentRevision,
-  getSessionCommits,
-  isUnknownHash,
-} from './branch-graph';
+import { assembleBranchGraph, getCurrentRevision, isUnknownHash } from './branch-graph';
 import { resolveRepositoryIdentity, type RepositoryIdentity } from './lore-repository-info';
 import { OperationError, operationHelpers } from './lore-operation';
 import {
@@ -257,8 +251,8 @@ export class LoreRepositoryService extends EventEmitter {
   }
 
   // Whether `sourceBranch` still carries revisions `targetBranch` lacks — what
-  // gates the Merge action on a Mission Control card and the review window's
-  // Merge button (see readHasRevisionsToLand).
+  // gates the card's Merge entry and the merge workflow's landing (see
+  // readHasRevisionsToLand).
   async hasRevisionsToLand(
     repositoryPath: string,
     sourceBranch: string,
@@ -266,21 +260,6 @@ export class LoreRepositoryService extends EventEmitter {
   ): Promise<boolean> {
     return readHasRevisionsToLand(repositoryPath, sourceBranch, targetBranch, error =>
       toOperationError(`Failed to compare '${sourceBranch}' against '${targetBranch}'`, error)
-    );
-  }
-
-  // The checkout branch's own newest revisions (stopping at the parent
-  // branch), enriched with message/timestamp — the Mission Control card's
-  // "session commits". Delegates to ./branch-graph, which owns the walk +
-  // enrichment plumbing.
-  async getSessionCommits(repositoryPath: string, limit: number): Promise<RevisionSummary[]> {
-    return getSessionCommits(
-      {
-        emitLog: (level, message) => this.emit('log', { level, message }),
-        wrapError: toOperationError,
-      },
-      repositoryPath,
-      limit
     );
   }
 

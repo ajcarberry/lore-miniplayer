@@ -26,10 +26,10 @@ export class MergeOperationError extends OperationError {
 
 // Internal marker for the one landing failure that is not retryable: the target
 // branch moved after the source branch merged it in, which `branchMergeInto`
-// refuses outright ("Target branch to merge into has a newer revision", probed
-// live — A3-advanced). complete() turns it into the user-facing typed error and
-// discards the merge, since retrying it would refuse forever — the recovery is
-// a fresh merge over the new target.
+// refuses outright ("Target branch to merge into has a newer revision").
+// complete() turns it into the user-facing typed error and discards the merge,
+// since retrying it would refuse forever — the recovery is a fresh merge over
+// the new target.
 class TargetAdvancedError extends Error {}
 
 // How the SDK words that refusal; the only landing failure worth recognising.
@@ -46,7 +46,7 @@ const { run, collect, toOperationError } = operationHelpers(MergeOperationError)
 // The state retained per in-flight merge so resolve/complete can rebuild the
 // MergeState across IPC calls without re-driving the merge: which branches are
 // involved and the conflicted paths reported by branchMergeStart (the
-// BRANCH_MERGE_CONFLICT_FILE events are path-only, P1e — the file's current
+// BRANCH_MERGE_CONFLICT_FILE events are path-only — the file's current
 // resolution is re-read from status each time).
 interface ActiveMerge {
   readonly sourceBranch: string;
@@ -63,51 +63,41 @@ interface ActiveMerge {
   // Everything the merge itself staged, including the target-added files the
   // SDK stages with no merge flag at all (see isMergeFile). The start pre-flight
   // guarantees the checkout had nothing staged beforehand, so anything staged
-  // AFTER this set is the user's own work for the A3-dirty guard.
+  // AFTER this set is the user's own work for the unrelated-staged guard.
   readonly importedPaths: ReadonlySet<string>;
-  // Set once the resolved merge is committed on the workspace branch (phase 1
+  // Set once the resolved merge is committed on the source branch (phase 1
   // of complete()). If a subsequent landing step fails, this lets a retry skip
-  // re-committing — the workspace merge-commit is already durable.
+  // re-committing — the source-branch merge-commit is already durable.
   committedRevision?: string;
 }
 
-// Drives the "Integrate" stage (design 2c): merge the workspace's branch
-// toward main, expose conflicts for accept-mine/accept-theirs resolution, and
-// land the merge on the target branch.
+// The Project View's merge workflow: merge the checkout's branch toward the
+// target, expose conflicts for accept-mine/accept-theirs resolution, and land
+// the merge on the target branch.
 //
-// Merge-flow decision (Start vs Into): this runs `branchMergeStart` from the
-// workspace checkout — whose current branch IS the source (feature) branch —
-// merging the TARGET branch (main) INTO it. This is the path P1 actually
-// probed (finding e), which verified the on-disk conflict materialization,
-// per-file resolve semantics, and abort-restores behavior. It also aligns the
-// design's labels: P1e established that for branchMergeStart, "ours"/mine =
-// the current branch and "theirs" = the branch merged in — so mine = the
-// feature branch and theirs = main, exactly as design 2c shows ("accept mine
-// (branch) / accept theirs (main @ rN)"). The merge is started with noCommit so
-// completion controls the commit.
+// Merge flow: `branchMergeStart` runs from the checkout — whose current
+// branch IS the source branch — merging the TARGET branch INTO it. For
+// branchMergeStart, "ours"/mine = the current branch and "theirs" = the
+// branch merged in. The merge starts with noCommit so completion controls the
+// commit.
 //
-// Landing on the target (design 2c: "merge commits land on main"). The started
-// merge only puts the target's changes INTO the workspace branch; to advance
-// the target, complete() (1) commits the resolved merge on the workspace branch,
-// then (2) lands it with `branchMergeInto` toward the target. Against a LIVE
-// server that single call does the whole landing — it commits the merge on the
-// target AND publishes it (a fresh clone sees the revision with no follow-up
-// push), leaves the checkout on the source branch, and leaves the working tree
-// clean. It is also atomic: a refused landing (a protected target) advances
-// nothing, locally or remotely, so a retry simply lands. (P1e-addendum recorded
-// it as unusable because it throws "Invalid branch latest revision" OFFLINE;
-// re-probed against the harness server for T16, where it works — replacing the
-// switch-to-target / re-merge / commit / restore / push composite and its
-// half-landed states.) One consequence to keep in mind: the LOCAL tip of the
-// target branch does not move, only its remote tip — which is why anything
-// asking "is this branch landed?" must read the remote tip (see lore-status).
+// Landing: the started merge only puts the target's changes INTO the source
+// branch; to advance the target, complete() (1) commits the resolved merge on
+// the source branch, then (2) lands it with `branchMergeInto` toward the
+// target. Against a live server that single call commits the merge on the
+// target AND publishes it (no follow-up push), leaves the checkout on the
+// source branch, and leaves the working tree clean. It is atomic: a refused
+// landing advances nothing, locally or remotely, so a retry simply lands.
+// `branchMergeInto` requires a live server ("Invalid branch latest revision"
+// offline). The LOCAL tip of the target branch does not move, only its remote
+// tip — anything asking "is this branch landed?" must read the remote tip
+// (see lore-status).
 //
-// Exposing both sides for the UI: P2's MergeState/MergeFileState carry no
-// content fields (path/state/resolution only) and the shared schema is out of
-// this packet's scope, so mine/theirs CONTENT is not read from the `~mine`/
-// `~theirs` sidecars here — the review window fetches each side through the
-// existing diff channel (diff:compare) with branchHead compare targets. The
-// conflict file list in MergeState tells it which paths to diff.
+// Exposing both sides for the UI: MergeState/MergeFileState carry no content
+// fields (path/state/resolution only), so mine/theirs content is not read
+// from the `~mine`/`~theirs` sidecars here — the Project View fetches each
+// side through the diff channel (diff:compare). The conflict file list in
+// MergeState tells it which paths to diff.
 //
 // Only one merge may be in flight per repository; a concurrent start is a
 // typed error. All state transitions are logged.
@@ -119,7 +109,7 @@ export class MergeService {
     private readonly loreRepositoryService: LoreRepositoryService
   ) {}
 
-  // Start a merge: merge the target branch into the workspace checkout (which
+  // Start a merge: merge the target branch into the checkout (which
   // holds the source branch). Collects the conflicted paths, records the
   // in-flight merge, and returns the composed MergeState. Refuses a second
   // concurrent merge for the same repository.
@@ -140,7 +130,7 @@ export class MergeService {
       targetBranch,
     });
 
-    // C3: the request names the branch the caller BELIEVES is checked out. If
+    // The request names the branch the caller BELIEVES is checked out. If
     // the checkout has since moved (the user switched by hand), merging the
     // target in would resolve "mine" against the wrong branch — refuse before
     // anything is materialized on disk.
@@ -207,7 +197,7 @@ export class MergeService {
     return this.buildMergeState(repositoryPath, record);
   }
 
-  // Resolve a single conflicted file as mine (the workspace/feature branch) or
+  // Resolve a single conflicted file as mine (the source branch) or
   // theirs (the target/main branch). Re-runnable to switch a file's side —
   // there is no separate unresolve step in the v1 flow. Refuses a path that is
   // not a conflict in the current merge, or a repository with no active merge.
@@ -228,7 +218,7 @@ export class MergeService {
 
     // The resolve ops address files by their repo-ABSOLUTE path: a
     // repo-relative path is PATH_IGNOREd and silently leaves the file
-    // unresolved (P1e-addendum, probe 06b; see toRepoAbsolutePath). The
+    // unresolved (see toRepoAbsolutePath). The
     // conflict path from BRANCH_MERGE_CONFLICT_FILE is repo-relative.
     const absPath = toRepoAbsolutePath(repositoryPath, filePath);
     const op =
@@ -240,9 +230,9 @@ export class MergeService {
     return this.buildMergeState(repositoryPath, record);
   }
 
-  // Abort a merge, restoring the checkout's pre-merge content (P1e) and
+  // Abort a merge, restoring the checkout's pre-merge content and
   // clearing the in-flight record so a new merge may be started. Deliberately
-  // tolerant: the review window offers Abort from its start-ERROR state, where
+  // tolerant: the merge workflow offers Abort from its start-ERROR state, where
   // by definition no merge was ever recorded, and an on-disk merge can outlive
   // the record (app restart, closed window). So it aborts whatever is on disk
   // and reports whether there was anything to abort — aborting nothing is a
@@ -261,21 +251,21 @@ export class MergeService {
   }
 
   // Complete an in-flight merge and land it on the target branch. Two phases:
-  // (1) commit the resolved merge on the workspace (source) branch — refused
+  // (1) commit the resolved merge on the source branch — refused
   // while any conflict is unresolved, durable once done; (2) land that commit
   // on the target branch (see landOnTarget). A landing failure surfaces a typed
-  // error that reports the intact workspace merge-commit; the record is kept so
+  // error that reports the intact source-branch merge-commit; the record is kept so
   // a retry skips re-committing. Clears the record and returns the target's
   // landed revision on success.
   async complete(request: MergeCompleteRequest): Promise<MergeCompleteResponse> {
     const { repositoryPath } = request;
     const record = this.requireActiveMerge(repositoryPath);
 
-    // A3-dirty: both commits below sweep in whatever is staged, so unrelated
+    // Both commits below sweep in whatever is staged, so unrelated
     // staged work would silently ride the merge onto the target branch.
     await this.refuseUnrelatedStagedWork(repositoryPath, record);
 
-    // Phase 1: commit the resolved merge on the workspace (source) branch.
+    // Phase 1: commit the resolved merge on the source branch.
     if (!record.committedRevision) {
       const state = await this.buildMergeState(repositoryPath, record);
       if (!state.allResolved) {
@@ -284,7 +274,7 @@ export class MergeService {
         );
       }
       const sourceMessage = `Merge branch '${record.targetBranch}' into '${record.sourceBranch}'`;
-      this.log.info('Merge complete: committing on workspace branch', {
+      this.log.info('Merge complete: committing on source branch', {
         operation: 'merge:complete',
         repositoryPath,
         message: sourceMessage,
@@ -297,7 +287,7 @@ export class MergeService {
       );
     }
 
-    // Phase 2: land the workspace merge-commit on the target branch.
+    // Phase 2: land the source-branch merge-commit on the target branch.
     let landedRevision: string;
     try {
       landedRevision = await this.landOnTarget(repositoryPath, record);
@@ -305,7 +295,7 @@ export class MergeService {
       if (error instanceof TargetAdvancedError) {
         // The reviewed merge is stale: the target moved after the source
         // branch merged it in. Retrying would conflict forever, so drop the
-        // merge — the workspace merge-commit stays, and a fresh start() merges
+        // merge — the source-branch merge-commit stays, and a fresh start() merges
         // the new target content.
         this.forgetMerge(repositoryPath);
         throw new MergeOperationError(
@@ -326,9 +316,9 @@ export class MergeService {
 
   // --- internals ------------------------------------------------------------
 
-  // Land the workspace branch's merge-commit on the target branch: one
+  // Land the source branch's merge-commit on the target branch: one
   // `branchMergeInto` from the source checkout, which commits the merge on the
-  // target and publishes it to the server in the same call (probed live; the
+  // target and publishes it to the server in the same call (the
   // checkout never leaves its own branch and the working tree stays clean).
   // Returns the landed revision, streamed by the operation itself. A refusal
   // lands nothing at all, so the caller's error is the whole story.
@@ -370,7 +360,7 @@ export class MergeService {
     return landedRevision;
   }
 
-  // C3 guard: the checkout's current branch must be the request's source
+  // Checkout guard: the checkout's current branch must be the request's source
   // branch. An unreadable status degrades to "no answer" rather than blocking
   // the merge — the checks that follow still protect the on-disk state.
   private async verifyCheckoutBranch(repositoryPath: string, sourceBranch: string): Promise<void> {
@@ -386,11 +376,11 @@ export class MergeService {
   // opaque "Cannot merge with staged state". Two very different situations
   // reach it:
   //
-  // (A2-restart) A merge left materialized on disk by a previous session — the
-  // app restarted, or the review window closed before its abort ran. Its rows
+  // A merge left materialized on disk by a previous session — the
+  // app restarted, or the Project View exited before its abort ran. Its rows
   // may carry merge flags (a conflict) or, for a clean merge that only imported
   // target-only files, NO flag at all: just staged rows the SDK never signed
-  // (probed live). Both are backed out and the merge re-run: the user asked for
+  // Both are backed out and the merge re-run: the user asked for
   // this merge, and re-running reproduces it against the current target.
   //
   // (the user's own work) Anything still staged after that is the user's — it
@@ -436,7 +426,7 @@ export class MergeService {
     }
   }
 
-  // A3-dirty guard: staged files that the merge did not bring in would be swept
+  // Unrelated-staged guard: staged files that the merge did not bring in would be swept
   // into the merge commit (and from there onto the target branch). "The merge
   // brought it in" means either a merge-flagged row or one of the paths the
   // merge staged at start() — the target-added files the SDK leaves unflagged.
@@ -487,7 +477,7 @@ export class MergeService {
 
   // Composes the MergeState from the recorded branches/conflict paths and a
   // fresh working-directory status read: automerged files become inert
-  // 'merged' rows (P1e), each recorded conflict path becomes a 'conflict' row
+  // 'merged' rows, each recorded conflict path becomes a 'conflict' row
   // whose resolution is derived from its status flags (mine/theirs, or none
   // when still unresolved). allResolved is true when every conflict has a side.
   private async buildMergeState(repositoryPath: string, record: ActiveMerge): Promise<MergeState> {

@@ -18,7 +18,7 @@ export interface WorkingSetFile {
   readonly staged: boolean;
   // The SDK's conflict flags, surfaced on the row itself: an unresolved
   // conflict replaces the stage checkbox with a warning and blocks staging
-  // until it's resolved elsewhere (CLI, review window).
+  // until it's resolved elsewhere (CLI, Project View).
   readonly conflictUnresolved?: boolean;
 }
 
@@ -28,10 +28,10 @@ export interface WorkingSetProps {
   readonly onToggleOpen: () => void;
   readonly onToggleFile: (path: string) => void;
   readonly isLoading: boolean;
-  // Open the review window's commit workflow over the selected repository;
+  // Open the Project View's commit workflow over the selected repository;
   // omitted while no repository is on disk (clone pending).
   readonly onReview?: () => void;
-  // Open the review window's merge workflow; omitted when the branch has no
+  // Open the Project View's merge workflow; omitted when the branch has no
   // distinct merge target.
   readonly onMerge?: () => void;
   // The revision the working set is conflicted against, for the "conflicts

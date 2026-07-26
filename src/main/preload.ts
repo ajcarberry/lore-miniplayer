@@ -225,7 +225,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return ipcRenderer.invoke('path:basename', { path }) as Promise<Result<string>>;
     },
   },
-  // The review window's compare picker.
+  // The Project View's compare picker.
   diff: {
     compare: async (request: DiffRequest): Promise<Result<DiffResponse>> => {
       return ipcRenderer.invoke(IPC_CHANNELS.diff.compare, request) as Promise<
@@ -233,7 +233,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       >;
     },
   },
-  // The review window's merge workflow: start a branch→target merge, resolve
+  // The Project View's merge workflow: start a branch→target merge, resolve
   // conflicts accept-mine/accept-theirs per file, abort, or complete
   // (commit + push). One merge in flight per repository.
   merge: {

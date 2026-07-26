@@ -10,6 +10,14 @@ import { killProcessTree } from './support/reaper';
 // argv contains this exact path.
 export const APP_MAIN = path.join(process.cwd(), 'out/main/index.js');
 
+// Hidden by default (see the LORE_MINIPLAYER_E2E_HIDDEN branch in
+// src/main/index.ts); LORE_MINIPLAYER_E2E_SHOW=1 restores visible launches.
+// Cleared rather than omitted so an inherited value can't defeat the switch.
+function hiddenModeEnv(): Record<string, string> {
+  const show = process.env['LORE_MINIPLAYER_E2E_SHOW'] === '1';
+  return { LORE_MINIPLAYER_E2E_HIDDEN: show ? '' : '1' };
+}
+
 // A fresh, isolated userData directory per launch (or shared across a
 // relaunch pair, when the caller needs the on-disk config to survive) so e2e
 // runs never read or write the real user's ~/Library/Application
@@ -42,7 +50,7 @@ export async function launchApp(
   const dir = userDataDir ?? createTempUserDataDir();
   const app = await electron.launch({
     args: [APP_MAIN],
-    env: { ...process.env, ...extraEnv, LORE_MINIPLAYER_USER_DATA: dir },
+    env: { ...process.env, ...extraEnv, ...hiddenModeEnv(), LORE_MINIPLAYER_USER_DATA: dir },
   });
   return { app, userDataDir: dir };
 }

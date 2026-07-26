@@ -39,6 +39,7 @@ import { spawn } from 'node:child_process';
 import { ipcMain, BrowserWindow, screen } from 'electron';
 import {
   attachFocusDimming,
+  computeFocusOpacity,
   openTerminal,
   registerWindowHandlers,
 } from '../../../src/main/ipc/window-handlers';
@@ -233,6 +234,44 @@ function sendNotice(
   (BrowserWindow.fromWebContents as jest.Mock).mockReturnValue(win);
   listener({ sender: {} }, rawActive);
 }
+
+describe('computeFocusOpacity', () => {
+  it('is fully opaque when focused and no notice is active', () => {
+    // Given: a focused window with no active notice
+    // When: the opacity decision is computed
+    const opacity = computeFocusOpacity({ focused: true, noticeActive: false });
+
+    // Then: full opacity
+    expect(opacity).toBe(1.0);
+  });
+
+  it('is fully opaque when focused and a notice is active', () => {
+    // Given: a focused window with an active notice
+    // When: the opacity decision is computed
+    const opacity = computeFocusOpacity({ focused: true, noticeActive: true });
+
+    // Then: full opacity
+    expect(opacity).toBe(1.0);
+  });
+
+  it('dims to 70% when unfocused and no notice is active', () => {
+    // Given: an unfocused window with no active notice
+    // When: the opacity decision is computed
+    const opacity = computeFocusOpacity({ focused: false, noticeActive: false });
+
+    // Then: dimmed opacity
+    expect(opacity).toBe(0.7);
+  });
+
+  it('stays fully opaque when unfocused but a notice is active', () => {
+    // Given: an unfocused window with an active notice
+    // When: the opacity decision is computed
+    const opacity = computeFocusOpacity({ focused: false, noticeActive: true });
+
+    // Then: the notice suspends dimming
+    expect(opacity).toBe(1.0);
+  });
+});
 
 describe('focus dimming with notice override', () => {
   it('dims to 70% on blur and restores full opacity on focus while no notice is active', () => {

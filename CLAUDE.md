@@ -107,7 +107,7 @@ pnpm claude:quick-check  # Fast validation: types, format, lint, Jest (no Playwr
 pnpm claude:type-check   # After any TypeScript changes
 pnpm claude:lint         # Check for code issues (JSON output for parsing)
 pnpm claude:test:jest    # Fast unit test feedback
-pnpm claude:test:play    # E2E validation
+pnpm claude:test:play    # E2E validation — runs hidden + parallel; --headed or LORE_MINIPLAYER_E2E_SHOW=1 to watch; see docs/testing/e2e-architecture.md
 pnpm test:integration    # Real-server integration suite — when/how in code_standards.md §5; guide + scenario catalog in docs/testing/
 pnpm format:fix          # Auto-fix formatting issues
 ```

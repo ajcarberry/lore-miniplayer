@@ -92,6 +92,29 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm exec playwright test
 
+      # The focus tests need a visible window with real OS focus, so they're
+      # excluded from the default project set (see playwright.config.ts) and
+      # run explicitly here. They self-skip if the runner's window manager
+      # won't grant focus.
+      - name: Playwright E2E (electron-focus)
+        if: runner.os != 'Linux'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm exec playwright test --project=electron-focus
+
+      # Uploaded on success and failure alike so every run's report (traces
+      # and videos on failure) is reviewable from the run page. The focus run
+      # writes to its own folder so it doesn't clobber the main report.
+      - name: Upload Playwright HTML report
+        if: always() && runner.os != 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ matrix.os }}
+          if-no-files-found: ignore
+          path: |
+            playwright-report/
+            playwright-report-focus/
+
       # Harness server logs (tests/integration/harness/server.ts) live under
       # the OS temp dir and are normally deleted by the harness's own
       # stop()/afterAll cleanup, so this only catches the log on a crash that

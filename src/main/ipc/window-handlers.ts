@@ -236,7 +236,10 @@ export function registerWindowHandlers(log: MainLogger): void {
     }
     if (rawView === 'projectView') {
       const current = win.getBounds();
-      cardBoundsBeforeReview = current;
+      // Only the FIRST card → view transition remembers the card's bounds; a
+      // repeat request (the workflow switcher re-opening the view) would
+      // otherwise overwrite them with the review footprint.
+      cardBoundsBeforeReview ??= current;
       const workArea = screen.getDisplayMatching(current).workArea;
       setBoundsAllowingResize(
         win,

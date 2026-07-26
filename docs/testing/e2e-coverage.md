@@ -77,7 +77,8 @@ their detailed assertions live in the [Scenario catalog](./scenario-catalog.md).
 | Clone progress streams to completion             | clone-progress                | `live-server.spec.ts`                                    |
 | Morph the card into the Project View (Review / Merge / footer icon) | review-commit, merge-mine | `live-review.spec.ts`, `live-merge.spec.ts` |
 | One card entry: Review while dirty, Merge only when clean with revisions to land (withdrawn after landing) | review-commit, merge-mine | `live-review.spec.ts`, `live-merge.spec.ts` |
-| Switch workflows inside the Project View; Merge segment gated (staged files / nothing to land / on the target) | merge-mine, merge-abort, review-commit | `live-merge.spec.ts`, `live-review.spec.ts` |
+| Switch workflows inside the Project View; Merge segment gated (any uncommitted work / nothing to land / on the target) | merge-mine, merge-abort, review-commit | `live-merge.spec.ts`, `live-review.spec.ts` |
+| The morph restores the card's exact window bounds after exit (incl. after in-view switching) | merge-abort | `live-merge.spec.ts` |
 | Exit the Project View — Back to the card, TitleBar collapse to the pill | review-commit, merge-abort | `live-review.spec.ts`, `live-merge.spec.ts` |
 | Review compare picker (revision ↔ working tree) | review-commit | `live-review.spec.ts` |
 | Review file rows (badges, binary), stage/unstage, commit, push | review-commit | `live-review.spec.ts` |

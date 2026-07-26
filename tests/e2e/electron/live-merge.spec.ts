@@ -11,6 +11,7 @@ import {
   loreInClone,
   openProjectView,
   chooseWorkflow,
+  mainWindowBounds,
   exitProjectView,
   acceptMine,
   acceptTheirs,
@@ -248,6 +249,7 @@ test.describe('Live merge — the branch lands on main', () => {
       'merge-abort',
       branchName
     );
+    const cardBounds = await mainWindowBounds(electronApp);
 
     const review = await openProjectView(window, 'Merge');
     await expect(review.getByTestId(`conflict-block-${MESH}`)).toBeVisible({ timeout: 60_000 });
@@ -281,5 +283,13 @@ test.describe('Live merge — the branch lands on main', () => {
     await dialog.getByRole('button', { name: 'Discard merge', exact: true }).click();
     await expect(second.getByLabel('Commit message')).toBeVisible({ timeout: 30_000 });
     await exitProjectView(window);
+
+    // And: the window really shrinks back to the card's exact footprint —
+    // even after the in-view workflow switch re-opened the view (regression:
+    // the second open used to overwrite the remembered card bounds with the
+    // review footprint).
+    await expect
+      .poll(async () => mainWindowBounds(electronApp), { timeout: 15_000 })
+      .toEqual(cardBounds);
   });
 });

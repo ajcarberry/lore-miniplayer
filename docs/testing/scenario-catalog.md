@@ -103,6 +103,11 @@ Failure modes and boundary conditions.
 
 - **A refused landing lands nothing at all; the retry lands exactly one merge
   commit** — no half-landed state on the target.
+- **Start refuses ANY uncommitted work — staged, unstaged, or untracked — by
+  name** — every abort path resets the working tree wholesale (probed live:
+  unstaged edits revert and untracked files are deleted), so a merge never
+  starts over work it could destroy; the user's files are byte-identical
+  after the refusal.
 - **The user's own staged work is refused by name at start and at completion** —
   never swept into the merge commit, and never excused by a file the merge
   itself imported.
@@ -235,7 +240,10 @@ Project View — merge workflow (`live-merge.spec.ts`)
   the merge, confirm morphs back to the card by itself, restores the pre-merge
   file, and a new merge starts clean; leaving the fresh merge through the
   workflow switcher routes through the same discard confirmation and lands in
-  the commit view, not the card.
+  the commit view, not the card — and the window then shrinks back to the
+  card's exact pre-open footprint, asserted against real OS window bounds
+  (regression: a workflow re-open used to overwrite the remembered card
+  bounds with the review footprint).
 
 Timeline constellation (`live-timeline.spec.ts`)
 

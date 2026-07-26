@@ -26,7 +26,7 @@ export interface CommitReviewProps {
   // Re-open the view with the other workflow (the header switcher).
   readonly onSwitchWorkflow: (workflow: ReviewWorkflowMode) => void;
   // Whether the merge workflow applies (distinct target, revisions to land);
-  // combined here with the live staged gate.
+  // combined here with the live uncommitted-work gate.
   readonly mergeAvailable: boolean;
 }
 
@@ -108,6 +108,9 @@ export function CommitReview(props: CommitReviewProps): ReactElement {
 
   const files = useMemo(() => composeReviewFiles(diffs, status), [diffs, status]);
   const stagedCount = files.filter(file => file.staged).length;
+  // ANY uncommitted work blocks the merge workflow — aborting a merge resets
+  // the working tree, so the service refuses to start over dirt.
+  const dirtyCount = status.untracked.length + status.unstaged.length + status.staged.length;
   const selectedFile = files.find(file => file.path === selectedPath) ?? null;
 
   const handleToggleStage = useCallback(
@@ -165,7 +168,7 @@ export function CommitReview(props: CommitReviewProps): ReactElement {
           <Group gap='sm' wrap='nowrap'>
             <WorkflowSwitch
               workflow='commit'
-              mergeEnabled={props.mergeAvailable && stagedCount === 0}
+              mergeEnabled={props.mergeAvailable && dirtyCount === 0}
               onSwitch={props.onSwitchWorkflow}
             />
             <ComparePicker compare={compare} revisions={revisions} onChange={setCompare} />

@@ -571,7 +571,7 @@ describe('MergeService', () => {
       expect(mockLore.branchMergeStart).toHaveBeenCalled();
     });
 
-    it("refuses the user's own staged work by name instead of the SDK's opaque refusal", async () => {
+    it("refuses the user's own uncommitted work by name instead of the SDK's opaque refusal", async () => {
       // Given: staged work that is NOT a stale merge — the abort finds nothing
       // to back out and the files are still staged afterwards
       lore_.getFileStatus.mockResolvedValue(
@@ -586,8 +586,24 @@ describe('MergeService', () => {
       const failure = service.start(startRequest());
       await expect(failure).rejects.toBeInstanceOf(MergeOperationError);
       await expect(failure).rejects.toThrow(/assets\/rock\.tga, notes\.txt/);
-      await expect(failure).rejects.toThrow(/Commit or unstage/);
+      await expect(failure).rejects.toThrow(/uncommitted changes/);
       // And: nothing was materialized, and the user's staging was left alone
+      expect(mockLore.branchMergeStart).not.toHaveBeenCalled();
+    });
+
+    it('refuses unstaged and untracked work too — an abort would destroy it', async () => {
+      // Given: an unstaged edit and an untracked file, nothing staged
+      lore_.getFileStatus.mockResolvedValueOnce({
+        untracked: [{ path: 'scratch.txt', isUntracked: true, isStaged: false, conflict: false }],
+        unstaged: [{ path: 'other.txt', isUntracked: false, isStaged: false, conflict: false }],
+        staged: [],
+      });
+      mockLore.branchMergeStart.mockReturnValue(fluentMock() as never);
+
+      // When/Then: the refusal names every dirty file; nothing materializes
+      const failure = service.start(startRequest());
+      await expect(failure).rejects.toThrow(/other\.txt, scratch\.txt/);
+      await expect(failure).rejects.toThrow(/resets the working tree/);
       expect(mockLore.branchMergeStart).not.toHaveBeenCalled();
     });
 

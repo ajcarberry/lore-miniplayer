@@ -363,8 +363,37 @@ function mergeRequest(): ReviewOpenRequest {
 }
 
 describe('ProjectView — workflow switcher', () => {
-  it('switches from the commit view to the merge workflow', async () => {
-    // Given: a commit view whose working set has nothing staged
+  it('switches from the commit view to the merge workflow when nothing is uncommitted', async () => {
+    // Given: a commit view over a fully clean working set
+    const api = installApi();
+    api.getStatus.mockResolvedValue({
+      success: true,
+      data: { untracked: [], unstaged: [], staged: [] },
+    });
+    const onSwitchWorkflow = jest.fn();
+    const user = userEvent.setup();
+    renderSurface({ onSwitchWorkflow });
+    await screen.findByText('Review — feat/topic');
+
+    // When: choosing Merge in the switcher
+    await user.click(screen.getByRole('radio', { name: 'Merge' }));
+
+    // Then: the view asks to re-open with the merge workflow
+    expect(onSwitchWorkflow).toHaveBeenCalledWith('merge');
+  });
+
+  it('disables the Merge segment while ANY work is uncommitted — an abort would destroy it', async () => {
+    // Given: the default fixture (staged + unstaged + conflicted files)
+    installApi();
+    renderSurface({});
+    await screen.findByText('encounters.toml');
+
+    // Then: the Merge segment cannot be chosen
+    expect(screen.getByRole('radio', { name: 'Merge' })).toBeDisabled();
+  });
+
+  it('disables the Merge segment for unstaged-only dirt too', async () => {
+    // Given: nothing staged, one unstaged edit
     const api = installApi();
     api.getStatus.mockResolvedValue({
       success: true,
@@ -376,26 +405,11 @@ describe('ProjectView — workflow switcher', () => {
         staged: [],
       },
     });
-    const onSwitchWorkflow = jest.fn();
-    const user = userEvent.setup();
-    renderSurface({ onSwitchWorkflow });
+    renderSurface({});
     await screen.findByText('encounters.toml');
 
-    // When: choosing Merge in the switcher
-    await user.click(screen.getByRole('radio', { name: 'Merge' }));
-
-    // Then: the view asks to re-open with the merge workflow
-    expect(onSwitchWorkflow).toHaveBeenCalledWith('merge');
-  });
-
-  it('disables the Merge segment while files are staged — the pre-flight refuses them', async () => {
-    // Given: the default fixture, which has one staged file
-    installApi();
-    const onSwitchWorkflow = jest.fn();
-    renderSurface({ onSwitchWorkflow });
-    await screen.findByText('encounters.toml');
-
-    // Then: the Merge segment cannot be chosen
+    // Then: the Merge segment cannot be chosen — aborting the merge would
+    // revert the edit
     expect(screen.getByRole('radio', { name: 'Merge' })).toBeDisabled();
   });
 

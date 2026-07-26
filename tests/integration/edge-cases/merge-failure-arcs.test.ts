@@ -140,6 +140,47 @@ test('A3-push: a refused landing lands nothing at all, and the retry lands exact
   });
 });
 
+test('start refuses ANY uncommitted work — aborting a merge resets the working tree', async () => {
+  await withServer(async ({ server, service }) => {
+    const scenario = await seedWorkspace(server, service);
+
+    // Given: an unstaged edit and an untracked file — work an abort would
+    // destroy (branchMergeAbort resets the working tree wholesale, probed
+    // live: unstaged edits revert, untracked files are DELETED)
+    await writeFile(join(scenario.workspacePath, 'other.txt'), 'untouched\nUSER-EDIT\n');
+    await writeFile(join(scenario.workspacePath, 'scratch.txt'), 'USER-NEW\n');
+
+    // When/Then: starting the merge is refused before anything materializes
+    const failure = await scenario.merge
+      .start({
+        repositoryPath: scenario.workspacePath,
+        sourceBranch: SOURCE_BRANCH,
+        targetBranch: TARGET_BRANCH,
+      })
+      .then(
+        () => undefined,
+        (error: unknown) => error
+      );
+    assert.ok(
+      failure instanceof MergeOperationError,
+      `expected a typed error, got ${String(failure)}`
+    );
+    assert.match(failure.message, /uncommitted/i);
+    assert.match(failure.message, /other\.txt/);
+    assert.match(failure.message, /scratch\.txt/);
+
+    // And: every byte of the user's work is exactly where they left it
+    assert.equal(
+      await readFile(join(scenario.workspacePath, 'other.txt'), 'utf8'),
+      'untouched\nUSER-EDIT\n'
+    );
+    assert.equal(
+      await readFile(join(scenario.workspacePath, 'scratch.txt'), 'utf8'),
+      'USER-NEW\n'
+    );
+  });
+});
+
 test('staged pre-flight: the user\'s own staged work is refused by name instead of the SDK\'s "Cannot merge with staged state"', async () => {
   await withServer(async ({ server, service }) => {
     const scenario = await seedWorkspace(server, service);
@@ -173,8 +214,10 @@ test('staged pre-flight: the user\'s own staged work is refused by name instead 
       ['other.txt']
     );
 
-    // And: unstaging it lets the merge run
-    await service.unstageFiles(scenario.workspacePath, [abs(scenario.workspacePath, 'other.txt')]);
+    // And: committing it lets the merge run — unstaging would not, since the
+    // edit would remain as unstaged (still uncommitted) work
+    await service.stageFiles(scenario.workspacePath, [abs(scenario.workspacePath, 'other.txt')]);
+    await service.commit(scenario.workspacePath, 'commit the staged work, then merge');
     const state = await scenario.merge.start({
       repositoryPath: scenario.workspacePath,
       sourceBranch: SOURCE_BRANCH,

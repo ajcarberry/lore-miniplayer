@@ -398,11 +398,15 @@ export class MergeService {
       }
     }
 
-    const staged = [...stagedPaths(status)].sort();
-    if (staged.length > 0) {
+    // ANY uncommitted work blocks the merge, not just staged files: every
+    // abort path (explicit, failure back-outs, stale-merge cleanup) resets
+    // the working tree wholesale — unstaged edits revert and untracked files
+    // are deleted.
+    const dirty = [...new Set(allStatusFiles(status).map(file => file.path))].sort();
+    if (dirty.length > 0) {
       throw new MergeOperationError(
-        `Cannot start the merge while files are staged in '${repositoryPath}': ${staged.join(', ')}. ` +
-          'Commit or unstage them, then merge.'
+        `Cannot start the merge with uncommitted changes in '${repositoryPath}': ${dirty.join(', ')}. ` +
+          'Commit or revert them first — aborting a merge resets the working tree and would discard them.'
       );
     }
   }

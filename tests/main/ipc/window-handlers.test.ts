@@ -425,6 +425,24 @@ describe('window:setView (card ↔ Project View morph)', () => {
     expect(win.setAlwaysOnTop).toHaveBeenLastCalledWith(true);
   });
 
+  it('keeps the ORIGINAL card bounds across a workflow re-open in the view', () => {
+    // Given: a window already in the Project View (the workflow switcher
+    // re-opens the view with the other workflow, issuing a second request)
+    const win = fakeViewWindow(CARD_BOUNDS);
+    const handler = install(win);
+    handler({ sender: {} }, 'projectView');
+    win.getBounds.mockReturnValue({ x: 140, y: 35, width: 1220, height: 840 });
+    handler({ sender: {} }, 'projectView');
+    win.setBounds.mockClear();
+
+    // When: morphing back to the card
+    handler({ sender: {} }, 'card');
+
+    // Then: the FIRST transition's card bounds return — never the review
+    // footprint the second request happened to observe
+    expect(win.setBounds).toHaveBeenCalledWith(CARD_BOUNDS);
+  });
+
   it('leaves the bounds alone on a card request with nothing to restore', () => {
     // Given: a window that never entered the Project View
     const win = fakeViewWindow(CARD_BOUNDS);

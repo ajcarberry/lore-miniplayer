@@ -611,6 +611,20 @@ export async function acceptTheirs(page: Page, filePath: string): Promise<void> 
     .click();
 }
 
+// The main window's real OS-level bounds, read from the main process — the
+// morphs are asserted against actual window geometry, not just DOM state.
+export async function mainWindowBounds(
+  app: ElectronApplication
+): Promise<{ x: number; y: number; width: number; height: number }> {
+  return app.evaluate(({ BrowserWindow }) => {
+    const win = BrowserWindow.getAllWindows()[0];
+    if (!win) {
+      throw new Error('no window');
+    }
+    return win.getBounds();
+  });
+}
+
 // Choose a workflow in the Project View's header switcher. Clicks the
 // segment LABEL — Mantine visually hides the radio input itself, so the
 // input is never clickable. Scoped to the view (the card is hidden but

@@ -21,6 +21,14 @@ if (testUserDataOverride) {
   app.setPath('userData', testUserDataOverride);
 }
 
+// E2e harness flag: never show the window and (on macOS) no dock icon, so
+// test runs don't flash UI or steal focus. Dock hidden before
+// app.whenReady() to avoid the launch bounce.
+const isHiddenTestMode = process.env['LORE_MINIPLAYER_E2E_HIDDEN'] === '1';
+if (isHiddenTestMode && process.platform === 'darwin') {
+  app.dock?.hide();
+}
+
 // Log instance will be initialized with dynamic import
 let log: MainLogger;
 
@@ -125,6 +133,7 @@ async function createWindow(): Promise<void> {
     width: COLLAPSED_WINDOW_SIZE.width,
     height: COLLAPSED_WINDOW_SIZE.height,
     ...(position ? { x: position.x, y: position.y } : {}),
+    ...(isHiddenTestMode ? { show: false } : {}),
     resizable: false,
     maximizable: false,
     frame: false,
@@ -142,6 +151,8 @@ async function createWindow(): Promise<void> {
       webSecurity: true,
       allowRunningInsecureContent: false,
       preload: preloadPath,
+      // Never-shown windows otherwise get Chromium timer/rAF throttling.
+      ...(isHiddenTestMode ? { backgroundThrottling: false } : {}),
     },
   });
 

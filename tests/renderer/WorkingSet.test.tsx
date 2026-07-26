@@ -121,4 +121,43 @@ describe('WorkingSet', () => {
     expect(onToggleFile).toHaveBeenCalledTimes(1);
     expect(onToggleFile).toHaveBeenCalledWith('src/deep/nested/dir/changed.ts');
   });
+
+  it('renders no review or merge actions when no handlers are provided', () => {
+    // When: rendering without review/merge handlers
+    renderWorkingSet(baseProps({ files, open: true }));
+
+    // Then: the header carries no review/merge affordances
+    expect(screen.queryByRole('button', { name: 'Review' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Merge' })).not.toBeInTheDocument();
+  });
+
+  it('opens the review workflow from the header without toggling the section', async () => {
+    // Given: a working set with a review handler
+    const user = userEvent.setup();
+    const onReview = jest.fn();
+    const onToggleOpen = jest.fn();
+    renderWorkingSet(baseProps({ files, open: true, onToggleOpen, onReview }));
+
+    // When: clicking the Review action in the header
+    await user.click(screen.getByRole('button', { name: 'Review' }));
+
+    // Then: the review handler fires and the header click does not collapse
+    expect(onReview).toHaveBeenCalledTimes(1);
+    expect(onToggleOpen).not.toHaveBeenCalled();
+  });
+
+  it('opens the merge workflow from the header without toggling the section', async () => {
+    // Given: a working set with review and merge handlers
+    const user = userEvent.setup();
+    const onMerge = jest.fn();
+    const onToggleOpen = jest.fn();
+    renderWorkingSet(baseProps({ files, open: true, onToggleOpen, onReview: jest.fn(), onMerge }));
+
+    // When: clicking the Merge action in the header
+    await user.click(screen.getByRole('button', { name: 'Merge' }));
+
+    // Then: the merge handler fires and the header click does not collapse
+    expect(onMerge).toHaveBeenCalledTimes(1);
+    expect(onToggleOpen).not.toHaveBeenCalled();
+  });
 });

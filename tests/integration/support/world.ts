@@ -1,5 +1,5 @@
 // Setup helpers for the integration suites.
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { startLoreServer, isolatedHomeEnv, type LoreTestServer } from '../harness/server';
@@ -98,6 +98,11 @@ export interface SecondClient {
   readonly workdir: string;
   // Write, stage, commit, and push in one call.
   commitAndPush(files: SeedFiles, message: string): Promise<void>;
+  // Sync this working copy to the current branch's latest server state, then
+  // read and return `relPath`'s content — an honest way to assert a landing
+  // reached this client too (mirrors merge-land.test.ts's fresh-clone check,
+  // but reuses this existing clone via `lore sync` instead of cloning again).
+  syncAndRead(relPath: string): Promise<string>;
 }
 
 // Clone `repoUrl` into a separate working dir as a second user, able to move
@@ -117,7 +122,12 @@ export async function secondClient(
     await server.lore(['push', '--repository', workdir]);
   };
 
-  return { workdir, commitAndPush };
+  const syncAndRead = async (relPath: string): Promise<string> => {
+    await server.lore(['sync', '--repository', workdir]);
+    return readFile(join(workdir, relPath), 'utf8');
+  };
+
+  return { workdir, commitAndPush, syncAndRead };
 }
 
 // A small text mesh manifest and a binary texture: realistic asset shapes

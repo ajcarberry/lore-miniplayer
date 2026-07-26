@@ -1,5 +1,15 @@
 import type { ReactElement } from 'react';
-import { Box, Checkbox, Collapse, Group, Loader, ScrollArea, Stack, Text } from '@mantine/core';
+import {
+  Box,
+  Button,
+  Checkbox,
+  Collapse,
+  Group,
+  Loader,
+  ScrollArea,
+  Stack,
+  Text,
+} from '@mantine/core';
 import { IconChevronDown } from '@tabler/icons-react';
 
 export interface WorkingSetFile {
@@ -14,6 +24,12 @@ export interface WorkingSetProps {
   readonly onToggleOpen: () => void;
   readonly onToggleFile: (path: string) => void;
   readonly isLoading: boolean;
+  // Open the review window's commit workflow over the selected repository;
+  // omitted while no repository is on disk (clone pending).
+  readonly onReview?: () => void;
+  // Open the review window's merge workflow; omitted when the branch has no
+  // distinct merge target.
+  readonly onMerge?: () => void;
 }
 
 // Splits a relative path into its dimmed directory prefix (including the
@@ -79,6 +95,8 @@ export function WorkingSet({
   onToggleOpen,
   onToggleFile,
   isLoading,
+  onReview,
+  onMerge,
 }: WorkingSetProps): ReactElement {
   const stagedCount = files.filter(file => file.staged).length;
   const meta = isLoading
@@ -102,6 +120,30 @@ export function WorkingSet({
             Working Set
           </Text>
           <Group gap={6} wrap='nowrap'>
+            {onReview && (
+              <Button
+                size='compact-xs'
+                variant='subtle'
+                onClick={event => {
+                  event.stopPropagation();
+                  onReview();
+                }}
+              >
+                Review
+              </Button>
+            )}
+            {onMerge && (
+              <Button
+                size='compact-xs'
+                variant='subtle'
+                onClick={event => {
+                  event.stopPropagation();
+                  onMerge();
+                }}
+              >
+                Merge
+              </Button>
+            )}
             <Text size='xs' c='dimmed'>
               {meta}
             </Text>

@@ -10,6 +10,8 @@ import type { SyncActionsState } from '../hooks/useSyncActions';
 import type { FileStagingState } from '../hooks/useFileStaging';
 import { WorkingSet } from './WorkingSet';
 import type { WorkingSetFile } from './WorkingSet';
+import { requestOpenReviewWindow } from './review/openReview';
+import type { ReviewWorkflowMode } from '../../shared/types';
 import { HistorySection } from './HistorySection';
 import { PlayerHeader } from './PlayerHeader';
 import { BranchSwitcher } from './BranchSwitcher';
@@ -183,6 +185,29 @@ export function SyncView({
   const branchGraph = graph.graph;
   const revisions = branchGraph.branch.revisions;
   const [selectedRevisionIndex, setSelectedRevisionIndex] = useSelectedRevisionIndex(revisions);
+
+  // The review window's entry points. The merge target is the branch's parent
+  // lane when the graph resolves one, else the server's default branch; Merge
+  // is offered only when that target is a different branch.
+  const selectedRepo = repos.selectedRepo;
+  const mergeTarget =
+    branchGraph.parent?.name ?? branches.branches.find(branch => branch.isDefault)?.name ?? 'main';
+  const canReview = selectedRepo !== null && !showClone;
+  const openReview = useCallback(
+    (workflow: ReviewWorkflowMode): void => {
+      if (selectedRepo === null) {
+        return;
+      }
+      requestOpenReviewWindow({
+        repository: selectedRepo,
+        branchName: branches.currentBranch,
+        currentRevision: branchGraph.current,
+        targetBranch: mergeTarget,
+        workflow,
+      });
+    },
+    [selectedRepo, branches.currentBranch, branchGraph.current, mergeTarget]
+  );
   // Push refreshes branch divergence on success — it typically flips from
   // "out of sync" to "up to date".
   const handlePush = useCallback(async (): Promise<void> => {
@@ -236,6 +261,10 @@ export function SyncView({
         onToggleOpen={onToggleWorkingSetOpen}
         onToggleFile={onToggleFile}
         isLoading={fileStaging.isLoadingFiles}
+        {...(canReview ? { onReview: () => openReview('commit') } : {})}
+        {...(canReview && mergeTarget !== branches.currentBranch
+          ? { onMerge: () => openReview('merge') }
+          : {})}
       />
       {!showClone && (
         <HistorySection

@@ -511,7 +511,10 @@ export async function selectCompareEndpoint(
 ): Promise<void> {
   const ariaLabel = endpoint === 'source' ? 'Change compare source' : 'Change compare target';
   await page.getByLabel(ariaLabel).click();
-  await page.getByRole('menuitem', { name: label }).click();
+  // .last(): a just-closed sibling menu's DOM can linger through its close
+  // transition, briefly duplicating revision items; portals mount in open
+  // order, so the newest menu is last.
+  await page.getByRole('menuitem', { name: label }).last().click();
 }
 
 // Stage/unstage a review file-list row via its checkbox (FileList.tsx;

@@ -163,8 +163,14 @@ interface ConstellationTimelineProps {
   readonly onSelect: (index: number) => void;
 }
 
-// The parent lane's rendered window: from the branch point onward (newest →
-// branch point), with pre-fork history elided. When the branch point isn't in
+// The parent lane's rendered window. When the parent has advanced past the
+// branch point (bpIdx > 0), show only its post-fork commits down to the branch
+// point — the shared pre-fork trunk is elided, since it already rides the
+// child ledger. When the parent has NOT advanced (its tip IS the branch point,
+// the normal case for a freshly created branch), there are no post-fork
+// commits to show, so render the parent trunk rather than collapsing the lane
+// to the single fork node — otherwise the constellation reads as a single
+// lane and the parent's lane appears missing. When the branch point isn't in
 // the walked window, render the walked parent revisions as-is.
 function parentWindow(parent: BranchGraphParentLane): {
   parentNodes: RevisionSummary[];
@@ -172,10 +178,10 @@ function parentWindow(parent: BranchGraphParentLane): {
   bpNodeIdx: number;
 } {
   const bpIdx = parent.revisions.findIndex(revision => revision.revision === parent.branchPoint);
-  const parentNodes = bpIdx >= 0 ? parent.revisions.slice(0, bpIdx + 1) : parent.revisions;
+  const parentNodes = bpIdx > 0 ? parent.revisions.slice(0, bpIdx + 1) : parent.revisions;
   return {
     parentNodes,
-    hasElidedBefore: bpIdx >= 0 && bpIdx + 1 < parent.revisions.length,
+    hasElidedBefore: bpIdx > 0 && bpIdx + 1 < parent.revisions.length,
     bpNodeIdx: parentNodes.findIndex(revision => revision.revision === parent.branchPoint),
   };
 }
@@ -201,10 +207,12 @@ export function ConstellationTimeline({
   const childNodes = revisions;
   const { parentNodes, hasElidedBefore, bpNodeIdx } = parentWindow(parent);
 
-  const oldestChildHash = childNodes[childNodes.length - 1]?.revision;
+  // Anchor the shared branch-point node on both lanes (else the child's oldest).
+  const childBpIdx = childNodes.findIndex(r => r.revision === parent.branchPoint);
+  const branchAnchorChild = childBpIdx >= 0 ? parent.branchPoint : childNodes.at(-1)?.revision;
   const branchAnchors: LaneLayoutAnchor[] =
-    bpNodeIdx >= 0 && oldestChildHash !== undefined
-      ? [{ child: oldestChildHash, parent: parent.branchPoint }]
+    bpNodeIdx >= 0 && branchAnchorChild !== undefined
+      ? [{ child: branchAnchorChild, parent: parent.branchPoint }]
       : [];
   const parentNodeHashes = new Set(parentNodes.map(revision => revision.revision));
   const mergeAnchors: LaneLayoutAnchor[] = mergesFromParent
@@ -225,6 +233,9 @@ export function ConstellationTimeline({
   const width = layout.width;
   const oldestChildX = childX[childX.length - 1] ?? EDGE_PADDING_PX;
   const branchPointX = bpNodeIdx >= 0 ? (parentX[bpNodeIdx] ?? EDGE_PADDING_PX) : EDGE_PADDING_PX;
+  // Fork connector's child end: the shared branch-point node (vertical drop),
+  // else the child's oldest node.
+  const forkChildX = childBpIdx >= 0 ? (childX[childBpIdx] ?? oldestChildX) : oldestChildX;
 
   const parentIndexByHash = new Map(parentNodes.map((revision, j) => [revision.revision, j]));
   const mergeSourceByChild = new Map(mergesFromParent.map(pair => [pair.child, pair.parentSource]));
@@ -290,7 +301,7 @@ export function ConstellationTimeline({
               data-testid='branch-connector'
               x1={branchPointX}
               y1={PARENT_CY}
-              x2={oldestChildX}
+              x2={forkChildX}
               y2={CHILD_CY}
               stroke='var(--acc)'
               strokeOpacity={0.5}

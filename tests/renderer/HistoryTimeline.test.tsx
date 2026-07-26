@@ -460,3 +460,102 @@ describe('ConstellationTimeline geometry', () => {
     ).toBeInTheDocument();
   });
 });
+
+describe('ConstellationTimeline for a freshly forked branch (parent not advanced)', () => {
+  // Production shape: assembleBranchGraph feeds the FULL child lineage, which
+  // passes through the branch point and shares the parent's pre-fork trunk.
+  // For a branch newly created from main, main has NOT advanced past the fork —
+  // its tip IS the branch point — so there are no post-fork parent commits.
+
+  function constellation(
+    revisions: RevisionSummary[],
+    parent: BranchGraphParentLane
+  ): ReactElement {
+    return (
+      <ConstellationTimeline
+        branchName='feature/x'
+        revisions={revisions}
+        current=''
+        parent={parent}
+        mergesFromParent={[]}
+        mergesToParent={[]}
+        selectedIndex={0}
+        onSelect={jest.fn()}
+      />
+    );
+  }
+
+  // main r1..r3; the branch point is main's TIP (r3) — parent has not advanced.
+  const notAdvancedParent: BranchGraphParentLane = {
+    name: 'main',
+    branchPoint: 'r3',
+    revisions: [
+      { revision: 'r3', revisionNumber: 3 },
+      { revision: 'r2', revisionNumber: 2 },
+      { revision: 'r1', revisionNumber: 1 },
+    ],
+  };
+
+  function parentCircleCount(container: HTMLElement): number {
+    return container.querySelectorAll('g[data-revision] circle').length;
+  }
+
+  it('renders the parent trunk as a visible multi-node lane, not a single collapsed fork node', () => {
+    // Given: a branch with one own commit atop main's full (shared) lineage
+    const childFull: RevisionSummary[] = [
+      { revision: 'c1', revisionNumber: 4 },
+      { revision: 'r3', revisionNumber: 3 },
+      { revision: 'r2', revisionNumber: 2 },
+      { revision: 'r1', revisionNumber: 1 },
+    ];
+
+    // When: rendering the constellation
+    const { container } = renderWithMantine(constellation(childFull, notAdvancedParent));
+
+    // Then: the parent lane shows main's trunk (3 nodes), not a lone dot — the
+    // user must see the parent's lane, not what reads as a single-lane view
+    expect(parentCircleCount(container)).toBe(3);
+  });
+
+  it('renders the parent trunk even before the branch has any of its own commits', () => {
+    // Given: a fresh branch whose full lineage IS main's lineage (no divergence)
+    const childFull: RevisionSummary[] = [
+      { revision: 'r3', revisionNumber: 3 },
+      { revision: 'r2', revisionNumber: 2 },
+      { revision: 'r1', revisionNumber: 1 },
+    ];
+
+    // When: rendering the constellation
+    const { container } = renderWithMantine(constellation(childFull, notAdvancedParent));
+
+    // Then: the parent lane is still a visible multi-node trunk
+    expect(parentCircleCount(container)).toBe(3);
+  });
+
+  it('anchors the shared branch-point node at one x on both lanes with a vertical fork connector', () => {
+    // Given: a branch with one own commit atop main's shared lineage
+    const childFull: RevisionSummary[] = [
+      { revision: 'c1', revisionNumber: 4 },
+      { revision: 'r3', revisionNumber: 3 },
+      { revision: 'r2', revisionNumber: 2 },
+      { revision: 'r1', revisionNumber: 1 },
+    ];
+
+    // When: rendering the constellation
+    const { container } = renderWithMantine(constellation(childFull, notAdvancedParent));
+
+    // Then: the branch point (r3) sits at the same pixel x on the parent lane
+    // circle and the child lane node, so the trunk stays parallel
+    const parentBranchPoint = container.querySelector('g[data-revision="r3"] circle');
+    const childBranchPoint = screen.getByRole('button', { name: 'Select revision r3' });
+    const parentX = Number(parentBranchPoint?.getAttribute('cx'));
+    const childX = Number(childBranchPoint.querySelector('circle')?.getAttribute('cx'));
+    expect(parentX).toBe(childX);
+
+    // And: the fork connector is a vertical line dropping at that shared x
+    const connector = container.querySelector('[data-testid="branch-connector"]');
+    expect(connector).not.toBeNull();
+    expect(Number(connector?.getAttribute('x1'))).toBe(Number(connector?.getAttribute('x2')));
+    expect(Number(connector?.getAttribute('x1'))).toBe(parentX);
+  });
+});

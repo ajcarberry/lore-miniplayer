@@ -136,6 +136,15 @@ test.describe('Live merge — the branch lands on main', () => {
       branchName
     );
 
+    // The history constellation anchors the fork at one x on both lanes with
+    // a vertical connector (regression: a fresh branch off main's tip used to
+    // misplace the fork against the child lane's oldest node).
+    // (toBeAttached, not toBeVisible: a vertical line has a zero-width
+    // bounding box, which Playwright's visibility check reads as hidden.)
+    const connector = window.getByTestId('branch-connector');
+    await expect(connector).toBeAttached({ timeout: 30_000 });
+    expect(await connector.getAttribute('x1')).toBe(await connector.getAttribute('x2'));
+
     // When: the merge is opened from the card's WorkingSet header
     const review = await openProjectView(window, 'Merge');
 

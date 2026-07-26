@@ -176,6 +176,8 @@ The application uses **electron-log** for structured error logging with automati
 - Supports branch switching, revision sync (specific revisions, reset, force), cloning
 - **Commit operations**: File staging/unstaging (`fileStage`, `fileUnstage`), commit + push
 - **Working directory status**: `repositoryStatus` streams `REPOSITORY_STATUS_FILE` events with staged/dirty/conflict flags
+- **Diff/merge operations**: `fileDiff` drives the review window's compare (`DiffService`); `branchMergeStart/ResolveMine/ResolveTheirs/Abort/Into` drive its merge workflow (`MergeService`, one in-flight merge per checkout — see `merge-registry.ts`)
+- **Review window**: a per-repository secondary `BrowserWindow` (`review.html` entry) opened from the card's WorkingSet header via `review:open`; it pulls its `ReviewOpenRequest` over `review:requestContext` and re-targets on the `review:context` push
 - **Push channels to the renderer**: server notifications (`lore:notification`) and clone progress (`lore:repository:clone-progress`) are one-way `webContents.send` pushes forwarded from service EventEmitter events; payloads cross the bridge as `unknown` and are Zod-validated in the renderer before use
 - **Notice channel to main**: `window:setNoticeActive` is a one-way renderer→main send (Zod-validated boolean) reporting the sync-needed signal; while active, the window skips its unfocused 70% dim so the collapsed pill's notice pulse stays visible (see `attachFocusDimming` in `window-handlers.ts`)
 

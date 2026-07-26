@@ -61,6 +61,28 @@ a live server.
   `getBranchDivergence` reports each state in turn as `user1` commits, pushes,
   and `user2` pushes.
 
+`tests/integration/workflows/diff-compare.test.ts`
+
+- **Revision → revision and revision → working tree against real commits** —
+  `DiffService.compare` reports the right line stats for a committed edit, flags
+  a real binary change via the SDK's sentinel patch, and picks up an uncommitted
+  edit against the working tree.
+- **A >4000-line diff truncates, with lineStats computed pre-truncation** — the
+  patch is cut at `PATCH_TRUNCATION_LINE_CAP` and flagged `truncated`, while
+  `lineStats` still counts the full change.
+
+`tests/integration/workflows/merge-land.test.ts`
+
+- **A clean merge lands the branch on the target** — a fresh clone of `main`
+  sees the merge revision and the branch's content.
+- **Overlapping conflicts land the chosen side** — resolved as mine lands the
+  branch's content on the target; resolved as theirs lands the target's own.
+- **Already-landed and externally-landed branches report nothing left to merge**
+  — `hasChangesToLand` is false whether this app or another client landed them.
+- **A branch with a commit the target lacks still reports work to land**, and
+  **aborting an in-flight merge restores the pre-merge working file and frees a
+  new merge**.
+
 ## Edge cases
 
 Failure modes and boundary conditions.
@@ -71,11 +93,26 @@ Failure modes and boundary conditions.
   merges both sides** — `user1`'s unpushed commit and `user2`'s unrelated pushed
   commit auto-merge; both edits survive.
 - **An overlapping conflict must be visibly surfaced, not reported as a plain
-  staged file** — marked `todo`: it documents a known bug. The SDK surfaces the
-  pending merge (`flagConflict` / `flagConflictUnresolved`, plus
-  `~mine`/`~theirs`/`~base` siblings), but `getFileStatus()` and
-  `LoreFileStatus` drop that flag, so a conflicted file is indistinguishable from
-  an ordinary staged file. The test stays non-blocking until that is fixed.
+  staged file** — formerly a `todo` documenting a known bug; now a real
+  assertion. `getFileStatus()` maps the SDK's `flagConflict*` flags onto
+  `LoreFileStatus.conflict` / `conflictUnresolved` (and the automerged /
+  mine / theirs sub-states), so a pending-merge conflict is distinguishable
+  from an ordinary staged file.
+
+`tests/integration/edge-cases/merge-failure-arcs.test.ts`
+
+- **A refused landing lands nothing at all; the retry lands exactly one merge
+  commit** — no half-landed state on the target.
+- **The user's own staged work is refused by name at start and at completion** —
+  never swept into the merge commit, and never excused by a file the merge
+  itself imported.
+- **A stale on-disk merge (restart, or import-only with no conflict flags) is
+  backed out and re-run cleanly** — a fresh service inheriting one never
+  dead-ends.
+- **A target that moved under the merge fails with an actionable error** and
+  leaves the checkout able to re-merge; **aborting with no merge in progress is
+  a no-op**; **a start request off the checked-out branch is refused before any
+  merge is materialized**.
 
 `tests/integration/edge-cases/sync-reset-force.test.ts`
 
@@ -160,6 +197,36 @@ Reset, repo management, shortcuts (`live-reset-and-mgmt.spec.ts`)
   IPC (`repository:open-in-explorer` / `window:open-terminal`) with the repo path
   (stubbed — asserts the invocation, no external app launches).
 
+Review window — commit workflow (`live-review.spec.ts`)
+- **Compare picker, file rows, staging, and commit → push seen by a second
+  client** — opened from the card's WorkingSet-header Review action: the
+  default compare (current revision → working tree) lists exactly the dirty
+  set with one badge per change kind (M/A/D + binary sentinel), the compare
+  endpoints move across revisions and back, staged state survives full
+  refetches because it lives in Lore, and a commit + push from the review bar
+  is really seen by a second, independent client.
+- **An unresolved conflict refuses staging in the review file list and on the
+  card** — a pending merge after sync replaces the stage checkbox with the ⚠
+  treatment on both surfaces.
+
+Review window — merge workflow (`live-merge.spec.ts`)
+- **A conflicted merge shows both real sides, gates Merge, and lands MINE on
+  main** — opened from the card's Merge action with the checkout on a feature
+  branch; theirs/mine content is read back through the diff bridge, diff3
+  markers really exist on disk, the gate lifts on resolution, and a second
+  client syncing main sees the branch's content; re-opening afterwards reports
+  the branches in sync.
+- **Resolved as THEIRS lands main's own content** — the branch's edit does not
+  win.
+- **Aborting restores the working tree and frees a fresh merge** — cancel keeps
+  the merge, confirm closes the window, restores the pre-merge file, and a new
+  merge starts clean.
+
+Review window — workflow routing (mocked, `review-workflow.spec.ts`)
+- **A commit-workflow request opens the commit view; a merge-workflow request
+  opens the merge view** — the `review:open` seam routes purely on the
+  request's workflow, without a live server.
+
 Notices & progress (`live-server.spec.ts`)
 - **Empty repository shows a clean no-history state** — a zero-revision repo lands
   with "No history yet" and no stuck loader.
@@ -189,4 +256,12 @@ mark `todo`, and file a follow-up):
   the total dirty-file count, but the card's Commit cell accents only when
   something is *staged* — so with unstaged changes the pill signals and the card
   does not (`live-working-set.spec.ts` asserts the actual behavior).
-- **Conflict visibility** (service-layer) — see the E4 `todo` above.
+- **Conflict visibility — fixed.** `getFileStatus()` now maps the SDK's
+  `flagConflict*` flags onto `LoreFileStatus`; the E4 scenario asserts it and
+  the card working set + review file list both render the ⚠ treatment.
+- **Branch-switcher selection can be clobbered by a background refresh.** Every
+  successful branches fetch re-derives `currentBranch` from the checkout
+  (`useBranches.deriveCurrentBranch`), so a just-made switcher selection can
+  silently revert while refreshes are still settling (likeliest right after a
+  clone). Pre-existing card behavior; surfaced while writing the live merge
+  arrangement, which drives the branch switch through the CLI instead.

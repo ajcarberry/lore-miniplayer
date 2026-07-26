@@ -74,11 +74,18 @@ detailed assertions live in the [Scenario catalog](./scenario-catalog.md).
 | Sync notice suspends the unfocused window dim | dim-suspension | `live-server.spec.ts` |
 | Empty repository shows a clean no-history state | empty-repo | `live-server.spec.ts` |
 | Clone progress streams to completion | clone-progress | `live-server.spec.ts` |
+| Open the review window from the card (Review / Merge) | review-commit, merge-mine | `live-review.spec.ts`, `live-merge.spec.ts` |
+| Review compare picker (revision ↔ working tree) | review-commit | `live-review.spec.ts` |
+| Review file rows (badges, binary), stage/unstage, commit, push | review-commit | `live-review.spec.ts` |
+| Conflicted files blocked from staging (card ⚠ + review file list) | review-conflict | `live-review.spec.ts` |
+| Merge with per-file mine/theirs resolution lands on main | merge-mine, merge-theirs | `live-merge.spec.ts` |
+| Abort a merge, restoring the working tree | merge-abort | `live-merge.spec.ts` |
 
 Cosmetic / window-shell (mocked e2e, no live server): theme toggle and card
 anatomy (`card-anatomy.spec.ts`), pill ↔ card morph (`morph.spec.ts`), window
 transparency / opacity / position and the notice-dim plumbing
-(`window-behavior.spec.ts`), and the connect page (`connect-page.spec.ts`).
+(`window-behavior.spec.ts`), the connect page (`connect-page.spec.ts`), and the
+review window's commit/merge workflow routing (`review-workflow.spec.ts`).
 
 ## Adding coverage for a new feature
 

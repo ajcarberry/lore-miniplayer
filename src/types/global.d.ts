@@ -9,6 +9,17 @@ import type {
   LoreFileStatusGroup,
   BranchDivergence,
   BranchGraph,
+  DiffRequest,
+  DiffResponse,
+  ReviewOpenRequest,
+  MergeStartRequest,
+  MergeStartResponse,
+  MergeResolveRequest,
+  MergeResolveResponse,
+  MergeAbortRequest,
+  MergeAbortResponse,
+  MergeCompleteRequest,
+  MergeCompleteResponse,
   Result,
   VoidResult,
 } from '../shared/types';
@@ -58,7 +69,8 @@ declare global {
             targetBranch?: string,
             options?: LoreSyncOptions
           ) => Promise<VoidResult>;
-          commit: (repositoryPath: string, message: string) => Promise<VoidResult>;
+          // Resolves the committed revision hash.
+          commit: (repositoryPath: string, message: string) => Promise<Result<string>>;
           push: (repositoryPath: string) => Promise<VoidResult>;
         };
         files: {
@@ -78,6 +90,26 @@ declare global {
       path: {
         join: (segments: string[]) => Promise<Result<string>>;
         basename: (path: string) => Promise<Result<string>>;
+      };
+      // The review window's compare picker.
+      diff: {
+        compare: (request: DiffRequest) => Promise<Result<DiffResponse>>;
+      };
+      // Review window: open/re-target the per-repository secondary window,
+      // pull the open request on mount, subscribe to re-targets. Push
+      // payloads are validated in the renderer.
+      review: {
+        open: (request: ReviewOpenRequest) => void;
+        requestContext: () => Promise<Result<ReviewOpenRequest>>;
+        onContext: (callback: (request: unknown) => void) => () => void;
+      };
+      // The review window's merge workflow; one merge in flight per
+      // repository.
+      merge: {
+        start: (request: MergeStartRequest) => Promise<Result<MergeStartResponse>>;
+        resolve: (request: MergeResolveRequest) => Promise<Result<MergeResolveResponse>>;
+        abort: (request: MergeAbortRequest) => Promise<Result<MergeAbortResponse>>;
+        complete: (request: MergeCompleteRequest) => Promise<Result<MergeCompleteResponse>>;
       };
     };
   }

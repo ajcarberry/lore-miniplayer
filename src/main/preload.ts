@@ -10,9 +10,21 @@ import type {
   LoreFileStatusGroup,
   BranchDivergence,
   BranchGraph,
+  DiffRequest,
+  DiffResponse,
+  ReviewOpenRequest,
+  MergeStartRequest,
+  MergeStartResponse,
+  MergeResolveRequest,
+  MergeResolveResponse,
+  MergeAbortRequest,
+  MergeAbortResponse,
+  MergeCompleteRequest,
+  MergeCompleteResponse,
   Result,
   VoidResult,
 } from '../shared/types';
+import { IPC_CHANNELS } from '../shared/schemas';
 
 // Expose window control APIs
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -132,12 +144,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
           options
         ) as Promise<VoidResult>;
       },
-      commit: async (repositoryPath: string, message: string): Promise<VoidResult> => {
-        return ipcRenderer.invoke(
-          'lore:repository:commit',
-          repositoryPath,
-          message
-        ) as Promise<VoidResult>;
+      // Resolves the committed revision hash.
+      commit: async (repositoryPath: string, message: string): Promise<Result<string>> => {
+        return ipcRenderer.invoke('lore:repository:commit', repositoryPath, message) as Promise<
+          Result<string>
+        >;
       },
       push: async (repositoryPath: string): Promise<VoidResult> => {
         return ipcRenderer.invoke('lore:repository:push', repositoryPath) as Promise<VoidResult>;
@@ -198,6 +209,63 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     basename: async (path: string): Promise<Result<string>> => {
       return ipcRenderer.invoke('path:basename', { path }) as Promise<Result<string>>;
+    },
+  },
+  // The review window's compare picker.
+  diff: {
+    compare: async (request: DiffRequest): Promise<Result<DiffResponse>> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.diff.compare, request) as Promise<
+        Result<DiffResponse>
+      >;
+    },
+  },
+  // Review window. `open` creates or re-targets the per-repository secondary
+  // window with its workflow + compare preloaded; `requestContext` lets the
+  // window pull its open request on mount; `onContext` subscribes to
+  // re-targets of an already-open window (payload crosses the bridge as
+  // unknown, Zod-validated in the renderer before use).
+  review: {
+    open: (request: ReviewOpenRequest): void => {
+      ipcRenderer.send(IPC_CHANNELS.review.open, request);
+    },
+    requestContext: async (): Promise<Result<ReviewOpenRequest>> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.review.requestContext) as Promise<
+        Result<ReviewOpenRequest>
+      >;
+    },
+    onContext: (callback: (request: unknown) => void): (() => void) => {
+      const listener = (_event: unknown, payload: unknown): void => {
+        callback(payload);
+      };
+      ipcRenderer.on(IPC_CHANNELS.review.context, listener);
+      return (): void => {
+        ipcRenderer.removeListener(IPC_CHANNELS.review.context, listener);
+      };
+    },
+  },
+  // The review window's merge workflow: start a branch→target merge, resolve
+  // conflicts accept-mine/accept-theirs per file, abort, or complete
+  // (commit + push). One merge in flight per repository.
+  merge: {
+    start: async (request: MergeStartRequest): Promise<Result<MergeStartResponse>> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.merge.start, request) as Promise<
+        Result<MergeStartResponse>
+      >;
+    },
+    resolve: async (request: MergeResolveRequest): Promise<Result<MergeResolveResponse>> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.merge.resolve, request) as Promise<
+        Result<MergeResolveResponse>
+      >;
+    },
+    abort: async (request: MergeAbortRequest): Promise<Result<MergeAbortResponse>> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.merge.abort, request) as Promise<
+        Result<MergeAbortResponse>
+      >;
+    },
+    complete: async (request: MergeCompleteRequest): Promise<Result<MergeCompleteResponse>> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.merge.complete, request) as Promise<
+        Result<MergeCompleteResponse>
+      >;
     },
   },
 });

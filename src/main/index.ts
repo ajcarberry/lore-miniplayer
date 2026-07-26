@@ -2,7 +2,8 @@ import { app, BrowserWindow, screen, session } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { registerIpcHandlers } from './ipc/handlers';
-import { attachFocusDimming } from './ipc/window-handlers';
+import { attachFocusDimming, registerReviewWindow } from './ipc/window-handlers';
+import type { SecondaryWindowDeps } from './ipc/window-handlers';
 import { RepositoryService } from './services/repository';
 import { initializeLoreSdk } from './services/lore-sdk';
 import { LoreRepositoryService } from './services/lore-repository';
@@ -177,6 +178,19 @@ app.whenReady().then(async () => {
   // branch→target merge, one in flight per repository.
   const mergeService = new MergeService(log, loreRepositoryService);
   registerIpcHandlers(log, repositoryService, loreRepositoryService, diffService, mergeService);
+
+  // Review window: opened per repository from the card view's Review / Merge
+  // actions with its targets + workflow preloaded; shares the main window's
+  // security wiring (hardenWebContents) via the secondary-window recipe.
+  const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+  const reviewDevServerUrl = app.isPackaged ? undefined : process.env['ELECTRON_RENDERER_URL'];
+  const secondaryWindowDeps: SecondaryWindowDeps = {
+    preloadPath: path.join(moduleDir, '../preload/preload.js'),
+    rendererDir: path.join(moduleDir, '../renderer'),
+    ...(reviewDevServerUrl ? { devServerUrl: reviewDevServerUrl } : {}),
+    harden: win => hardenWebContents(win.webContents, log, reviewDevServerUrl),
+  };
+  registerReviewWindow(log, secondaryWindowDeps);
 
   // Then initialize the services
   await repositoryService.initialize();

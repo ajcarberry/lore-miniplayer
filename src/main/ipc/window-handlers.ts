@@ -1,5 +1,7 @@
 import { ipcMain, BrowserWindow, screen } from 'electron';
+import type { IpcMainInvokeEvent } from 'electron';
 import * as os from 'node:os';
+import * as path from 'node:path';
 import { spawn } from 'node:child_process';
 import {
   COLLAPSED_WINDOW_SIZE,
@@ -8,8 +10,11 @@ import {
   computeExpandedBounds,
 } from '../../shared/window-position';
 import type { Bounds, ExpandAnchor } from '../../shared/window-position';
-import { handleResult } from './result-helpers';
+import { IPC_CHANNELS, ReviewOpenRequestSchema } from '../../shared/schemas';
+import type { Result, ReviewOpenRequest } from '../../shared/types';
+import { failure, handleResult, success } from './result-helpers';
 import { WindowNoticeActiveSchema, WindowOpenTerminalArgsSchema } from './validators';
+import { abortActiveMerge } from '../services/merge-registry';
 import type { MainLogger } from './logger';
 
 // Focus dimming with a notice override. The window dims to 70% opacity when it
@@ -215,5 +220,148 @@ export function registerWindowHandlers(log: MainLogger): void {
 
   handleResult(log, 'window:open-terminal', WindowOpenTerminalArgsSchema, workingDirectory =>
     openTerminal(workingDirectory)
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Secondary windows (Review): normal, movable windows with the app's own
+// frameless TitleBar chrome — NOT the always-on-top ambient pill. One shared
+// chrome + security recipe, parameterized by size, title, and entry html.
+// ---------------------------------------------------------------------------
+
+export interface SecondaryWindowDeps {
+  readonly preloadPath: string;
+  readonly rendererDir: string;
+  readonly devServerUrl?: string;
+  // Security wiring stays with the caller (index.ts owns the logger + dev URL);
+  // applied to every window this factory creates, per security.ts.
+  readonly harden: (win: BrowserWindow) => void;
+}
+
+interface SecondaryWindowOptions {
+  readonly width: number;
+  readonly height: number;
+  readonly title: string;
+  readonly htmlFile: string;
+}
+
+// SECURITY: the webPreferences here (nodeIntegration off, contextIsolation +
+// sandbox on, webSecurity on, no insecure content) and the harden() call are
+// the renderer sandbox for every secondary window — asserted by the window
+// tests; do not weaken.
+function createSecondaryWindow(
+  deps: SecondaryWindowDeps,
+  options: SecondaryWindowOptions
+): BrowserWindow {
+  const win = new BrowserWindow({
+    width: options.width,
+    height: options.height,
+    frame: false,
+    title: options.title,
+    backgroundColor: '#f7f2e7',
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      preload: deps.preloadPath,
+    },
+  });
+  deps.harden(win);
+
+  if (deps.devServerUrl !== undefined) {
+    void win.loadURL(`${deps.devServerUrl}/${options.htmlFile}`);
+  } else {
+    void win.loadFile(path.join(deps.rendererDir, options.htmlFile));
+  }
+  return win;
+}
+
+// ---------------------------------------------------------------------------
+// Review window: a secondary, per-repository window opened from the card
+// view's Review / Merge actions with its targets and workflow preloaded; one
+// instance per repository checkout (keyed by its path).
+// ---------------------------------------------------------------------------
+
+export type ReviewWindowDeps = SecondaryWindowDeps;
+
+// The review layout is 1180px wide; the window adds chrome padding.
+const REVIEW_WINDOW_SIZE = { width: 1220, height: 840 } as const;
+
+// One review window per repository checkout; module-scoped so re-opening the
+// same repository focuses/re-targets rather than duplicating, and so the open
+// request can be handed back to the window on mount (requestContext).
+const reviewWindows = new Map<string, { win: BrowserWindow; request: ReviewOpenRequest }>();
+
+// This window is the only driver of a merge: it starts one on mount and owns
+// resolve/complete/abort. When it closes — or is re-pointed at another workflow,
+// which unmounts the merge view — an in-flight merge would be stranded on disk
+// with no surface able to finish it. Fire-and-forget: window teardown must
+// never wait on, or fail with, the SDK.
+function abortOrphanedMerge(log: MainLogger, repositoryPath: string, operation: string): void {
+  void abortActiveMerge(repositoryPath)
+    .then(aborted => {
+      if (aborted) {
+        log.info("Aborted the review window's merge", { operation, repositoryPath });
+      }
+    })
+    .catch((error: unknown) => {
+      log.error("Failed to abort the review window's merge", { error, operation, repositoryPath });
+    });
+}
+
+export function registerReviewWindow(log: MainLogger, deps: ReviewWindowDeps): void {
+  ipcMain.on(IPC_CHANNELS.review.open, (_event, rawRequest: unknown): void => {
+    const parsed = ReviewOpenRequestSchema.safeParse(rawRequest);
+    if (!parsed.success) {
+      log.error('Invalid review:open payload', {
+        error: parsed.error,
+        rawRequest,
+        operation: IPC_CHANNELS.review.open,
+      });
+      return;
+    }
+    const request = parsed.data;
+
+    // Already open for this repository: re-target the window's workflow/compare
+    // and focus, rather than opening a duplicate (one per repository).
+    const existing = reviewWindows.get(request.repositoryPath);
+    if (existing && !existing.win.isDestroyed()) {
+      if (existing.request.workflow !== request.workflow) {
+        abortOrphanedMerge(log, request.repositoryPath, IPC_CHANNELS.review.open);
+      }
+      reviewWindows.set(request.repositoryPath, { win: existing.win, request });
+      existing.win.webContents.send(IPC_CHANNELS.review.context, request);
+      existing.win.focus();
+      return;
+    }
+
+    const win = createSecondaryWindow(deps, {
+      ...REVIEW_WINDOW_SIZE,
+      title: `Review — ${request.branchName}`,
+      htmlFile: 'review.html',
+    });
+    reviewWindows.set(request.repositoryPath, { win, request });
+
+    win.on('closed', () => {
+      reviewWindows.delete(request.repositoryPath);
+      abortOrphanedMerge(log, request.repositoryPath, 'review:closed');
+    });
+  });
+
+  // The review renderer pulls its open request on mount. The sender's
+  // webContents identifies which window (and thus which stored request) is
+  // asking, so no repository id crosses the query string.
+  ipcMain.handle(
+    IPC_CHANNELS.review.requestContext,
+    (event: IpcMainInvokeEvent): Result<ReviewOpenRequest> => {
+      for (const { win, request } of reviewWindows.values()) {
+        if (!win.isDestroyed() && win.webContents === event.sender) {
+          return success(request);
+        }
+      }
+      return failure('No review context for this window');
+    }
   );
 }

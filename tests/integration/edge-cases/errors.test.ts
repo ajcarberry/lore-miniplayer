@@ -3,7 +3,10 @@ import assert from 'node:assert/strict';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { LoreOperationError, LoreRepositoryService } from '../../../src/main/services/lore-repository';
+import {
+  LoreOperationError,
+  LoreRepositoryService,
+} from '../../../src/main/services/lore-repository';
 import { withServer } from '../support/world';
 
 const FAST_FAILURE_TIMEOUT_MS = 10_000;
@@ -11,7 +14,10 @@ const FAST_FAILURE_TIMEOUT_MS = 10_000;
 // A clean failure: the right error type, a non-empty message, and no raw FFI
 // internals (koffi/segfault/pointer addresses) in the message.
 function expectCleanLoreError(error: unknown): true {
-  assert.ok(error instanceof LoreOperationError, `expected a LoreOperationError, got: ${String(error)}`);
+  assert.ok(
+    error instanceof LoreOperationError,
+    `expected a LoreOperationError, got: ${String(error)}`
+  );
   assert.ok(error.message.length > 0, 'expected a non-empty, useful error message');
   assert.doesNotMatch(
     error.message,

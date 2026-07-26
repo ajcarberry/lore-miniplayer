@@ -1691,7 +1691,11 @@ describe('LoreRepositoryService', () => {
             },
             {
               tag: LoreEventTag.REVISION_HISTORY_ENTRY,
-              data: { revision: forkPoint, revisionNumber: 1, parent: ['', ''] as [string, string] },
+              data: {
+                revision: forkPoint,
+                revisionNumber: 1,
+                parent: ['', ''] as [string, string],
+              },
             },
           ],
         }) as never
@@ -1714,7 +1718,11 @@ describe('LoreRepositoryService', () => {
           events: [
             {
               tag: LoreEventTag.REVISION_HISTORY_ENTRY,
-              data: { revision: forkPoint, revisionNumber: 1, parent: ['', ''] as [string, string] },
+              data: {
+                revision: forkPoint,
+                revisionNumber: 1,
+                parent: ['', ''] as [string, string],
+              },
             },
           ],
         }) as never

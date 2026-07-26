@@ -93,15 +93,16 @@ test('A3-push: a refused landing lands nothing at all, and the retry lands exact
     await setPushProtection(server, scenario.workspacePath, true);
 
     // When: completing while the server refuses to advance the target
-    const failure = await scenario.merge
-      .complete({ repositoryPath: scenario.workspacePath })
-      .then(
-        () => undefined,
-        (error: unknown) => error
-      );
+    const failure = await scenario.merge.complete({ repositoryPath: scenario.workspacePath }).then(
+      () => undefined,
+      (error: unknown) => error
+    );
 
     // Then: a typed error naming the intact workspace merge commit
-    assert.ok(failure instanceof MergeOperationError, `expected a typed error, got ${String(failure)}`);
+    assert.ok(
+      failure instanceof MergeOperationError,
+      `expected a typed error, got ${String(failure)}`
+    );
     assert.match(failure.message, /failed to land/i);
 
     // And: the landing is atomic — nothing was left half-committed on the
@@ -158,7 +159,10 @@ test('staged pre-flight: the user\'s own staged work is refused by name instead 
         () => undefined,
         (error: unknown) => error
       );
-    assert.ok(failure instanceof MergeOperationError, `expected a typed error, got ${String(failure)}`);
+    assert.ok(
+      failure instanceof MergeOperationError,
+      `expected a typed error, got ${String(failure)}`
+    );
     assert.match(failure.message, /other\.txt/);
     assert.match(failure.message, /unstage|commit/i);
     assert.doesNotMatch(failure.message, /staged state/i);
@@ -266,16 +270,17 @@ test('A3-advanced: a target that moved under the merge fails with an actionable 
     );
 
     // When: completing
-    const failure = await scenario.merge
-      .complete({ repositoryPath: scenario.workspacePath })
-      .then(
-        () => undefined,
-        (error: unknown) => error
-      );
+    const failure = await scenario.merge.complete({ repositoryPath: scenario.workspacePath }).then(
+      () => undefined,
+      (error: unknown) => error
+    );
 
     // Then: the error names the cause and the recovery, rather than the
     // internal "unexpected conflict" surprise
-    assert.ok(failure instanceof MergeOperationError, `expected a typed error, got ${String(failure)}`);
+    assert.ok(
+      failure instanceof MergeOperationError,
+      `expected a typed error, got ${String(failure)}`
+    );
     assert.match(
       failure.message,
       /advanced/i,
@@ -328,13 +333,14 @@ test('A3-dirty: unrelated staged work at completion time is refused, never swept
     await service.stageFiles(scenario.workspacePath, [abs(scenario.workspacePath, 'other.txt')]);
 
     // When/Then: completion is refused with a typed error naming the file
-    const failure = await scenario.merge
-      .complete({ repositoryPath: scenario.workspacePath })
-      .then(
-        () => undefined,
-        (error: unknown) => error
-      );
-    assert.ok(failure instanceof MergeOperationError, `expected a typed error, got ${String(failure)}`);
+    const failure = await scenario.merge.complete({ repositoryPath: scenario.workspacePath }).then(
+      () => undefined,
+      (error: unknown) => error
+    );
+    assert.ok(
+      failure instanceof MergeOperationError,
+      `expected a typed error, got ${String(failure)}`
+    );
     assert.match(failure.message, /other\.txt/);
 
     // And: nothing landed — the unrelated content is not on the server
@@ -342,9 +348,7 @@ test('A3-dirty: unrelated staged work at completion time is refused, never swept
     assert.equal(await readFile(join(landedClone, 'other.txt'), 'utf8'), 'untouched\n');
 
     // And: the merge is still in flight — unstaging the file lets it complete
-    await service.unstageFiles(scenario.workspacePath, [
-      abs(scenario.workspacePath, 'other.txt'),
-    ]);
+    await service.unstageFiles(scenario.workspacePath, [abs(scenario.workspacePath, 'other.txt')]);
     const { revision } = await scenario.merge.complete({
       repositoryPath: scenario.workspacePath,
     });
@@ -355,7 +359,7 @@ test('A3-dirty: unrelated staged work at completion time is refused, never swept
   });
 });
 
-test('A3-import: a clean merge that imports a target-only file completes — the merge\'s own staged import is not read as unrelated work', async () => {
+test("A3-import: a clean merge that imports a target-only file completes — the merge's own staged import is not read as unrelated work", async () => {
   await withServer(async ({ server, service }) => {
     const scenario = await seedWorkspace(server, service);
 
@@ -382,7 +386,7 @@ test('A3-import: a clean merge that imports a target-only file completes — the
   });
 });
 
-test('A3-import-dirty: an imported target-only file does not excuse the user\'s own staged work staged alongside it', async () => {
+test("A3-import-dirty: an imported target-only file does not excuse the user's own staged work staged alongside it", async () => {
   await withServer(async ({ server, service }) => {
     const scenario = await seedWorkspace(server, service);
     const user2 = await secondClient(server, scenario.repoUrl, 'user2');
@@ -394,13 +398,14 @@ test('A3-import-dirty: an imported target-only file does not excuse the user\'s 
     await service.stageFiles(scenario.workspacePath, [abs(scenario.workspacePath, 'other.txt')]);
 
     // When/Then: completion is still refused, naming only the user's file
-    const failure = await scenario.merge
-      .complete({ repositoryPath: scenario.workspacePath })
-      .then(
-        () => undefined,
-        (error: unknown) => error
-      );
-    assert.ok(failure instanceof MergeOperationError, `expected a typed error, got ${String(failure)}`);
+    const failure = await scenario.merge.complete({ repositoryPath: scenario.workspacePath }).then(
+      () => undefined,
+      (error: unknown) => error
+    );
+    assert.ok(
+      failure instanceof MergeOperationError,
+      `expected a typed error, got ${String(failure)}`
+    );
     assert.match(failure.message, /other\.txt/);
     assert.doesNotMatch(
       failure.message,
@@ -425,7 +430,10 @@ test('C3: a start request whose sourceBranch is not the checked-out branch is re
         () => undefined,
         (error: unknown) => error
       );
-    assert.ok(failure instanceof MergeOperationError, `expected a typed error, got ${String(failure)}`);
+    assert.ok(
+      failure instanceof MergeOperationError,
+      `expected a typed error, got ${String(failure)}`
+    );
     assert.match(failure.message, /agent\/some-other-branch/);
     assert.match(failure.message, new RegExp(SOURCE_BRANCH));
 

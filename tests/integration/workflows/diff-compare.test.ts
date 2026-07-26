@@ -83,7 +83,11 @@ test('DiffService.compare: truncates a >4000-line diff, with lineStats computed 
     });
     const entry = result.find(f => f.path === 'meshes/giant.mesh');
     assert.ok(entry);
-    assert.equal(entry.truncated, true, `expected the diff to be truncated, got: ${JSON.stringify(entry)}`);
+    assert.equal(
+      entry.truncated,
+      true,
+      `expected the diff to be truncated, got: ${JSON.stringify(entry)}`
+    );
     assert.equal(
       entry.lineStats?.added,
       lineCount,

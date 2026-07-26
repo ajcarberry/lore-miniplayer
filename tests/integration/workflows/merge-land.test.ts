@@ -49,7 +49,11 @@ async function seedWorkspace(
   await writeFile(join(clonePath, 'notes.txt'), 'alpha\nBRANCH-EDIT\ncharlie\n');
   await service.stageFiles(clonePath, [abs(clonePath, 'notes.txt')]);
   await service.commit(clonePath, 'agent edits the cave notes');
-  return { repoUrl: repo.url, workspacePath: clonePath, merge: new MergeService(silentLog, service) };
+  return {
+    repoUrl: repo.url,
+    workspacePath: clonePath,
+    merge: new MergeService(silentLog, service),
+  };
 }
 
 // A third, independent clone — the only honest way to assert a landing: it can
@@ -252,9 +256,7 @@ test('a branch with a commit the target lacks still reports work to land', async
       false
     );
     await writeFile(join(scenario.workspacePath, 'notes.txt'), 'alpha\nSECOND-EDIT\ncharlie\n');
-    await service.stageFiles(scenario.workspacePath, [
-      abs(scenario.workspacePath, 'notes.txt'),
-    ]);
+    await service.stageFiles(scenario.workspacePath, [abs(scenario.workspacePath, 'notes.txt')]);
     await service.commit(scenario.workspacePath, 'more agent edits');
     assert.equal(
       await service.hasRevisionsToLand(scenario.workspacePath, SOURCE_BRANCH, TARGET_BRANCH),

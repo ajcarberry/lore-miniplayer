@@ -601,13 +601,18 @@ describe('MiniPlayer', () => {
       await screen.findByText('On branch');
       await user.click(screen.getByRole('button', { name: 'Repositories' }));
       const picker = await screen.findByRole('dialog', { hidden: true }, { timeout: 8000 });
-      await user.click(await within(picker).findByRole('button', { name: 'Edit MyRepo', hidden: true }));
+      await user.click(
+        await within(picker).findByRole('button', { name: 'Edit MyRepo', hidden: true })
+      );
       await user.type(await screen.findByLabelText(/Repository Name/), '2');
       await user.click(screen.getByRole('button', { name: 'Save Changes' }));
 
       // Then: the failure is surfaced to the user, not just logged
       await waitFor(() =>
-        expect(notifyError).toHaveBeenCalledWith('Update Repository Failed', 'config store is locked')
+        expect(notifyError).toHaveBeenCalledWith(
+          'Update Repository Failed',
+          'config store is locked'
+        )
       );
     });
 
@@ -626,13 +631,18 @@ describe('MiniPlayer', () => {
       await screen.findByText('On branch');
       await user.click(screen.getByRole('button', { name: 'Repositories' }));
       const picker = await screen.findByRole('dialog', { hidden: true }, { timeout: 8000 });
-      await user.click(await within(picker).findByRole('button', { name: 'Edit MyRepo', hidden: true }));
+      await user.click(
+        await within(picker).findByRole('button', { name: 'Edit MyRepo', hidden: true })
+      );
       await user.click(await screen.findByRole('button', { name: 'Delete Repository' }));
       await user.click(await screen.findByRole('button', { name: 'Remove from Lore' }));
 
       // Then: the failure is surfaced to the user, not just logged
       await waitFor(() =>
-        expect(notifyError).toHaveBeenCalledWith('Delete Repository Failed', 'config store is locked')
+        expect(notifyError).toHaveBeenCalledWith(
+          'Delete Repository Failed',
+          'config store is locked'
+        )
       );
     });
 

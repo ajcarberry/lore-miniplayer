@@ -16,6 +16,10 @@ export interface WorkingSetFile {
   readonly path: string;
   readonly kind: 'add' | 'edit';
   readonly staged: boolean;
+  // The SDK's conflict flags, surfaced on the row itself: an unresolved
+  // conflict replaces the stage checkbox with a warning and blocks staging
+  // until it's resolved elsewhere (CLI, review window).
+  readonly conflictUnresolved?: boolean;
 }
 
 export interface WorkingSetProps {
@@ -30,6 +34,12 @@ export interface WorkingSetProps {
   // Open the review window's merge workflow; omitted when the branch has no
   // distinct merge target.
   readonly onMerge?: () => void;
+  // The revision the working set is conflicted against, for the "conflicts
+  // with rN" row message — the branch's current tip, since no per-file
+  // conflict revision is threaded through the status payload. Undefined when
+  // the branch graph hasn't resolved a tip yet. Declared `| undefined` (not
+  // optional) so callers pass it plainly.
+  readonly conflictRevisionNumber: number | undefined;
 }
 
 // Splits a relative path into its dimmed directory prefix (including the
@@ -45,24 +55,48 @@ function splitPath(path: string): { dir: string; filename: string } {
 interface FileRowProps {
   readonly file: WorkingSetFile;
   readonly onToggleFile: (path: string) => void;
+  readonly conflictRevisionNumber: number | undefined;
 }
 
-function FileRow({ file, onToggleFile }: FileRowProps): ReactElement {
+// An unresolved conflict: the stage checkbox becomes a warning glyph and
+// staging is blocked for the row — no onClick/onToggleFile wiring at all,
+// rather than a disabled control a click could still land on.
+function FileRow({ file, onToggleFile, conflictRevisionNumber }: FileRowProps): ReactElement {
   const { dir, filename } = splitPath(file.path);
+  const conflicted = file.conflictUnresolved === true;
+  const conflictLabel =
+    conflictRevisionNumber !== undefined
+      ? `conflicts with r${conflictRevisionNumber}`
+      : 'conflicts';
+
   return (
     <Box
       p='4px 8px'
-      style={{ cursor: 'pointer', borderRadius: '4px' }}
-      onClick={() => onToggleFile(file.path)}
+      style={{ cursor: conflicted ? 'default' : 'pointer', borderRadius: '4px' }}
+      onClick={conflicted ? undefined : (): void => onToggleFile(file.path)}
     >
       <Group gap={6} wrap='nowrap'>
-        <Checkbox
-          size='xs'
-          checked={file.staged}
-          onChange={() => onToggleFile(file.path)}
-          onClick={event => event.stopPropagation()}
-          aria-label={file.path}
-        />
+        {conflicted ? (
+          <Text
+            component='span'
+            size='sm'
+            fw={700}
+            c='red'
+            title='Conflicted — cannot stage until resolved'
+            aria-label='Conflicted — cannot stage until resolved'
+            style={{ width: 16, flexShrink: 0, textAlign: 'center' }}
+          >
+            ⚠
+          </Text>
+        ) : (
+          <Checkbox
+            size='xs'
+            checked={file.staged}
+            onChange={() => onToggleFile(file.path)}
+            onClick={event => event.stopPropagation()}
+            aria-label={file.path}
+          />
+        )}
         <Text
           size='xs'
           fw={700}
@@ -81,6 +115,11 @@ function FileRow({ file, onToggleFile }: FileRowProps): ReactElement {
             {filename}
           </Text>
         </Group>
+        {conflicted && (
+          <Text size='xs' c='red' ff='var(--font-mono)' style={{ flexShrink: 0 }}>
+            {conflictLabel}
+          </Text>
+        )}
       </Group>
     </Box>
   );
@@ -97,6 +136,7 @@ export function WorkingSet({
   isLoading,
   onReview,
   onMerge,
+  conflictRevisionNumber,
 }: WorkingSetProps): ReactElement {
   const stagedCount = files.filter(file => file.staged).length;
   const meta = isLoading
@@ -167,7 +207,12 @@ export function WorkingSet({
             ) : (
               <Stack gap={0}>
                 {files.map(file => (
-                  <FileRow key={file.path} file={file} onToggleFile={onToggleFile} />
+                  <FileRow
+                    key={file.path}
+                    file={file}
+                    onToggleFile={onToggleFile}
+                    conflictRevisionNumber={conflictRevisionNumber}
+                  />
                 ))}
               </Stack>
             )}

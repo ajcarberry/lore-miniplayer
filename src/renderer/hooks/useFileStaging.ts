@@ -7,6 +7,9 @@ export interface FileItem {
   readonly value: string;
   readonly label: string;
   readonly isUntracked: boolean;
+  // The SDK's conflict flag, carried through for the working-set conflict
+  // row — the checkbox becomes a warning and staging is blocked.
+  readonly conflictUnresolved: boolean;
 }
 
 export type TransferListData = [FileItem[], FileItem[]];
@@ -37,6 +40,7 @@ const toItem = (file: LoreFileStatus): FileItem => ({
   value: file.path,
   label: file.path,
   isUntracked: file.isUntracked,
+  conflictUnresolved: file.conflictUnresolved === true,
 });
 
 async function fetchLists(repo: Repository): Promise<TransferListData> {

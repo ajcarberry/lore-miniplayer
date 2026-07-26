@@ -261,6 +261,7 @@ export function SyncView({
         onToggleOpen={onToggleWorkingSetOpen}
         onToggleFile={onToggleFile}
         isLoading={fileStaging.isLoadingFiles}
+        conflictRevisionNumber={revisions[0]?.revisionNumber}
         {...(canReview ? { onReview: () => openReview('commit') } : {})}
         {...(canReview && mergeTarget !== branches.currentBranch
           ? { onMerge: () => openReview('merge') }

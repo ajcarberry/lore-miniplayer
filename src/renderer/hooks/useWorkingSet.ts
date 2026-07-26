@@ -34,11 +34,13 @@ export function useWorkingSet(
         path: file.value,
         kind: (file.isUntracked ? 'add' : 'edit') as WorkingSetFile['kind'],
         staged: true,
+        conflictUnresolved: file.conflictUnresolved,
       })),
       ...unstagedFiles.map(file => ({
         path: file.value,
         kind: (file.isUntracked ? 'add' : 'edit') as WorkingSetFile['kind'],
         staged: false,
+        conflictUnresolved: file.conflictUnresolved,
       })),
     ],
     [stagedFiles, unstagedFiles]

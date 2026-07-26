@@ -222,7 +222,7 @@ describe('registerReviewWindow — orphaned merges', () => {
     return makeRequest({ workflow: 'merge' });
   }
 
-  it('aborts the workspace\'s in-flight merge when the window closes', async () => {
+  it("aborts the workspace's in-flight merge when the window closes", async () => {
     const h = setup();
     const abort = jest.fn(async () => undefined);
     h.openListener({}, mergeRequest());
@@ -273,7 +273,7 @@ describe('registerReviewWindow — orphaned merges', () => {
     await flushMicrotasks();
 
     expect(mockLog.error).toHaveBeenCalledWith(
-      'Failed to abort the review window\'s merge',
+      "Failed to abort the review window's merge",
       expect.objectContaining({ repositoryPath: '/repos/my-repo' })
     );
   });

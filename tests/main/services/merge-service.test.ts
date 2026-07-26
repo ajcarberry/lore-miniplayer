@@ -678,7 +678,10 @@ describe('MergeService', () => {
       mockLore.branchMergeStart.mockReturnValue(fluentMock() as never);
       mockLore.branchMergeInto.mockReturnValue(
         fluentMock({
-          error: loreError(9, 'Target branch to merge into has a newer revision, merge target branch first'),
+          error: loreError(
+            9,
+            'Target branch to merge into has a newer revision, merge target branch first'
+          ),
         }) as never
       );
       lore_.commit.mockResolvedValue('workspace-merge-rev');

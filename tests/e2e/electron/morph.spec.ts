@@ -25,7 +25,10 @@ function windowSize(electronApp: ElectronApplication): Promise<number[]> {
   );
 }
 
-async function connectAndSettleToPill(window: Page, electronApp: ElectronApplication): Promise<void> {
+async function connectAndSettleToPill(
+  window: Page,
+  electronApp: ElectronApplication
+): Promise<void> {
   await window.getByPlaceholder('lores://lore.example.com').fill('lore.example.com');
   await window.getByRole('button', { name: 'Connect' }).click();
   await expect.poll(() => isExpanded(window)).toBe(false);

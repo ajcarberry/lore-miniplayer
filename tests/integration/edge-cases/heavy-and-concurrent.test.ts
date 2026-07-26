@@ -37,12 +37,21 @@ test('heavy-asset clone progress advances by bytes, not file count', async () =>
       `expected every cloneProgress event to reference ${servicePath}`
     );
     const lastProgress = progressEvents[progressEvents.length - 1];
-    assert.equal(lastProgress?.percent, 100, `expected the final progress to reach 100, got: ${JSON.stringify(progressEvents)}`);
+    assert.equal(
+      lastProgress?.percent,
+      100,
+      `expected the final progress to reach 100, got: ${JSON.stringify(progressEvents)}`
+    );
 
     // Raw SDK clone to capture a genuine mid-transfer count for the
     // byte-vs-file-ratio assertion below.
     const rawPath = await mkdtemp(join(tmpdir(), 'lore-heavy-raw-clone-'));
-    const rawCounts: { fileComplete: number; fileCount: number; bytesTransferred: number; bytesTotal: number }[] = [];
+    const rawCounts: {
+      fileComplete: number;
+      fileCount: number;
+      bytesTransferred: number;
+      bytesTotal: number;
+    }[] = [];
     await lore
       .repositoryClone({ repositoryPath: rawPath }, { repositoryUrl: repo.url })
       .callback(event => {
@@ -53,7 +62,8 @@ test('heavy-asset clone progress advances by bytes, not file count', async () =>
       .waitAsync();
 
     const midTransfer = rawCounts.find(
-      count => count.bytesTotal > 0 && count.fileComplete > 0 && count.fileComplete < count.fileCount
+      count =>
+        count.bytesTotal > 0 && count.fileComplete > 0 && count.fileComplete < count.fileCount
     );
     assert.ok(
       midTransfer,

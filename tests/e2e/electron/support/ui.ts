@@ -1,4 +1,4 @@
-import { readdir } from 'node:fs/promises';
+import { readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ElectronApplication, Locator, Page } from '@playwright/test';
 import { test as base, expect } from '@playwright/test';
@@ -11,6 +11,7 @@ import {
   type LoreTestServer,
 } from '../live-server.setup';
 import { writeSeedFiles, type SeedFiles } from '../../../integration/support/world';
+import { isolatedHomeEnv } from '../../../integration/harness/server';
 
 // Page-object helper layer over the live Electron app, so each selector lives in
 // one place. Launch model: workers:1 / fullyParallel:false sustains many
@@ -27,11 +28,27 @@ interface LiveFixtures {
   electronApp: ElectronApplication;
   window: Page;
   server: LoreTestServer;
+  // The isolated $HOME the launched app's FFI reads/writes (see
+  // isolatedFfiHomeEnv), exposed so tests can drive the `lore` CLI against
+  // the app's own clone (its store lives under this HOME).
+  homeDir: string;
 }
 
 export const test = base.extend<LiveFixtures>({
-  electronApp: async ({}, use) => {
-    const { app, userDataDir } = await launchApp(undefined, await isolatedFfiHomeEnv());
+  // Same isolated HOME the electronApp fixture launches with — derived once
+  // here and reconstructed into env vars for the launch, so both fixtures
+  // agree on the same directory.
+  homeDir: async ({}, use) => {
+    const env = await isolatedFfiHomeEnv();
+    const home = env['HOME'];
+    if (home === undefined) {
+      throw new Error('isolatedFfiHomeEnv() did not set HOME');
+    }
+    await use(home);
+    await rm(home, { recursive: true, force: true });
+  },
+  electronApp: async ({ homeDir }, use) => {
+    const { app, userDataDir } = await launchApp(undefined, isolatedHomeEnv(homeDir));
     await use(app);
     await closeAppBounded(app);
     removeTempUserDataDir(userDataDir);
@@ -445,4 +462,139 @@ export async function stubOpenExternals(app: ElectronApplication): Promise<OpenE
     explorerCalls: () => read('explorer'),
     terminalCalls: () => read('terminal'),
   };
+}
+
+// --- Review window -----------------------------------------------------
+
+export type ReviewCardAction = 'Review' | 'Merge';
+
+// Click the card's WorkingSet-header Review/Merge action and await the
+// review window it opens (SyncView preloads the workflow + compare).
+export async function openReviewWindow(
+  electronApp: ElectronApplication,
+  window: Page,
+  action: ReviewCardAction
+): Promise<Page> {
+  const [reviewWindow] = await Promise.all([
+    electronApp.waitForEvent('window'),
+    window.getByRole('button', { name: action, exact: true }).click(),
+  ]);
+  return reviewWindow;
+}
+
+// Change the compare picker's source or target endpoint to the menu item
+// matching `label` (a revision string, "<revision> · <message>", or — target
+// only — "working tree"; see ComparePicker.tsx).
+export async function selectCompareEndpoint(
+  page: Page,
+  endpoint: 'source' | 'target',
+  label: string
+): Promise<void> {
+  const ariaLabel = endpoint === 'source' ? 'Change compare source' : 'Change compare target';
+  await page.getByLabel(ariaLabel).click();
+  await page.getByRole('menuitem', { name: label }).click();
+}
+
+// Stage/unstage a review file-list row via its checkbox (FileList.tsx;
+// unresolved conflicts render a warning icon instead and cannot be staged).
+// Deliberately click + await rather than Locator.check()/uncheck(): the box is
+// a CONTROLLED input whose checked state only flips after the stage IPC round
+// trip resolves, and check() verifies the state immediately after its click
+// with no retry ("Clicking the checkbox did not change its state"). Mirrors
+// the working-set helper's click-then-assert shape.
+export async function stageFileRow(page: Page, relPath: string): Promise<void> {
+  const checkbox = page.getByLabel(`Stage ${relPath}`);
+  await checkbox.click();
+  await expect(checkbox).toBeChecked({ timeout: 30_000 });
+}
+
+export async function unstageFileRow(page: Page, relPath: string): Promise<void> {
+  const checkbox = page.getByLabel(`Stage ${relPath}`);
+  await checkbox.click();
+  await expect(checkbox).not.toBeChecked({ timeout: 30_000 });
+}
+
+// The file-list row's single-letter change-kind badge (M/A/D/R — FileList.tsx's
+// ACTION_BADGE), read the same structural way as the working-set fileKindBadge
+// above.
+export async function fileRowBadge(page: Page, relPath: string): Promise<'A' | 'M' | 'D' | 'R'> {
+  const isBadge =
+    'normalize-space()="A" or normalize-space()="M" or normalize-space()="D" or normalize-space()="R"';
+  const badge = page
+    .getByLabel(`Stage ${relPath}`)
+    .locator(`xpath=ancestor::div[.//p[${isBadge}]][1]//p[${isBadge}]`)
+    .first();
+  const text = (await badge.textContent())?.trim();
+  if (text === 'A' || text === 'M' || text === 'D' || text === 'R') {
+    return text;
+  }
+  throw new Error(`unexpected file-row badge for ${relPath}: ${JSON.stringify(text)}`);
+}
+
+// Fill the commit message and commit (CommitBar.tsx); awaits the bar's swap to
+// its post-commit Push action.
+export async function commitFromReview(page: Page, message: string): Promise<void> {
+  await page.getByLabel('Commit message').fill(message);
+  await page.getByRole('button', { name: 'Commit', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Push', exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
+}
+
+export async function pushFromReview(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Push', exact: true }).click();
+}
+
+// Resolve one side of a conflicted file, scoped to its ConflictBlock
+// (data-testid="conflict-block-<path>" — button text alone is not per-file).
+export async function acceptMine(page: Page, filePath: string): Promise<void> {
+  await page
+    .getByTestId(`conflict-block-${filePath}`)
+    .getByRole('button', { name: 'Accept mine', exact: true })
+    .click();
+}
+
+export async function acceptTheirs(page: Page, filePath: string): Promise<void> {
+  await page
+    .getByTestId(`conflict-block-${filePath}`)
+    .getByRole('button', { name: 'Accept theirs', exact: true })
+    .click();
+}
+
+// The merge workflow's primary action (MergeBar.tsx) — gated on every
+// conflict resolved and the branch actually being ahead of the target.
+export async function completeMerge(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Merge', exact: true }).click();
+}
+
+interface AbortMergeOptions {
+  // Default true: confirms the "Discard merge?" modal. false clicks "Keep
+  // merging" instead, cancelling the abort.
+  readonly confirm?: boolean;
+}
+
+export async function abortMerge(page: Page, options: AbortMergeOptions = {}): Promise<void> {
+  await page.getByRole('button', { name: 'Abort', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Discard this merge?' });
+  await expect(dialog).toBeVisible();
+  if (options.confirm ?? true) {
+    await dialog.getByRole('button', { name: 'Discard merge', exact: true }).click();
+  } else {
+    await dialog.getByRole('button', { name: 'Keep merging', exact: true }).click();
+  }
+}
+
+// Whether the merge workflow's primary action is currently clickable.
+export async function mergeGateEnabled(page: Page): Promise<boolean> {
+  return page.getByRole('button', { name: 'Merge', exact: true }).isEnabled();
+}
+
+// The landed-merge line ("Landed <rev> on <target>" — MergeBar.tsx), or null
+// before the merge completes.
+export async function landedBannerText(page: Page): Promise<string | null> {
+  const banner = page.getByText(/^Landed .* on /);
+  if ((await banner.count()) === 0) {
+    return null;
+  }
+  return ((await banner.first().textContent()) ?? '').trim();
 }

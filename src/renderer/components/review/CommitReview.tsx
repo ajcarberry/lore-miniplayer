@@ -19,6 +19,8 @@ import { composeReviewFiles, compareTargetLabel } from './reviewModel';
 
 export interface CommitReviewProps {
   readonly request: ReviewOpenRequest;
+  // Morph back to the card.
+  readonly onExit: () => void;
 }
 
 const EMPTY_STATUS: LoreFileStatusGroup = { untracked: [], unstaged: [], staged: [] };
@@ -149,6 +151,7 @@ export function CommitReview(props: CommitReviewProps): ReactElement {
   return (
     <Stack gap={0} style={{ flex: 1, minHeight: 0 }}>
       <ReviewHeader
+        onBack={props.onExit}
         title={`Review — ${request.branchName}`}
         eyebrow={repositoryName ? `${repositoryName} · ${request.branchName}` : request.branchName}
         right={<ComparePicker compare={compare} revisions={revisions} onChange={setCompare} />}

@@ -4,7 +4,6 @@ import {
   resolveMergeTarget,
 } from '../../src/renderer/components/SyncView';
 import type { ReviewEntryInputs, TransportInputs } from '../../src/renderer/components/SyncView';
-import { installMockElectronAPI } from '../mocks/electron-api';
 import type { Repository } from '../../src/shared/types';
 
 function baseInputs(overrides: Partial<TransportInputs> = {}): TransportInputs {
@@ -118,6 +117,7 @@ describe('buildReviewEntryProps', () => {
       mergeTarget: 'main',
       dirtyFileCount: 2,
       hasRevisionsToLand: true,
+      openProjectView: jest.fn(),
       ...overrides,
     };
   }
@@ -171,16 +171,14 @@ describe('buildReviewEntryProps', () => {
   });
 
   it('opens the merge workflow toward the resolved target', () => {
-    // Given: the review bridge is observable
-    installMockElectronAPI();
-    const open = jest.fn();
-    Object.assign(window.electronAPI, { review: { open } });
+    // Given: an observable opener callback
+    const openProjectView = jest.fn();
 
     // When: opening the merge workflow
-    buildReviewEntryProps(baseEntryInputs({ mergeTarget: 'trunk' })).onMerge?.();
+    buildReviewEntryProps(baseEntryInputs({ mergeTarget: 'trunk', openProjectView })).onMerge?.();
 
-    // Then: the request targets the resolved branch's head
-    expect(open).toHaveBeenCalledWith(
+    // Then: the built request targets the resolved branch's head
+    expect(openProjectView).toHaveBeenCalledWith(
       expect.objectContaining({
         workflow: 'merge',
         compare: {
@@ -192,17 +190,15 @@ describe('buildReviewEntryProps', () => {
   });
 
   it('opens the commit workflow over the selected repository', () => {
-    // Given: the review bridge is observable
-    installMockElectronAPI();
-    const open = jest.fn();
-    Object.assign(window.electronAPI, { review: { open } });
+    // Given: an observable opener callback
+    const openProjectView = jest.fn();
 
     // When: opening the review (commit) workflow
-    buildReviewEntryProps(baseEntryInputs()).onReview?.();
+    buildReviewEntryProps(baseEntryInputs({ openProjectView })).onReview?.();
 
-    // Then: the request addresses the repository by path with the commit
-    // compare preloaded
-    expect(open).toHaveBeenCalledWith(
+    // Then: the built request addresses the repository by path with the
+    // commit compare preloaded
+    expect(openProjectView).toHaveBeenCalledWith(
       expect.objectContaining({
         repositoryPath: '/repos/my-repo',
         branchName: 'feat/topic',

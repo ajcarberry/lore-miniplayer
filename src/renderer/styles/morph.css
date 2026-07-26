@@ -101,6 +101,46 @@
   pointer-events: none;
 }
 
+/* Card <-> Project View morph: the Project View fills the window and
+   crossfades with the card while main resizes the window between the card and
+   review footprints (window:setView). It draws its own paper ground — the
+   window is transparent — with the card's radius and shadow language. */
+.morph-project-view {
+  position: absolute;
+  inset: 0;
+  background: var(--paper);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: var(--mantine-shadow-md);
+  opacity: 0;
+  transform: scale(0.985);
+  pointer-events: none;
+  transition:
+    opacity 0.3s ease,
+    transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.morph-root[data-project-view='true'] .morph-project-view {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.morph-root[data-project-view='true'] .morph-card {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Once the crossfade has run, the card leaves the accessibility tree and tab
+   order too — the Project View owns the window; the card's controls must not
+   be reachable underneath it. Sequenced by a renderer timer
+   (data-card-hidden), NOT a CSS transition delay: transition clocks stall in
+   the transparent window right after the review resize (observed live on
+   macOS), so a delayed visibility flip never fires. */
+.morph-root[data-card-hidden='true'] .morph-card {
+  visibility: hidden;
+}
+
 /* Hover peek: a CSS-only affordance that invites the click — a slight grow, a
    deeper lift, and an accent glow. No timers and no partial card reveal. */
 .morph-pill-bar {
@@ -159,6 +199,7 @@
 @media (prefers-reduced-motion: reduce) {
   .morph-card,
   .morph-card-inner > *,
+  .morph-project-view,
   .morph-pill,
   .morph-pill-bar {
     transition: none;

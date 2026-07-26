@@ -5,7 +5,6 @@ import type { LoreRepositoryService } from './lore-repository';
 import type { LoreEventDataOf } from './lore-events';
 import { OperationError, operationHelpers, toRepoAbsolutePath } from './lore-operation';
 import { allStatusFiles, isMergeFile, stagedPaths, unrelatedStagedPaths } from './lore-status';
-import { clearActiveMerge, registerActiveMerge } from './merge-registry';
 import type {
   LoreFileStatus,
   MergeAbortRequest,
@@ -457,16 +456,10 @@ export class MergeService {
 
   private rememberMerge(repositoryPath: string, record: ActiveMerge): void {
     this.activeMerges.set(repositoryPath, record);
-    // Lets the review window abort this merge on close/re-target without
-    // reaching into the service (see merge-registry).
-    registerActiveMerge(repositoryPath, async () => {
-      await this.abort({ repositoryPath });
-    });
   }
 
   private forgetMerge(repositoryPath: string): void {
     this.activeMerges.delete(repositoryPath);
-    clearActiveMerge(repositoryPath);
   }
 
   // Best-effort backout for failure paths: leaves the checkout clean after a

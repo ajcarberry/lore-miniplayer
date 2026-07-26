@@ -24,6 +24,7 @@ interface RenderOptions {
   readonly onEditRepo?: jest.Mock;
   readonly onRefreshRepos?: jest.Mock;
   readonly onChangeServer?: jest.Mock;
+  readonly onOpenProjectView?: jest.Mock;
 }
 
 function renderFooter(options: RenderOptions = {}): {
@@ -32,12 +33,14 @@ function renderFooter(options: RenderOptions = {}): {
   onEditRepo: jest.Mock;
   onRefreshRepos: jest.Mock;
   onChangeServer: jest.Mock;
+  onOpenProjectView: jest.Mock;
 } {
   const onSelectRepo = options.onSelectRepo ?? jest.fn();
   const onAddRepo = options.onAddRepo ?? jest.fn();
   const onEditRepo = options.onEditRepo ?? jest.fn();
   const onRefreshRepos = options.onRefreshRepos ?? jest.fn();
   const onChangeServer = options.onChangeServer ?? jest.fn();
+  const onOpenProjectView = options.onOpenProjectView ?? jest.fn();
 
   render(
     (
@@ -52,12 +55,13 @@ function renderFooter(options: RenderOptions = {}): {
           onRefreshRepos={onRefreshRepos}
           serverUrl={options.serverUrl ?? 'lores://lore.example.com'}
           onChangeServer={onChangeServer}
+          onOpenProjectView={onOpenProjectView}
         />
       </MantineProvider>
     ) as ReactElement
   );
 
-  return { onSelectRepo, onAddRepo, onEditRepo, onRefreshRepos, onChangeServer };
+  return { onSelectRepo, onAddRepo, onEditRepo, onRefreshRepos, onChangeServer, onOpenProjectView };
 }
 
 describe('UtilityFooter', () => {
@@ -68,6 +72,18 @@ describe('UtilityFooter', () => {
   });
 
   describe('action guards with no repository selected', () => {
+    it('should not open the Project View', async () => {
+      // Given: no selected repository
+      const user = userEvent.setup();
+      const { onOpenProjectView } = renderFooter({ selectedRepo: null });
+
+      // When: clicking Review changes
+      await user.click(screen.getByRole('button', { name: 'Open Project View' }));
+
+      // Then: the opener never fires
+      expect(onOpenProjectView).not.toHaveBeenCalled();
+    });
+
     it('should not open the file explorer', async () => {
       // Given: no selected repository
       const user = userEvent.setup();
@@ -94,6 +110,24 @@ describe('UtilityFooter', () => {
   });
 
   describe('action buttons with a repository selected', () => {
+    it('should always offer the Project View opener, left of the explorer shortcut', async () => {
+      // Given: a selected repository
+      const user = userEvent.setup();
+      const { onOpenProjectView } = renderFooter({ selectedRepo: makeRepository() });
+
+      // Then: the icon renders immediately before Open in File Explorer
+      const buttons = screen.getAllByRole('button');
+      const review = screen.getByRole('button', { name: 'Open Project View' });
+      const explorer = screen.getByRole('button', { name: 'Open in File Explorer' });
+      expect(buttons.indexOf(review)).toBe(buttons.indexOf(explorer) - 1);
+
+      // When: clicking it
+      await user.click(review);
+
+      // Then: the opener fires
+      expect(onOpenProjectView).toHaveBeenCalledTimes(1);
+    });
+
     it('should open the repository in the file explorer', async () => {
       // Given: a selected repository
       const user = userEvent.setup();

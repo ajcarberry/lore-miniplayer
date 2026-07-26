@@ -10,9 +10,14 @@ import type { SyncActionsState } from '../hooks/useSyncActions';
 import type { FileStagingState } from '../hooks/useFileStaging';
 import { WorkingSet } from './WorkingSet';
 import type { WorkingSetFile, WorkingSetProps } from './WorkingSet';
-import { requestOpenReviewWindow } from './review/openReview';
+import { buildReviewOpenRequest } from './review/openReview';
 import { useRevisionsToLand } from '../hooks/useRevisionsToLand';
-import type { LoreBranch, Repository, ReviewWorkflowMode } from '../../shared/types';
+import type {
+  LoreBranch,
+  Repository,
+  ReviewOpenRequest,
+  ReviewWorkflowMode,
+} from '../../shared/types';
 import { HistorySection } from './HistorySection';
 import { PlayerHeader } from './PlayerHeader';
 import { BranchSwitcher } from './BranchSwitcher';
@@ -140,6 +145,8 @@ export interface ReviewEntryInputs {
   // offered only when the branch really carries revisions the target lacks —
   // never a merge that would land nothing.
   readonly hasRevisionsToLand: boolean;
+  // Receives the built open request — the card morphs into the Project View.
+  readonly openProjectView: (request: ReviewOpenRequest) => void;
 }
 
 // The WorkingSet header's Review/Merge entry props. Each entry appears only
@@ -154,13 +161,15 @@ export function buildReviewEntryProps(
     return {};
   }
   const open = (workflow: ReviewWorkflowMode): void =>
-    requestOpenReviewWindow({
-      repository: selectedRepo,
-      branchName,
-      currentRevision,
-      targetBranch: mergeTarget,
-      workflow,
-    });
+    inputs.openProjectView(
+      buildReviewOpenRequest({
+        repository: selectedRepo,
+        branchName,
+        currentRevision,
+        targetBranch: mergeTarget,
+        workflow,
+      })
+    );
   return {
     ...(inputs.dirtyFileCount > 0 ? { onReview: () => open('commit') } : {}),
     ...(mergeTarget !== branchName && inputs.hasRevisionsToLand
@@ -210,6 +219,8 @@ export interface SyncViewProps {
   readonly workingSetOpen: boolean;
   readonly onToggleWorkingSetOpen: () => void;
   readonly onToggleFile: (path: string) => void;
+  // Receives the built open request — the card morphs into the Project View.
+  readonly onOpenProjectView: (request: ReviewOpenRequest) => void;
 }
 
 // The sync view: repository picker, the branch-switcher-anchored header, and
@@ -233,6 +244,7 @@ export function SyncView({
   workingSetOpen,
   onToggleWorkingSetOpen,
   onToggleFile,
+  onOpenProjectView,
 }: SyncViewProps): ReactElement {
   const branchGraph = graph.graph;
   const revisions = branchGraph.branch.revisions;
@@ -254,6 +266,7 @@ export function SyncView({
     mergeTarget,
     dirtyFileCount: workingSetFiles.length,
     hasRevisionsToLand: revisionsToLand.hasRevisionsToLand,
+    openProjectView: onOpenProjectView,
   });
   // Push refreshes branch divergence on success — it typically flips from
   // "out of sync" to "up to date".

@@ -10,7 +10,8 @@ import {
   connect,
   addAndClone,
   writeInClone,
-  openReviewWindow,
+  openProjectView,
+  exitProjectView,
   acceptMine,
   acceptTheirs,
   completeMerge,
@@ -136,7 +137,7 @@ test.describe('Live merge — the branch lands on main', () => {
     );
 
     // When: the merge is opened from the card's WorkingSet header
-    const review = await openReviewWindow(electronApp, window, 'Merge');
+    const review = await openProjectView(window, 'Merge');
 
     // Then: the merge header names both branches, and the conflicted file is
     // listed with BOTH REAL sides — theirs is main's content, mine is the
@@ -192,7 +193,7 @@ test.describe('Live merge — the branch lands on main', () => {
       )
       .toBe(BRANCH_MESH);
 
-    await review.close();
+    await exitProjectView(window);
 
     // And: the card withdraws its Merge entry — the branch has nothing left
     // that main lacks, so a merge that would land nothing is never offered.
@@ -217,7 +218,7 @@ test.describe('Live merge — the branch lands on main', () => {
       branchName
     );
 
-    const review = await openReviewWindow(electronApp, window, 'Merge');
+    const review = await openProjectView(window, 'Merge');
     await expect(review.getByTestId(`conflict-block-${MESH}`)).toBeVisible({ timeout: 60_000 });
 
     // When: main's side is accepted instead
@@ -241,7 +242,7 @@ test.describe('Live merge — the branch lands on main', () => {
       )
       .toBe(MAIN_MESH);
 
-    await review.close();
+    await exitProjectView(window);
   });
 
   test('aborting a conflicted merge restores the working tree and frees a fresh merge', async ({
@@ -260,7 +261,7 @@ test.describe('Live merge — the branch lands on main', () => {
       branchName
     );
 
-    const review = await openReviewWindow(electronApp, window, 'Merge');
+    const review = await openProjectView(window, 'Merge');
     await expect(review.getByTestId(`conflict-block-${MESH}`)).toBeVisible({ timeout: 60_000 });
 
     // When: the abort is asked for and then cancelled, the merge stays
@@ -270,19 +271,24 @@ test.describe('Live merge — the branch lands on main', () => {
     // When: the abort is confirmed
     await abortMerge(review);
 
-    // Then: the window closes itself…
-    await expect.poll(() => review.isClosed(), { timeout: 30_000 }).toBe(true);
+    // Then: the surface morphs back to the card by itself…
+    await expect(window.getByText('Working Set')).toBeVisible({ timeout: 30_000 });
 
     // …and the checkout's working file is the branch's own pre-merge content:
     // no diff3 markers, no main-side content.
     expect(await readFile(join(clonePath, MESH), 'utf8')).toBe(BRANCH_MESH);
 
     // And: the merge can simply be started again — an aborted merge leaves no
-    // orphaned on-disk state to dead-end on.
-    const second = await openReviewWindow(electronApp, window, 'Merge');
+    // orphaned on-disk state to dead-end on. Backing out mid-merge routes
+    // through the same discard confirmation.
+    const second = await openProjectView(window, 'Merge');
     await expect(second.getByTestId(`conflict-block-${MESH}`)).toBeVisible({ timeout: 60_000 });
     await expect(second.getByText('0 of 1 conflicts resolved')).toBeVisible();
 
-    await second.close();
+    await second.getByLabel('Back').click();
+    const dialog = second.getByRole('dialog', { name: 'Discard this merge?' });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: 'Discard merge', exact: true }).click();
+    await expect(window.getByText('Working Set')).toBeVisible({ timeout: 30_000 });
   });
 });

@@ -90,7 +90,6 @@ interface Api {
   abort: jest.Mock;
   complete: jest.Mock;
   compare: jest.Mock;
-  close: jest.Mock;
 }
 
 function installApi(
@@ -165,7 +164,7 @@ function installApi(
     diff: { compare },
   });
 
-  return { start, resolve, abort, complete, compare, close: api.window.close as jest.Mock };
+  return { start, resolve, abort, complete, compare };
 }
 
 function renderView(
@@ -176,8 +175,10 @@ function renderView(
       target: { kind: 'branchHead', branch: TARGET_BRANCH },
     },
   })
-): void {
-  renderWithMantine(<MergeView request={request} />);
+): jest.Mock {
+  const onExit = jest.fn();
+  renderWithMantine(<MergeView request={request} onExit={onExit} />);
+  return onExit;
 }
 
 describe('MergeView — clean merge', () => {
@@ -335,10 +336,10 @@ describe('MergeView — conflicted merge', () => {
 });
 
 describe('MergeView — abort', () => {
-  it('confirms before discarding and closes the window on abort', async () => {
+  it('confirms before discarding and exits to the card on abort', async () => {
     const api = installApi();
     const user = userEvent.setup();
-    renderView();
+    const onExit = renderView();
     await screen.findByRole('button', { name: 'Abort' });
 
     await user.click(screen.getByRole('button', { name: 'Abort' }));
@@ -348,14 +349,33 @@ describe('MergeView — abort', () => {
 
     await user.click(screen.getByRole('button', { name: 'Discard merge' }));
     expect(api.abort).toHaveBeenCalledWith({ repositoryPath: REPOSITORY_PATH });
-    await waitFor(() => expect(api.close).toHaveBeenCalled());
+    await waitFor(() => expect(onExit).toHaveBeenCalled());
+  });
+
+  it('routes Back through the abort confirmation while a merge is live', async () => {
+    const api = installApi();
+    const user = userEvent.setup();
+    const onExit = renderView();
+    await screen.findByRole('button', { name: 'Abort' });
+
+    // When: leaving via the header back control mid-merge
+    await user.click(screen.getByLabelText('Back'));
+
+    // Then: the same discard confirmation gates the exit — leaving would
+    // strand the on-disk merge
+    expect(await screen.findByText('Discard this merge?')).toBeInTheDocument();
+    expect(onExit).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'Discard merge' }));
+    expect(api.abort).toHaveBeenCalledWith({ repositoryPath: REPOSITORY_PATH });
+    await waitFor(() => expect(onExit).toHaveBeenCalled());
   });
 
   it('surfaces an abort failure as an alert', async () => {
     const api = installApi();
     api.abort.mockResolvedValue({ success: false, error: 'abort boom' });
     const user = userEvent.setup();
-    renderView();
+    const onExit = renderView();
     await screen.findByRole('button', { name: 'Abort' });
 
     await user.click(screen.getByRole('button', { name: 'Abort' }));
@@ -365,7 +385,7 @@ describe('MergeView — abort', () => {
         expect.objectContaining({ title: 'Abort failed' })
       )
     );
-    expect(api.close).not.toHaveBeenCalled();
+    expect(onExit).not.toHaveBeenCalled();
   });
 });
 
@@ -413,20 +433,20 @@ describe('MergeView — start failure', () => {
   it('offers an abort so a stranded merge can be cleared from the error state', async () => {
     const api = installApi({ startError: 'A merge is already in progress' });
     const user = userEvent.setup();
-    renderView();
+    const onExit = renderView();
     await screen.findByText('Could not start the merge');
 
     await user.click(screen.getByRole('button', { name: 'Abort merge' }));
 
     expect(api.abort).toHaveBeenCalledWith({ repositoryPath: REPOSITORY_PATH });
-    await waitFor(() => expect(api.close).toHaveBeenCalled());
+    await waitFor(() => expect(onExit).toHaveBeenCalled());
   });
 
-  it('surfaces a failed abort from the error state instead of closing', async () => {
+  it('surfaces a failed abort from the error state instead of exiting', async () => {
     const api = installApi({ startError: 'A merge is already in progress' });
     api.abort.mockResolvedValue({ success: false, error: 'abort boom' });
     const user = userEvent.setup();
-    renderView();
+    const onExit = renderView();
     await screen.findByText('Could not start the merge');
 
     await user.click(screen.getByRole('button', { name: 'Abort merge' }));
@@ -436,7 +456,7 @@ describe('MergeView — start failure', () => {
         expect.objectContaining({ title: 'Abort failed' })
       )
     );
-    expect(api.close).not.toHaveBeenCalled();
+    expect(onExit).not.toHaveBeenCalled();
   });
 });
 

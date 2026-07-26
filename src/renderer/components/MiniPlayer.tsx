@@ -2,7 +2,7 @@ import type { CSSProperties, ReactElement } from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import { Box, Image, Paper, Stack, useComputedColorScheme } from '@mantine/core';
 import LogomarkPath from '/Lore_Icon_White_V1.svg';
-import type { LoreSyncOptions, Repository } from '../../shared/types';
+import type { LoreSyncOptions, Repository, ReviewOpenRequest } from '../../shared/types';
 import type { AccentScheme } from '../../shared/accent';
 import { accentStyleVars } from '../../shared/accent';
 import { useServerConnection } from '../hooks/useServerConnection';
@@ -17,13 +17,16 @@ import { useWorkingSet } from '../hooks/useWorkingSet';
 import { useExpansion } from '../hooks/useExpansion';
 import { useRepositoryNotifications } from '../hooks/useRepositoryNotifications';
 import { useLocalStateWatch } from '../hooks/useLocalStateWatch';
-import { logError } from '../utils/logging';
-import { notifyError } from '../utils/notify';
 import { computeActionSignals } from '../utils/actionSignals';
 import { TitleBar } from './TitleBar';
 import { Pill } from './Pill';
 import { ConnectPage } from './ConnectPage';
 import { UtilityFooter } from './UtilityFooter';
+import { ProjectView } from './review/ProjectView';
+import { useProjectViewMorph } from '../hooks/useProjectViewMorph';
+import { useRepositoryMutations } from '../hooks/useRepositoryMutations';
+import { buildReviewOpenRequest } from './review/openReview';
+import { resolveMergeTarget } from './SyncView';
 import { SyncView } from './SyncView';
 import { PlayerDialogs } from './PlayerDialogs';
 
@@ -50,6 +53,8 @@ interface PlayerCardProps {
   readonly onAddRepo: () => void;
   readonly onEditRepo: (repo: Repository) => void;
   readonly onCollapse: () => void;
+  // Receives the built open request — the card morphs into the Project View.
+  readonly onOpenProjectView: (request: ReviewOpenRequest) => void;
 }
 
 // The full card surface: title bar, the connect page or sync view, and the
@@ -72,6 +77,7 @@ function PlayerCard({
   onAddRepo,
   onEditRepo,
   onCollapse,
+  onOpenProjectView,
 }: PlayerCardProps): ReactElement {
   const colorScheme = useComputedColorScheme('light');
   const currentBranchObj = branches.branches.find(branch => branch.isCurrent);
@@ -136,6 +142,7 @@ function PlayerCard({
                 workingSetOpen={workingSet.workingSetOpen}
                 onToggleWorkingSetOpen={workingSet.toggleWorkingSetOpen}
                 onToggleFile={workingSet.toggleFile}
+                onOpenProjectView={onOpenProjectView}
               />
             </Stack>
           </Box>
@@ -153,6 +160,19 @@ function PlayerCard({
           onRefreshRepos={() => void repos.refresh()}
           serverUrl={server.serverUrl}
           onChangeServer={server.disconnect}
+          onOpenProjectView={() => {
+            if (repos.selectedRepo) {
+              onOpenProjectView(
+                buildReviewOpenRequest({
+                  repository: repos.selectedRepo,
+                  branchName: branches.currentBranch,
+                  currentRevision: graph.graph.current,
+                  targetBranch: resolveMergeTarget(graph.graph.parent?.name, branches.branches),
+                  workflow: 'commit',
+                })
+              );
+            }
+          }}
         />
       )}
     </Paper>
@@ -199,7 +219,6 @@ export function MiniPlayer(): ReactElement {
   });
 
   const [addRepoModalOpened, setAddRepoModalOpened] = useState(false);
-  const [editingRepo, setEditingRepo] = useState<Repository | null>(null);
   const [revisionSyncModalOpened, setRevisionSyncModalOpened] = useState(false);
   const [revisionSyncPrefill, setRevisionSyncPrefill] = useState('');
   const [resetConfirmModalOpened, setResetConfirmModalOpened] = useState(false);
@@ -224,53 +243,6 @@ export function MiniPlayer(): ReactElement {
     [repos, branches]
   );
 
-  const handleUpdateRepository = useCallback(
-    async (updated: Repository): Promise<void> => {
-      const result = await window.electronAPI.repository.update({
-        id: updated.id,
-        name: updated.name,
-        accentHue: updated.accentHue,
-      });
-      if (!result.success) {
-        logError('Failed to update repository', {
-          error: result.error,
-          updated,
-          operation: 'MiniPlayer',
-        });
-        notifyError('Update Repository Failed', result.error);
-        return;
-      }
-      void repos.refresh();
-      if (repos.selectedRepo?.id === updated.id) {
-        repos.selectRepository(updated);
-      }
-      setEditingRepo(null);
-    },
-    [repos]
-  );
-
-  const handleDeleteRepository = useCallback(
-    async (repo: Repository): Promise<void> => {
-      const result = await window.electronAPI.repository.delete(repo.id);
-      if (!result.success) {
-        logError('Failed to delete repository', {
-          error: result.error,
-          repo,
-          operation: 'MiniPlayer',
-        });
-        notifyError('Delete Repository Failed', result.error);
-        return;
-      }
-      void repos.refresh();
-      if (repos.selectedRepo?.id === repo.id) {
-        repos.selectRepository(null);
-        branches.setCurrentBranch('main');
-      }
-      setEditingRepo(null);
-    },
-    [repos, branches]
-  );
-
   const handleSyncWithOptions = useCallback(
     async (options: LoreSyncOptions): Promise<void> => {
       if (await syncActions.syncWithOptions(options)) {
@@ -288,6 +260,8 @@ export function MiniPlayer(): ReactElement {
 
   const isBusy = syncActions.isCloning || syncActions.isSyncing || status.isChecking;
   const morph = useExpansion({ isConnected: server.isConnected });
+  const projectView = useProjectViewMorph(morph.forceCollapse);
+  const repoMutations = useRepositoryMutations(repos, branches);
   const colorScheme = useComputedColorScheme('light');
 
   const signals = computeActionSignals({
@@ -314,6 +288,8 @@ export function MiniPlayer(): ReactElement {
         className='morph-root'
         data-expanded={morph.isExpanded ? 'true' : 'false'}
         data-anchor={morph.anchor}
+        data-project-view={projectView.active ? 'true' : 'false'}
+        data-card-hidden={projectView.cardHidden ? 'true' : 'false'}
       >
         <div className='morph-card'>
           <div className='morph-card-inner'>
@@ -332,11 +308,22 @@ export function MiniPlayer(): ReactElement {
               onSyncToSelected={revision => openRevisionSync(revision)}
               onReset={() => setResetConfirmModalOpened(true)}
               onAddRepo={() => setAddRepoModalOpened(true)}
-              onEditRepo={setEditingRepo}
+              onEditRepo={repoMutations.setEditingRepo}
               onCollapse={morph.forceCollapse}
+              onOpenProjectView={projectView.open}
             />
           </div>
         </div>
+
+        {projectView.request !== null && (
+          <div className='morph-project-view'>
+            <ProjectView
+              request={projectView.request}
+              onExit={projectView.close}
+              onCollapse={projectView.collapseToPill}
+            />
+          </div>
+        )}
 
         {server.isConnected && (
           <div
@@ -365,10 +352,10 @@ export function MiniPlayer(): ReactElement {
         addRepoModalOpened={addRepoModalOpened}
         onCloseAddRepo={() => setAddRepoModalOpened(false)}
         onAddRepository={handleAddRepository}
-        editingRepo={editingRepo}
-        onCloseEdit={() => setEditingRepo(null)}
-        onSaveEdit={repo => void handleUpdateRepository(repo)}
-        onDeleteEdit={repo => void handleDeleteRepository(repo)}
+        editingRepo={repoMutations.editingRepo}
+        onCloseEdit={() => repoMutations.setEditingRepo(null)}
+        onSaveEdit={repo => void repoMutations.handleUpdateRepository(repo)}
+        onDeleteEdit={repo => void repoMutations.handleDeleteRepository(repo)}
         revisionSyncModalOpened={revisionSyncModalOpened}
         revisionSyncPrefill={revisionSyncPrefill}
         onCloseRevisionSync={() => setRevisionSyncModalOpened(false)}

@@ -14,7 +14,10 @@ import {
   toggleStage,
   commit,
   syncToLatest,
-  openReviewWindow,
+  openProjectView,
+  openProjectViewFromFooter,
+  exitProjectView,
+  collapseFromProjectView,
   selectCompareEndpoint,
   stageFileRow,
   unstageFileRow,
@@ -106,7 +109,7 @@ test.describe('Live review — commit workflow', () => {
 
     // When: the review window is opened from the card's WorkingSet header
     // (the Review entry appears once the working set reads dirty)
-    const review = await openReviewWindow(electronApp, window, 'Review');
+    const review = await openProjectView(window, 'Review');
 
     // Then: the default compare (current revision → working tree) lists
     // exactly the dirty set, one row per change kind.
@@ -203,7 +206,15 @@ test.describe('Live review — commit workflow', () => {
       )
       .toBe(EDITED_MESH);
 
-    await review.close();
+    await exitProjectView(window);
+
+    // And: the footer's always-visible opener reaches the same view — even
+    // now, with more dirty files than the one just committed remaining.
+    await openProjectViewFromFooter(window);
+    await expect(review.getByLabel('Commit message')).toBeVisible({ timeout: 20_000 });
+
+    // And: the TitleBar control collapses straight down to the ambient pill.
+    await collapseFromProjectView(window);
   });
 
   test('an unresolved conflict refuses staging in the review file list and on the card', async ({
@@ -248,12 +259,12 @@ test.describe('Live review — commit workflow', () => {
 
     // And: the review window's file list gives the same file the same
     // treatment (deep per-surface coverage lives in jest)
-    const review = await openReviewWindow(electronApp, window, 'Review');
+    const review = await openProjectView(window, 'Review');
     await expect(review.getByLabel(`${conflictPath} has an unresolved conflict`)).toBeVisible({
       timeout: 30_000,
     });
     await expect(review.getByLabel(`Stage ${conflictPath}`)).toHaveCount(0);
 
-    await review.close();
+    await exitProjectView(window);
   });
 });

@@ -468,18 +468,37 @@ export async function stubOpenExternals(app: ElectronApplication): Promise<OpenE
 
 export type ReviewCardAction = 'Review' | 'Merge';
 
-// Click the card's WorkingSet-header Review/Merge action and await the
-// review window it opens (SyncView preloads the workflow + compare).
-export async function openReviewWindow(
-  electronApp: ElectronApplication,
-  window: Page,
-  action: ReviewCardAction
-): Promise<Page> {
-  const [reviewWindow] = await Promise.all([
-    electronApp.waitForEvent('window'),
-    window.getByRole('button', { name: action, exact: true }).click(),
-  ]);
-  return reviewWindow;
+// Click the card's WorkingSet-header Review/Merge action; the card morphs
+// into the Project View in the SAME window (returned for assertion
+// continuity). Awaits the view's Back control so callers see it mounted.
+export async function openProjectView(window: Page, action: ReviewCardAction): Promise<Page> {
+  // Scoped to the card: for ~400ms after a previous exit the dying view is
+  // still in the accessibility tree with its own 'Merge' bar button.
+  await window.locator('.morph-card').getByRole('button', { name: action, exact: true }).click();
+  await expect(window.getByLabel('Back')).toBeVisible({ timeout: 30_000 });
+  return window;
+}
+
+// The footer's always-visible opener (left of Open in File Explorer).
+export async function openProjectViewFromFooter(window: Page): Promise<Page> {
+  await window.getByRole('button', { name: 'Open Project View' }).click();
+  await expect(window.getByLabel('Back')).toBeVisible({ timeout: 30_000 });
+  return window;
+}
+
+// Leave the Project View through its header Back control and await the card
+// taking back over.
+export async function exitProjectView(window: Page): Promise<void> {
+  await window.getByLabel('Back').click();
+  await expect(window.getByText('Working Set')).toBeVisible({ timeout: 30_000 });
+}
+
+// Collapse from the Project View straight to the ambient pill via its
+// TitleBar control (scoped to the view — the hidden card carries the same
+// control until its visibility flips).
+export async function collapseFromProjectView(window: Page): Promise<void> {
+  await window.locator('.morph-project-view').getByLabel('Collapse to pill').click();
+  await expect(window.locator('.morph-pill-bar')).toBeVisible({ timeout: 30_000 });
 }
 
 // Change the compare picker's source or target endpoint to the menu item
@@ -531,18 +550,26 @@ export async function fileRowBadge(page: Page, relPath: string): Promise<'A' | '
   throw new Error(`unexpected file-row badge for ${relPath}: ${JSON.stringify(text)}`);
 }
 
+// The Project View's own subtree. Bar-level role queries must scope here:
+// during the card ↔ view crossfade (the first ~400ms) the card's controls are
+// still in the accessibility tree, so an unscoped 'Merge'/'Commit' button
+// query can hit both surfaces at once.
+function projectView(page: Page): Locator {
+  return page.locator('.morph-project-view');
+}
+
 // Fill the commit message and commit (CommitBar.tsx); awaits the bar's swap to
 // its post-commit Push action.
 export async function commitFromReview(page: Page, message: string): Promise<void> {
   await page.getByLabel('Commit message').fill(message);
-  await page.getByRole('button', { name: 'Commit', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Push', exact: true })).toBeVisible({
+  await projectView(page).getByRole('button', { name: 'Commit', exact: true }).click();
+  await expect(projectView(page).getByRole('button', { name: 'Push', exact: true })).toBeVisible({
     timeout: 30_000,
   });
 }
 
 export async function pushFromReview(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Push', exact: true }).click();
+  await projectView(page).getByRole('button', { name: 'Push', exact: true }).click();
 }
 
 // Resolve one side of a conflicted file, scoped to its ConflictBlock
@@ -564,7 +591,7 @@ export async function acceptTheirs(page: Page, filePath: string): Promise<void> 
 // The merge workflow's primary action (MergeBar.tsx) — gated on every
 // conflict resolved and the branch actually being ahead of the target.
 export async function completeMerge(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Merge', exact: true }).click();
+  await projectView(page).getByRole('button', { name: 'Merge', exact: true }).click();
 }
 
 interface AbortMergeOptions {
@@ -586,7 +613,7 @@ export async function abortMerge(page: Page, options: AbortMergeOptions = {}): P
 
 // Whether the merge workflow's primary action is currently clickable.
 export async function mergeGateEnabled(page: Page): Promise<boolean> {
-  return page.getByRole('button', { name: 'Merge', exact: true }).isEnabled();
+  return projectView(page).getByRole('button', { name: 'Merge', exact: true }).isEnabled();
 }
 
 // The landed-merge line ("Landed <rev> on <target>" — MergeBar.tsx), or null

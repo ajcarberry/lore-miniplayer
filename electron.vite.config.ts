@@ -44,9 +44,7 @@ export default defineConfig({
     build: {
       rollupOptions: {
         input: {
-          index: resolve(__dirname, 'index.html'),
-          // Review window is a second BrowserWindow with its own renderer entry.
-          review: resolve(__dirname, 'review.html')
+          index: resolve(__dirname, 'index.html')
         }
       }
     },

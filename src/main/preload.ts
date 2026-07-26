@@ -12,7 +12,6 @@ import type {
   BranchGraph,
   DiffRequest,
   DiffResponse,
-  ReviewOpenRequest,
   MergeStartRequest,
   MergeStartResponse,
   MergeResolveRequest,
@@ -56,6 +55,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     openTerminal: async (path: string): Promise<VoidResult> => {
       return ipcRenderer.invoke('window:open-terminal', path) as Promise<VoidResult>;
+    },
+    // The card <-> Project View morph: main resizes the window between the
+    // card and review footprints (and toggles always-on-top) while the
+    // renderer crossfades the surfaces.
+    setView: async (view: 'card' | 'projectView'): Promise<void> => {
+      await ipcRenderer.invoke('window:setView', view);
     },
   },
   repository: {
@@ -226,30 +231,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return ipcRenderer.invoke(IPC_CHANNELS.diff.compare, request) as Promise<
         Result<DiffResponse>
       >;
-    },
-  },
-  // Review window. `open` creates or re-targets the per-repository secondary
-  // window with its workflow + compare preloaded; `requestContext` lets the
-  // window pull its open request on mount; `onContext` subscribes to
-  // re-targets of an already-open window (payload crosses the bridge as
-  // unknown, Zod-validated in the renderer before use).
-  review: {
-    open: (request: ReviewOpenRequest): void => {
-      ipcRenderer.send(IPC_CHANNELS.review.open, request);
-    },
-    requestContext: async (): Promise<Result<ReviewOpenRequest>> => {
-      return ipcRenderer.invoke(IPC_CHANNELS.review.requestContext) as Promise<
-        Result<ReviewOpenRequest>
-      >;
-    },
-    onContext: (callback: (request: unknown) => void): (() => void) => {
-      const listener = (_event: unknown, payload: unknown): void => {
-        callback(payload);
-      };
-      ipcRenderer.on(IPC_CHANNELS.review.context, listener);
-      return (): void => {
-        ipcRenderer.removeListener(IPC_CHANNELS.review.context, listener);
-      };
     },
   },
   // The review window's merge workflow: start a branch→target merge, resolve

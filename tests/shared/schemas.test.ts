@@ -752,13 +752,9 @@ describe('Merge IPC request/response schemas', () => {
 });
 
 describe('IPC_CHANNELS', () => {
-  it('declares a unique channel name for every diff/merge/review operation', () => {
+  it('declares a unique channel name for every diff/merge operation', () => {
     // When: flattening every declared channel name
-    const names = [
-      ...Object.values(IPC_CHANNELS.diff),
-      ...Object.values(IPC_CHANNELS.merge),
-      ...Object.values(IPC_CHANNELS.review),
-    ];
+    const names = [...Object.values(IPC_CHANNELS.diff), ...Object.values(IPC_CHANNELS.merge)];
 
     // Then: every name is a non-empty string and no two collide
     expect(names.every(name => typeof name === 'string' && name.length > 0)).toBe(true);

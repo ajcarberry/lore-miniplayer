@@ -3,7 +3,7 @@ jest.mock('@mantine/notifications', () => ({ notifications: { show: jest.fn() } 
 import { notifications } from '@mantine/notifications';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { ReviewWindow } from '../../../src/renderer/components/review/ReviewWindow';
+import { ProjectView } from '../../../src/renderer/components/review/ProjectView';
 import { installMockElectronAPI } from '../../mocks/electron-api';
 import { renderWithMantine } from '../test-utils';
 import { makeReviewRequest, REPO_ID } from './fixtures';
@@ -68,8 +68,6 @@ function status(): LoreFileStatusGroup {
 }
 
 interface Api {
-  requestContext: jest.Mock;
-  onContext: jest.Mock;
   compare: jest.Mock;
   getStatus: jest.Mock;
   stage: jest.Mock;
@@ -78,10 +76,8 @@ interface Api {
   push: jest.Mock;
 }
 
-function installApi(request: ReviewOpenRequest = makeReviewRequest()): Api {
+function installApi(): Api {
   const api = installMockElectronAPI();
-  const requestContext = jest.fn().mockResolvedValue({ success: true, data: request });
-  const onContext = jest.fn().mockReturnValue(jest.fn());
   const compare = jest.fn().mockResolvedValue({ success: true, data: DIFFS });
   const getStatus = jest.fn().mockResolvedValue({ success: true, data: status() });
   const stage = jest.fn().mockResolvedValue({ success: true, data: undefined });
@@ -124,7 +120,6 @@ function installApi(request: ReviewOpenRequest = makeReviewRequest()): Api {
   api.lore.repository.commit = commit;
   api.lore.repository.push = push;
   Object.assign(api, {
-    review: { open: jest.fn(), requestContext, onContext },
     diff: { compare },
     // The merge routing test drives a clean (conflict-free) merge so the merge
     // view renders its header without needing conflict content.
@@ -145,21 +140,25 @@ function installApi(request: ReviewOpenRequest = makeReviewRequest()): Api {
     },
   });
 
-  return { requestContext, onContext, compare, getStatus, stage, unstage, commit, push };
+  return { compare, getStatus, stage, unstage, commit, push };
 }
 
-function renderWindow(): void {
-  renderWithMantine(<ReviewWindow />);
+function renderSurface(
+  request: ReviewOpenRequest = makeReviewRequest(),
+  onExit: () => void = jest.fn(),
+  onCollapse: () => void = jest.fn()
+): void {
+  renderWithMantine(<ProjectView request={request} onExit={onExit} onCollapse={onCollapse} />);
 }
 
-describe('ReviewWindow — commit workflow', () => {
+describe('ProjectView — commit workflow', () => {
   it('renders the three-pane layout from the diff + status snapshot', async () => {
     installApi();
-    renderWindow();
+    renderSurface();
 
     // Title + eyebrow (repo · branch)
     expect(await screen.findByText('Review — feat/topic')).toBeInTheDocument();
-    expect(screen.getByText('emberfall · feat/topic')).toBeInTheDocument();
+    expect(await screen.findByText('emberfall · feat/topic')).toBeInTheDocument();
 
     // File list header aggregates the line stats across files.
     expect(screen.getByText(/4 files · \+16 −11 · stage for commit/)).toBeInTheDocument();
@@ -172,7 +171,7 @@ describe('ReviewWindow — commit workflow', () => {
   it('drives a refetch when the compare picker changes the source revision', async () => {
     const api = installApi();
     const user = userEvent.setup();
-    renderWindow();
+    renderSurface();
     await screen.findByText('encounters.toml');
 
     await user.click(screen.getByLabelText('Change compare source'));
@@ -191,7 +190,7 @@ describe('ReviewWindow — commit workflow', () => {
   it('stages a file through the staging IPC when its checkbox is toggled', async () => {
     const api = installApi();
     const user = userEvent.setup();
-    renderWindow();
+    renderSurface();
     await screen.findByText('big.toml');
 
     // big.toml starts unstaged; checking it stages it.
@@ -205,7 +204,7 @@ describe('ReviewWindow — commit workflow', () => {
 
   it('disables staging for an unresolved conflict, flagging it instead', async () => {
     installApi();
-    renderWindow();
+    renderSurface();
     await screen.findByText('conflict.toml');
 
     // No stage checkbox for the conflicted file; a warning marks it.
@@ -216,7 +215,7 @@ describe('ReviewWindow — commit workflow', () => {
   it('gates Commit on a message and a staged file', async () => {
     installApi();
     const user = userEvent.setup();
-    renderWindow();
+    renderSurface();
     await screen.findByText('encounters.toml');
 
     // A file is staged (encounters.toml) but the message starts empty, so the
@@ -231,7 +230,7 @@ describe('ReviewWindow — commit workflow', () => {
   it('commits the staged files then offers Push', async () => {
     const api = installApi();
     const user = userEvent.setup();
-    renderWindow();
+    renderSurface();
     await screen.findByText('encounters.toml');
 
     await user.type(screen.getByLabelText('Commit message'), 'Balance pass');
@@ -247,7 +246,7 @@ describe('ReviewWindow — commit workflow', () => {
   it('shows binary and truncation notices for the relevant files', async () => {
     installApi();
     const user = userEvent.setup();
-    renderWindow();
+    renderSurface();
     await screen.findByText('loot_tables.bin');
 
     await user.click(screen.getByText('loot_tables.bin'));
@@ -266,7 +265,7 @@ describe('ReviewWindow — commit workflow', () => {
     api.commit.mockResolvedValue({ success: false, error: 'commit boom' });
     api.push.mockResolvedValue({ success: false, error: 'push boom' });
 
-    renderWindow();
+    renderSurface();
 
     // With a failed diff there are no files; the empty diff pane prompts a select.
     expect(await screen.findByText('Select a file to view its diff')).toBeInTheDocument();
@@ -280,7 +279,7 @@ describe('ReviewWindow — commit workflow', () => {
     // commit call fails — the branch the all-fail test above can never reach,
     // because a failed diff leaves nothing staged to commit.
     api.commit.mockResolvedValue({ success: false, error: 'commit boom' });
-    renderWindow();
+    renderSurface();
     await screen.findByText('encounters.toml');
 
     await user.type(screen.getByLabelText('Commit message'), 'Balance pass');
@@ -300,7 +299,7 @@ describe('ReviewWindow — commit workflow', () => {
     const user = userEvent.setup();
     // The commit lands (so Push is offered at all); the push then fails.
     api.push.mockResolvedValue({ success: false, error: 'push boom' });
-    renderWindow();
+    renderSurface();
     await screen.findByText('encounters.toml');
 
     await user.type(screen.getByLabelText('Commit message'), 'Balance pass');
@@ -319,7 +318,7 @@ describe('ReviewWindow — commit workflow', () => {
     const user = userEvent.setup();
     // Diff/status succeed so the list renders, but staging fails.
     api.stage.mockResolvedValue({ success: false, error: 'stage boom' });
-    renderWindow();
+    renderSurface();
     await screen.findByText('big.toml');
 
     await user.click(screen.getByLabelText('Stage big.toml'));
@@ -331,9 +330,10 @@ describe('ReviewWindow — commit workflow', () => {
   });
 });
 
-describe('ReviewWindow — merge workflow routing', () => {
+describe('ProjectView — merge workflow routing', () => {
   it('routes the merge workflow to the merge view without the commit compare picker', async () => {
-    installApi(
+    installApi();
+    renderSurface(
       makeReviewRequest({
         workflow: 'merge',
         compare: {
@@ -342,9 +342,38 @@ describe('ReviewWindow — merge workflow routing', () => {
         },
       })
     );
-    renderWindow();
 
     expect(await screen.findByText('Merge — feat/topic → main')).toBeInTheDocument();
     expect(screen.queryByLabelText('Change compare source')).not.toBeInTheDocument();
+  });
+});
+
+describe('ProjectView — back to the card and down to the pill', () => {
+  it('exits the commit workflow through the header back control', async () => {
+    installApi();
+    const onExit = jest.fn();
+    const user = userEvent.setup();
+    renderSurface(makeReviewRequest(), onExit);
+    await screen.findByText('Review — feat/topic');
+
+    // When: clicking Back in the header
+    await user.click(screen.getByLabelText('Back'));
+
+    // Then: the view hands control back to the card
+    expect(onExit).toHaveBeenCalledTimes(1);
+  });
+
+  it('collapses straight to the pill through the TitleBar control', async () => {
+    installApi();
+    const onCollapse = jest.fn();
+    const user = userEvent.setup();
+    renderSurface(makeReviewRequest(), jest.fn(), onCollapse);
+    await screen.findByText('Review — feat/topic');
+
+    // When: clicking the TitleBar's collapse control
+    await user.click(screen.getByLabelText('Collapse to pill'));
+
+    // Then: the view asks to collapse to the ambient pill
+    expect(onCollapse).toHaveBeenCalledTimes(1);
   });
 });

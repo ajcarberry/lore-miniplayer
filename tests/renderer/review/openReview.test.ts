@@ -1,9 +1,5 @@
-import {
-  buildReviewOpenRequest,
-  requestOpenReviewWindow,
-} from '../../../src/renderer/components/review/openReview';
+import { buildReviewOpenRequest } from '../../../src/renderer/components/review/openReview';
 import type { OpenReviewIntent } from '../../../src/renderer/components/review/openReview';
-import { installMockElectronAPI } from '../../mocks/electron-api';
 import { REPO_ID } from './fixtures';
 import type { Repository } from '../../../src/shared/types';
 
@@ -66,20 +62,5 @@ describe('buildReviewOpenRequest', () => {
       source: { kind: 'branchHead', branch: 'feat/topic' },
       target: { kind: 'branchHead', branch: 'main' },
     });
-  });
-});
-
-describe('requestOpenReviewWindow', () => {
-  it('sends the built request over the review bridge', () => {
-    // Given: the bridge is installed
-    installMockElectronAPI();
-    const open = jest.fn();
-    Object.assign(window.electronAPI, { review: { open } });
-
-    // When: requesting the review window
-    requestOpenReviewWindow(makeIntent());
-
-    // Then: the typed open request crosses the bridge
-    expect(open).toHaveBeenCalledWith(buildReviewOpenRequest(makeIntent()));
   });
 });

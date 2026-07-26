@@ -6,9 +6,9 @@ import type {
   ReviewWorkflowMode,
 } from '../../../shared/types';
 
-// A typed "open the review window" request. The card view's Review / Merge
-// actions emit one of these; requestOpenReviewWindow translates it into the
-// ReviewOpenRequest the review window consumes with its targets + workflow
+// A typed "open the review view" intent. The card's Review / Merge actions
+// emit one of these; buildReviewOpenRequest translates it into the
+// ReviewOpenRequest the review surface consumes with its targets + workflow
 // preloaded.
 export interface OpenReviewIntent {
   readonly repository: Repository;
@@ -39,7 +39,7 @@ function buildCompare(intent: OpenReviewIntent): ReviewCompare {
 }
 
 // The repository's local path is the repositoryPath every diff/status/stage/
-// commit call in the review window targets.
+// commit call in the review surface targets.
 export function buildReviewOpenRequest(intent: OpenReviewIntent): ReviewOpenRequest {
   return {
     repositoryPath: intent.repository.localPath,
@@ -48,9 +48,4 @@ export function buildReviewOpenRequest(intent: OpenReviewIntent): ReviewOpenRequ
     workflow: intent.workflow,
     compare: buildCompare(intent),
   };
-}
-
-// Opens (or re-targets) the review window over the given repository.
-export function requestOpenReviewWindow(intent: OpenReviewIntent): void {
-  window.electronAPI.review.open(buildReviewOpenRequest(intent));
 }

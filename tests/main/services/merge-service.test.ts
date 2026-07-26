@@ -34,7 +34,6 @@ import { MergeService, MergeOperationError } from '../../../src/main/services/me
 import type { LoreRepositoryService } from '../../../src/main/services/lore-repository';
 import type { LoreFileStatus, LoreFileStatusGroup } from '../../../src/shared/types';
 import { MergeStateSchema } from '../../../src/shared/schemas';
-import { abortActiveMerge } from '../../../src/main/services/merge-registry';
 
 const mockLore = lore as jest.Mocked<typeof lore>;
 
@@ -698,23 +697,6 @@ describe('MergeService', () => {
         /No merge is in progress/
       );
       await expect(service.start(startRequest())).resolves.toBeDefined();
-    });
-
-    it('exposes the in-flight merge to the window lifecycle, which aborts it (A2)', async () => {
-      // Given: a merge in flight
-      mockLore.branchMergeStart.mockReturnValue(fluentMock() as never);
-      mockLore.branchMergeAbort.mockReturnValue(fluentMock() as never);
-      await service.start(startRequest());
-
-      // When: the review window closes and asks the registry to abort
-      await expect(abortActiveMerge(REPO)).resolves.toBe(true);
-
-      // Then: the merge was aborted and is no longer in flight
-      expect(mockLore.branchMergeAbort).toHaveBeenCalledWith({ repositoryPath: REPO }, {});
-      await expect(abortActiveMerge(REPO)).resolves.toBe(false);
-      await expect(service.complete({ repositoryPath: REPO })).rejects.toThrow(
-        /No merge is in progress/
-      );
     });
   });
 });

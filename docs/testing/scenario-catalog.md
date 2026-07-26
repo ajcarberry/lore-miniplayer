@@ -197,23 +197,26 @@ Reset, repo management, shortcuts (`live-reset-and-mgmt.spec.ts`)
   IPC (`repository:open-in-explorer` / `window:open-terminal`) with the repo path
   (stubbed — asserts the invocation, no external app launches).
 
-Review window — commit workflow (`live-review.spec.ts`)
+Project View — commit workflow (`live-review.spec.ts`)
 - **Compare picker, file rows, staging, and commit → push seen by a second
-  client** — opened from the card's WorkingSet-header Review action, which
-  appears only once the working set reads dirty (a clean checkout offers no
-  Review entry — asserted first): the default compare (current revision → working tree) lists exactly the dirty
+  client** — the card morphs into the Project View (same window) from the
+  WorkingSet-header Review action, which appears only once the working set
+  reads dirty (a clean checkout offers no Review entry — asserted first): the
+  default compare (current revision → working tree) lists exactly the dirty
   set with one badge per change kind (M/A/D + binary sentinel), the compare
   endpoints move across revisions and back, staged state survives full
   refetches because it lives in Lore, and a commit + push from the review bar
-  is really seen by a second, independent client.
+  is really seen by a second, independent client. The footer's always-visible
+  opener reaches the same view, Back returns to the card, and the TitleBar
+  control collapses straight to the ambient pill.
 - **An unresolved conflict refuses staging in the review file list and on the
   card** — a pending merge after sync replaces the stage checkbox with the ⚠
   treatment on both surfaces.
 
-Review window — merge workflow (`live-merge.spec.ts`)
+Project View — merge workflow (`live-merge.spec.ts`)
 - **A conflicted merge shows both real sides, gates Merge, and lands MINE on
-  main** — opened from the card's Merge action with the checkout on a feature
-  branch; theirs/mine content is read back through the diff bridge, diff3
+  main** — the card morphs into the Project View from its Merge action with
+  the checkout on a feature branch; theirs/mine content is read back through the diff bridge, diff3
   markers really exist on disk, the gate lifts on resolution, and a second
   client syncing main sees the branch's content; afterwards the card withdraws
   the Merge entry — the branch has nothing left that main lacks. The entry
@@ -223,13 +226,9 @@ Review window — merge workflow (`live-merge.spec.ts`)
 - **Resolved as THEIRS lands main's own content** — the branch's edit does not
   win.
 - **Aborting restores the working tree and frees a fresh merge** — cancel keeps
-  the merge, confirm closes the window, restores the pre-merge file, and a new
-  merge starts clean.
-
-Review window — workflow routing (mocked, `review-workflow.spec.ts`)
-- **A commit-workflow request opens the commit view; a merge-workflow request
-  opens the merge view** — the `review:open` seam routes purely on the
-  request's workflow, without a live server.
+  the merge, confirm morphs back to the card by itself, restores the pre-merge
+  file, and a new merge starts clean; backing out of the fresh merge routes
+  through the same discard confirmation.
 
 Notices & progress (`live-server.spec.ts`)
 - **Empty repository shows a clean no-history state** — a zero-revision repo lands

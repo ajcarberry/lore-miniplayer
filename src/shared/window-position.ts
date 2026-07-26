@@ -44,6 +44,9 @@ export type ExpandAnchor = 'bottom' | 'top';
 // edge aligned across the morph.
 export const COLLAPSED_WINDOW_SIZE: WindowSize = { width: 368, height: 108 };
 export const EXPANDED_WINDOW_SIZE: WindowSize = { width: 360, height: 680 };
+// The card ↔ review morph's full footprint (the review layout is 1180px wide
+// plus chrome padding); capped to the display's work area on smaller screens.
+export const REVIEW_VIEW_SIZE: WindowSize = { width: 1220, height: 840 };
 
 // Clamp a single axis so the window stays inside [origin, origin + extent].
 // When the window is larger than the work area on this axis, there is no valid
@@ -115,6 +118,23 @@ export function computeCollapsedBounds(
     width: collapsedSize.width,
     height: collapsedSize.height,
   };
+}
+
+// Compute the review-view bounds from the current (card) bounds: the surface
+// keeps the card's right edge and anchored edge fixed — mirroring the pill →
+// card growth — capped to the work area's extent and clamped fully inside it
+// (unlike the card, the review footprint routinely spans most of a display).
+export function computeReviewBounds(
+  current: Bounds,
+  size: WindowSize,
+  anchor: ExpandAnchor,
+  workArea: WorkArea
+): Bounds {
+  const width = Math.min(size.width, workArea.width);
+  const height = Math.min(size.height, workArea.height);
+  const x = current.x + current.width - width;
+  const y = anchor === 'top' ? current.y : current.y + current.height - height;
+  return { ...clampToWorkArea({ x, y }, { width, height }, workArea), width, height };
 }
 
 export interface Display {

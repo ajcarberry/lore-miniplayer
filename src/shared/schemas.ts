@@ -203,11 +203,12 @@ export const ReviewCompareSchema = z.object({
   target: CompareTargetSchema,
 });
 
-// The typed "open the review window" request the card view's Review / Merge
-// actions emit: the repository to review (its `repositoryPath` is what every
-// diff/status/stage/commit IPC call targets), the branch under review, the
-// workflow that fixes the bottom bar's one contextual action, and the compare
-// picker's preloaded selection.
+// The typed "open the review view" request the card's Review / Merge actions
+// emit (openReview.ts): the repository to review (its `repositoryPath` is
+// what every diff/status/stage/commit IPC call targets), the branch under
+// review, the workflow that fixes the bottom bar's one contextual action, and
+// the compare picker's preloaded selection. Stays in the renderer — the card
+// morphs into the review surface in place.
 export const ReviewOpenRequestSchema = z.object({
   repositoryPath: z.string().min(1),
   repositoryId: RepositorySchema.shape.id,
@@ -247,8 +248,7 @@ export const MergeCompleteRequestSchema = z.object({
 
 // IPC channel names, grouped by domain and colon-namespaced to match the
 // existing 'lore:...' channels declared at their call sites in preload.ts /
-// lore-handlers.ts. `review.context` is a push channel (main -> renderer);
-// every other channel is request/response (invoke) or a one-way renderer send.
+// lore-handlers.ts. Every channel is request/response (invoke).
 export const IPC_CHANNELS = {
   diff: {
     compare: 'diff:compare',
@@ -258,15 +258,5 @@ export const IPC_CHANNELS = {
     resolve: 'merge:resolve',
     abort: 'merge:abort',
     complete: 'merge:complete',
-  },
-  // Review window. `open` (send) creates or focuses the per-repository window
-  // with its targets + workflow preloaded; `requestContext` (invoke) lets the
-  // window pull its open request on mount; `context` is the one-way push
-  // re-delivered when an already-open window is re-targeted (e.g. Merge
-  // pressed while its commit review is open).
-  review: {
-    open: 'review:open',
-    requestContext: 'review:requestContext',
-    context: 'review:context',
   },
 } as const;

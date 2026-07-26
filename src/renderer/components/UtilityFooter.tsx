@@ -16,6 +16,7 @@ import {
   IconCheck,
   IconDeviceDesktop,
   IconEdit,
+  IconFileDiff,
   IconFolderOpen,
   IconFolders,
   IconMoon,
@@ -32,6 +33,9 @@ import { logError } from '../utils/logging';
 import classes from './UtilityFooter.module.css';
 
 interface UtilityFooterProps {
+  // Opens the Project View (the card morphs into it); always visible,
+  // disabled while no repository is selected.
+  readonly onOpenProjectView: () => void;
   readonly selectedRepo: Repository | null;
   readonly repositories: Repository[];
   readonly isLoadingRepos: boolean;
@@ -109,6 +113,7 @@ function RepositoryRow({ repo, isSelected, onSelect, onEdit }: RepositoryRowProp
 // refresh), a server popover for the disconnect flow, and the theme mode
 // menu. Rendered only in the connected view.
 export function UtilityFooter({
+  onOpenProjectView,
   selectedRepo,
   repositories,
   isLoadingRepos,
@@ -151,6 +156,19 @@ export function UtilityFooter({
 
   return (
     <Group justify='center' gap={4} py={6} className={classes.footer}>
+      <Tooltip label='Open Project View'>
+        <ActionIcon
+          variant='subtle'
+          size='lg'
+          className={classes.icon}
+          aria-label='Open Project View'
+          data-disabled={!selectedRepo}
+          onClick={!selectedRepo ? (e): void => e.preventDefault() : onOpenProjectView}
+        >
+          <IconFileDiff size={18} stroke={1.5} />
+        </ActionIcon>
+      </Tooltip>
+
       <Tooltip label='Open in File Explorer'>
         <ActionIcon
           variant='subtle'

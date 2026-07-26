@@ -133,6 +133,41 @@ describe('MiniPlayer', () => {
       expect(await within(picker).findByText('MyRepo')).toBeInTheDocument();
     });
 
+    it('morphs the card into the Project View from the footer opener and back', async () => {
+      // Given: a connected card with a selected repository
+      const repo = makeRepository();
+      (api.repository.list as jest.Mock).mockResolvedValue({ success: true, data: [repo] });
+      (api.lore.repository.listBranches as jest.Mock).mockResolvedValue({
+        success: true,
+        data: [{ name: 'main', isDefault: true, isCurrent: true }],
+      });
+      Object.assign(api, {
+        diff: { compare: jest.fn().mockResolvedValue({ success: true, data: [] }) },
+      });
+
+      const user = userEvent.setup();
+      const { container } = renderMiniPlayer();
+      await screen.findByText('On branch');
+      await waitFor(() => expect(api.lore.repository.listBranches).toHaveBeenCalled());
+
+      // When: opening from the always-visible footer icon
+      await user.click(screen.getByRole('button', { name: 'Open Project View' }));
+
+      // Then: the card morphs into the commit review surface and the window
+      // grows to the review footprint
+      expect(await screen.findByText('Review — main')).toBeInTheDocument();
+      expect(api.window.setView).toHaveBeenCalledWith('projectView');
+      expect(container.querySelector("[data-project-view='true']")).not.toBeNull();
+
+      // When: backing out via the surface's header control
+      await user.click(screen.getByLabelText('Back'));
+
+      // Then: the surface fades out and, after the fold, the window returns
+      // to the card footprint
+      expect(container.querySelector("[data-project-view='true']")).toBeNull();
+      await waitFor(() => expect(api.window.setView).toHaveBeenCalledWith('card'));
+    });
+
     it("should apply the selected repository's accent as inline CSS vars", async () => {
       // Given: a stored repository with the verdigris accent
       const repo = makeRepository({ accentHue: 172 });

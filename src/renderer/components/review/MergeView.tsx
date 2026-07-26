@@ -17,8 +17,40 @@ import { MergeSidebar } from './MergeSidebar';
 import { ReviewHeader } from './ReviewHeader';
 import { useReviewMeta } from './useReviewMeta';
 
+interface MergeStartErrorProps {
+  readonly error: string;
+  readonly aborting: boolean;
+  readonly onAbort: () => void;
+  readonly onExit: () => void;
+}
+
+// The start-failure state. The usual cause is a merge stranded by an earlier
+// session, which only an abort can clear — so it carries one, plus a Back
+// escape to the card.
+function MergeStartError(props: MergeStartErrorProps): ReactElement {
+  return (
+    <Box p='xl'>
+      <Alert color='red' variant='light' title='Could not start the merge'>
+        <Stack gap='sm' align='flex-start'>
+          {props.error}
+          <Group gap='sm'>
+            <Button color='red' variant='light' loading={props.aborting} onClick={props.onAbort}>
+              Abort merge
+            </Button>
+            <Button variant='subtle' onClick={props.onExit}>
+              Back
+            </Button>
+          </Group>
+        </Stack>
+      </Alert>
+    </Box>
+  );
+}
+
 export interface MergeViewProps {
   readonly request: ReviewOpenRequest;
+  // Morph back to the card.
+  readonly onExit: () => void;
 }
 
 // The review window's merge workflow (design 2c). Truthful semantics: the merge
@@ -30,7 +62,7 @@ export interface MergeViewProps {
 // abort / complete. Errors from start and complete surface as Mantine alerts,
 // never silently.
 export function MergeView(props: MergeViewProps): ReactElement {
-  const { request } = props;
+  const { request, onExit } = props;
   const repositoryPath = request.repositoryPath;
   const sourceBranch = request.branchName;
   const targetBranch =
@@ -154,28 +186,33 @@ export function MergeView(props: MergeViewProps): ReactElement {
       .then(result => {
         if (result.success) {
           setAbortConfirmOpen(false);
-          window.electronAPI.window.close();
+          onExit();
         } else {
           notifyError('Abort failed', result.error);
         }
       })
       .finally(() => setAborting(false));
-  }, [repositoryPath]);
+  }, [repositoryPath, onExit]);
+
+  // Back mid-merge routes through the abort confirmation — leaving the view
+  // would strand the on-disk merge with no surface able to finish it. A landed
+  // merge, a merge that never started, or a start error exits directly.
+  const handleBack = useCallback((): void => {
+    if (mergeState !== null && landedRevision === null) {
+      setAbortConfirmOpen(true);
+      return;
+    }
+    onExit();
+  }, [mergeState, landedRevision, onExit]);
 
   if (startError !== null) {
-    // The usual cause is a merge stranded by an earlier session or another
-    // window, which only an abort can clear — so the error state carries one.
     return (
-      <Box p='xl'>
-        <Alert color='red' variant='light' title='Could not start the merge'>
-          <Stack gap='sm' align='flex-start'>
-            {startError}
-            <Button color='red' variant='light' loading={aborting} onClick={handleAbort}>
-              Abort merge
-            </Button>
-          </Stack>
-        </Alert>
-      </Box>
+      <MergeStartError
+        error={startError}
+        aborting={aborting}
+        onAbort={handleAbort}
+        onExit={onExit}
+      />
     );
   }
 
@@ -192,6 +229,7 @@ export function MergeView(props: MergeViewProps): ReactElement {
       {/* Merge header (design 2c): "Merge — <branch> → <target>" with a
           "<repo> · N commits · M conflicts" eyebrow, on the shared shell. */}
       <ReviewHeader
+        onBack={handleBack}
         title={`Merge — ${sourceBranch} → ${targetBranch}`}
         eyebrow={`${repositoryName ? `${repositoryName} · ` : ''}${revisions.length} ${pluralize(revisions.length, 'commit')} · ${conflictCount} ${pluralize(conflictCount, 'conflict')}`}
         icon={<IconGitMerge size={18} color='var(--acc-deep, #7a5b1e)' />}

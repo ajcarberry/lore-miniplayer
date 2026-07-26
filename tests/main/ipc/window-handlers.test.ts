@@ -36,7 +36,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { spawn } from 'node:child_process';
-import { ipcMain, BrowserWindow } from 'electron';
+import { ipcMain, BrowserWindow, screen } from 'electron';
 import {
   attachFocusDimming,
   openTerminal,
@@ -305,5 +305,110 @@ describe('focus dimming with notice override', () => {
       expect.objectContaining({ operation: 'window:setNoticeActive' })
     );
     expect(win.setOpacity).not.toHaveBeenCalled();
+  });
+});
+
+// A minimal window double for the card ↔ review morph: mocked bounds and
+// always-on-top state.
+type FakeViewWindow = {
+  getBounds: jest.Mock;
+  setBounds: jest.Mock;
+  setResizable: jest.Mock;
+  isResizable: jest.Mock;
+  setAlwaysOnTop: jest.Mock;
+};
+
+function fakeViewWindow(bounds: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}): FakeViewWindow {
+  return {
+    getBounds: jest.fn().mockReturnValue(bounds),
+    setBounds: jest.fn(),
+    setResizable: jest.fn(),
+    isResizable: jest.fn().mockReturnValue(false),
+    setAlwaysOnTop: jest.fn(),
+  };
+}
+
+describe('window:setView (card ↔ Project View morph)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  function setViewHandler(): (event: unknown, rawView: unknown) => unknown {
+    registerWindowHandlers(mockLog as unknown as MainLogger);
+    const call = (ipcMain.handle as jest.Mock).mock.calls.find(
+      ([channel]) => channel === 'window:setView'
+    );
+    expect(call).toBeDefined();
+    return call![1] as (event: unknown, rawView: unknown) => unknown;
+  }
+
+  const CARD_BOUNDS = { x: 1000, y: 195, width: 360, height: 680 };
+  const WORK_AREA = { x: 0, y: 25, width: 1440, height: 875 };
+
+  function install(win: FakeViewWindow): (event: unknown, rawView: unknown) => unknown {
+    const handler = setViewHandler();
+    (BrowserWindow.fromWebContents as jest.Mock).mockReturnValue(win);
+    (screen.getDisplayMatching as jest.Mock).mockReturnValue({ workArea: WORK_AREA });
+    return handler;
+  }
+
+  it('grows to the review footprint and stops floating above other windows', () => {
+    // Given: a card-sized window
+    const win = fakeViewWindow(CARD_BOUNDS);
+    const handler = install(win);
+
+    // When: morphing to the Project View
+    handler({ sender: {} }, 'projectView');
+
+    // Then: the window takes the anchored, clamped review bounds and drops
+    // always-on-top (the ambient pill behavior returns with the card)
+    expect(win.setBounds).toHaveBeenCalledWith({ x: 140, y: 35, width: 1220, height: 840 });
+    expect(win.setAlwaysOnTop).toHaveBeenCalledWith(false);
+  });
+
+  it('restores the remembered card bounds and always-on-top on the way back', () => {
+    // Given: a window that morphed to the Project View from known card bounds
+    const win = fakeViewWindow(CARD_BOUNDS);
+    const handler = install(win);
+    handler({ sender: {} }, 'projectView');
+    win.setBounds.mockClear();
+
+    // When: morphing back to the card
+    handler({ sender: {} }, 'card');
+
+    // Then: the exact pre-review card bounds return, floating again
+    expect(win.setBounds).toHaveBeenCalledWith(CARD_BOUNDS);
+    expect(win.setAlwaysOnTop).toHaveBeenLastCalledWith(true);
+  });
+
+  it('leaves the bounds alone on a card request with nothing to restore', () => {
+    // Given: a window that never entered the Project View
+    const win = fakeViewWindow(CARD_BOUNDS);
+    const handler = install(win);
+
+    // When: asking for the card view
+    handler({ sender: {} }, 'card');
+
+    // Then: no resize happens (still always-on-top as the ambient default)
+    expect(win.setBounds).not.toHaveBeenCalled();
+    expect(win.setAlwaysOnTop).toHaveBeenCalledWith(true);
+  });
+
+  it('logs and ignores an invalid view payload', () => {
+    // Given: a registered handler
+    const win = fakeViewWindow(CARD_BOUNDS);
+    const handler = install(win);
+
+    // When: an unknown view name arrives
+    handler({ sender: {} }, 'fullscreen');
+
+    // Then: nothing moves and the error is logged
+    expect(win.setBounds).not.toHaveBeenCalled();
+    expect(mockLog.error).toHaveBeenCalled();
   });
 });

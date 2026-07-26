@@ -11,7 +11,6 @@ import type {
   BranchGraph,
   DiffRequest,
   DiffResponse,
-  ReviewOpenRequest,
   MergeStartRequest,
   MergeStartResponse,
   MergeResolveRequest,
@@ -40,6 +39,9 @@ declare global {
         setNoticeActive: (active: boolean) => void;
         setExpanded: (expanded: boolean) => Promise<{ anchor: 'bottom' | 'top' }>;
         openTerminal: (path: string) => Promise<VoidResult>;
+        // The card <-> Project View morph: main resizes the window between
+        // the card and review footprints (and toggles always-on-top).
+        setView: (view: 'card' | 'projectView') => Promise<void>;
       };
       repository: {
         list: () => Promise<Result<Repository[]>>;
@@ -101,14 +103,6 @@ declare global {
       // The review window's compare picker.
       diff: {
         compare: (request: DiffRequest) => Promise<Result<DiffResponse>>;
-      };
-      // Review window: open/re-target the per-repository secondary window,
-      // pull the open request on mount, subscribe to re-targets. Push
-      // payloads are validated in the renderer.
-      review: {
-        open: (request: ReviewOpenRequest) => void;
-        requestContext: () => Promise<Result<ReviewOpenRequest>>;
-        onContext: (callback: (request: unknown) => void) => () => void;
       };
       // The review window's merge workflow; one merge in flight per
       // repository.

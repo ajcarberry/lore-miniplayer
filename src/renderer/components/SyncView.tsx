@@ -9,9 +9,9 @@ import type { BranchGraphState } from '../hooks/useBranchGraph';
 import type { SyncActionsState } from '../hooks/useSyncActions';
 import type { FileStagingState } from '../hooks/useFileStaging';
 import { WorkingSet } from './WorkingSet';
-import type { WorkingSetFile } from './WorkingSet';
+import type { WorkingSetFile, WorkingSetProps } from './WorkingSet';
 import { requestOpenReviewWindow } from './review/openReview';
-import type { ReviewWorkflowMode } from '../../shared/types';
+import type { LoreBranch, Repository, ReviewWorkflowMode } from '../../shared/types';
 import { HistorySection } from './HistorySection';
 import { PlayerHeader } from './PlayerHeader';
 import { BranchSwitcher } from './BranchSwitcher';
@@ -117,6 +117,41 @@ export function buildTransportProps(inputs: TransportInputs): TransportProps {
   };
 }
 
+export interface ReviewEntryInputs {
+  readonly selectedRepo: Repository | null;
+  readonly showClone: boolean;
+  readonly branchName: string;
+  readonly currentRevision: string;
+  readonly parentLaneName: string | undefined;
+  readonly branches: LoreBranch[];
+}
+
+// The WorkingSet header's Review/Merge entry props: the merge target is the
+// branch's parent lane when the graph resolves one, else the server's default
+// branch, and Merge is offered only when that target is a different branch.
+// Kept out of the component body (complexity limit), like buildTransportProps.
+export function buildReviewEntryProps(
+  inputs: ReviewEntryInputs
+): Pick<WorkingSetProps, 'onReview' | 'onMerge'> {
+  const { selectedRepo, showClone, branchName, currentRevision, parentLaneName, branches } = inputs;
+  if (selectedRepo === null || showClone) {
+    return {};
+  }
+  const mergeTarget = parentLaneName ?? branches.find(branch => branch.isDefault)?.name ?? 'main';
+  const open = (workflow: ReviewWorkflowMode): void =>
+    requestOpenReviewWindow({
+      repository: selectedRepo,
+      branchName,
+      currentRevision,
+      targetBranch: mergeTarget,
+      workflow,
+    });
+  return {
+    onReview: () => open('commit'),
+    ...(mergeTarget !== branchName ? { onMerge: () => open('merge') } : {}),
+  };
+}
+
 // A content signature for the revisions list. useBranchGraph returns a fresh
 // empty graph on every render while loading/disconnected, so comparing by
 // array reference would reset (and re-render) on every render; comparing by
@@ -185,29 +220,14 @@ export function SyncView({
   const branchGraph = graph.graph;
   const revisions = branchGraph.branch.revisions;
   const [selectedRevisionIndex, setSelectedRevisionIndex] = useSelectedRevisionIndex(revisions);
-
-  // The review window's entry points. The merge target is the branch's parent
-  // lane when the graph resolves one, else the server's default branch; Merge
-  // is offered only when that target is a different branch.
-  const selectedRepo = repos.selectedRepo;
-  const mergeTarget =
-    branchGraph.parent?.name ?? branches.branches.find(branch => branch.isDefault)?.name ?? 'main';
-  const canReview = selectedRepo !== null && !showClone;
-  const openReview = useCallback(
-    (workflow: ReviewWorkflowMode): void => {
-      if (selectedRepo === null) {
-        return;
-      }
-      requestOpenReviewWindow({
-        repository: selectedRepo,
-        branchName: branches.currentBranch,
-        currentRevision: branchGraph.current,
-        targetBranch: mergeTarget,
-        workflow,
-      });
-    },
-    [selectedRepo, branches.currentBranch, branchGraph.current, mergeTarget]
-  );
+  const reviewEntry = buildReviewEntryProps({
+    selectedRepo: repos.selectedRepo,
+    showClone,
+    branchName: branches.currentBranch,
+    currentRevision: branchGraph.current,
+    parentLaneName: branchGraph.parent?.name,
+    branches: branches.branches,
+  });
   // Push refreshes branch divergence on success — it typically flips from
   // "out of sync" to "up to date".
   const handlePush = useCallback(async (): Promise<void> => {
@@ -262,10 +282,7 @@ export function SyncView({
         onToggleFile={onToggleFile}
         isLoading={fileStaging.isLoadingFiles}
         conflictRevisionNumber={revisions[0]?.revisionNumber}
-        {...(canReview ? { onReview: () => openReview('commit') } : {})}
-        {...(canReview && mergeTarget !== branches.currentBranch
-          ? { onMerge: () => openReview('merge') }
-          : {})}
+        {...reviewEntry}
       />
       {!showClone && (
         <HistorySection

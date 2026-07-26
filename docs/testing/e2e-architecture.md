@@ -80,9 +80,13 @@ Two mechanisms were considered:
   `LORE_MINIPLAYER_E2E_HIDDEN` check beside the existing
   `LORE_MINIPLAYER_USER_DATA` override, passing `show: false` at `BrowserWindow`
   construction and calling `app.dock.hide()` — the window is never shown, so
-  there's no flash to suppress. This is what shipped: 10 inert lines in
-  `src/main/index.ts`, on by default from `tests/e2e/electron/launch.ts`,
-  restorable with `LORE_MINIPLAYER_E2E_SHOW=1`.
+  there's no flash to suppress. This is what shipped: a handful of inert lines
+  in `src/main/index.ts`, on by default from `tests/e2e/electron/launch.ts`,
+  restorable with `LORE_MINIPLAYER_E2E_SHOW=1`. Hidden mode also sets
+  `backgroundThrottling: false` on the window's webPreferences: Chromium
+  throttles timers and rAF for never-shown windows, so without it the suite
+  would exercise a degraded mode no user (whose window is visible) ever runs —
+  asserted by `hidden-mode.spec.ts`.
 
 ### Parallel per-test launches
 

@@ -153,6 +153,10 @@ async function createWindow(): Promise<void> {
       webSecurity: true,
       allowRunningInsecureContent: false,
       preload: preloadPath,
+      // A never-shown window would otherwise get Chromium's background
+      // throttling (timers, rAF), making tests exercise a degraded mode no
+      // user with a visible window ever runs.
+      ...(isHiddenTestMode ? { backgroundThrottling: false } : {}),
     },
   });
 

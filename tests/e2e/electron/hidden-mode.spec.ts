@@ -23,6 +23,7 @@ test.describe('Hidden test mode', () => {
         windowCount: windows.length,
         isVisible: windows[0]?.isVisible() ?? null,
         dockVisible: process.platform === 'darwin' && app.dock ? app.dock.isVisible() : null,
+        backgroundThrottling: windows[0]?.webContents.getBackgroundThrottling() ?? null,
       };
     });
     expect(state.windowCount).toBe(1);
@@ -30,6 +31,11 @@ test.describe('Hidden test mode', () => {
     if (process.platform === 'darwin') {
       expect(state.dockVisible).toBe(false);
     }
+
+    // And: Chromium's background throttling is off — a never-shown window would
+    // otherwise throttle timers/rAF, so the suite would exercise a degraded mode
+    // no user (whose window is visible) ever runs
+    expect(state.backgroundThrottling).toBe(false);
 
     // And: The renderer still renders and accepts input on the never-shown window
     const addressInput = window.getByPlaceholder('lores://lore.example.com');

@@ -143,12 +143,24 @@ function installApi(): Api {
   return { compare, getStatus, stage, unstage, commit, push };
 }
 
-function renderSurface(
-  request: ReviewOpenRequest = makeReviewRequest(),
-  onExit: () => void = jest.fn(),
-  onCollapse: () => void = jest.fn()
-): void {
-  renderWithMantine(<ProjectView request={request} onExit={onExit} onCollapse={onCollapse} />);
+interface RenderOverrides {
+  readonly request?: ReviewOpenRequest;
+  readonly onExit?: () => void;
+  readonly onCollapse?: () => void;
+  readonly onSwitchWorkflow?: (workflow: 'commit' | 'merge') => void;
+  readonly mergeAvailable?: boolean;
+}
+
+function renderSurface(overrides: RenderOverrides = {}): void {
+  renderWithMantine(
+    <ProjectView
+      request={overrides.request ?? makeReviewRequest()}
+      onExit={overrides.onExit ?? jest.fn()}
+      onCollapse={overrides.onCollapse ?? jest.fn()}
+      onSwitchWorkflow={overrides.onSwitchWorkflow ?? jest.fn()}
+      mergeAvailable={overrides.mergeAvailable ?? true}
+    />
+  );
 }
 
 describe('ProjectView — commit workflow', () => {
@@ -333,18 +345,88 @@ describe('ProjectView — commit workflow', () => {
 describe('ProjectView — merge workflow routing', () => {
   it('routes the merge workflow to the merge view without the commit compare picker', async () => {
     installApi();
-    renderSurface(
-      makeReviewRequest({
-        workflow: 'merge',
-        compare: {
-          source: { kind: 'branchHead', branch: 'feat/topic' },
-          target: { kind: 'branchHead', branch: 'main' },
-        },
-      })
-    );
+    renderSurface({ request: mergeRequest() });
 
     expect(await screen.findByText('Merge — feat/topic → main')).toBeInTheDocument();
     expect(screen.queryByLabelText('Change compare source')).not.toBeInTheDocument();
+  });
+});
+
+function mergeRequest(): ReviewOpenRequest {
+  return makeReviewRequest({
+    workflow: 'merge',
+    compare: {
+      source: { kind: 'branchHead', branch: 'feat/topic' },
+      target: { kind: 'branchHead', branch: 'main' },
+    },
+  });
+}
+
+describe('ProjectView — workflow switcher', () => {
+  it('switches from the commit view to the merge workflow', async () => {
+    // Given: a commit view whose working set has nothing staged
+    const api = installApi();
+    api.getStatus.mockResolvedValue({
+      success: true,
+      data: {
+        untracked: [],
+        unstaged: [
+          { path: 'encounters.toml', isUntracked: false, isStaged: false, conflict: false },
+        ],
+        staged: [],
+      },
+    });
+    const onSwitchWorkflow = jest.fn();
+    const user = userEvent.setup();
+    renderSurface({ onSwitchWorkflow });
+    await screen.findByText('encounters.toml');
+
+    // When: choosing Merge in the switcher
+    await user.click(screen.getByRole('radio', { name: 'Merge' }));
+
+    // Then: the view asks to re-open with the merge workflow
+    expect(onSwitchWorkflow).toHaveBeenCalledWith('merge');
+  });
+
+  it('disables the Merge segment while files are staged — the pre-flight refuses them', async () => {
+    // Given: the default fixture, which has one staged file
+    installApi();
+    const onSwitchWorkflow = jest.fn();
+    renderSurface({ onSwitchWorkflow });
+    await screen.findByText('encounters.toml');
+
+    // Then: the Merge segment cannot be chosen
+    expect(screen.getByRole('radio', { name: 'Merge' })).toBeDisabled();
+  });
+
+  it('disables the Merge segment when the branch has nothing to land', async () => {
+    // Given: no staged files but merge inapplicable (in sync / on the target)
+    const api = installApi();
+    api.getStatus.mockResolvedValue({
+      success: true,
+      data: { untracked: [], unstaged: [], staged: [] },
+    });
+    renderSurface({ mergeAvailable: false });
+    await screen.findByText('Review — feat/topic');
+
+    // Then: the Merge segment cannot be chosen
+    expect(screen.getByRole('radio', { name: 'Merge' })).toBeDisabled();
+  });
+
+  it('gates switching away from a live merge behind the discard confirmation', async () => {
+    // Given: a merge view with a live (started, un-landed) merge
+    installApi();
+    const onSwitchWorkflow = jest.fn();
+    const user = userEvent.setup();
+    renderSurface({ request: mergeRequest(), onSwitchWorkflow });
+    await screen.findByText('Merge — feat/topic → main');
+
+    // When: choosing Review in the switcher
+    await user.click(screen.getByRole('radio', { name: 'Review' }));
+
+    // Then: the discard confirmation gates the leave — never a silent strand
+    expect(await screen.findByText('Discard this merge?')).toBeInTheDocument();
+    expect(onSwitchWorkflow).not.toHaveBeenCalled();
   });
 });
 
@@ -353,7 +435,7 @@ describe('ProjectView — back to the card and down to the pill', () => {
     installApi();
     const onExit = jest.fn();
     const user = userEvent.setup();
-    renderSurface(makeReviewRequest(), onExit);
+    renderSurface({ onExit });
     await screen.findByText('Review — feat/topic');
 
     // When: clicking Back in the header
@@ -367,7 +449,7 @@ describe('ProjectView — back to the card and down to the pill', () => {
     installApi();
     const onCollapse = jest.fn();
     const user = userEvent.setup();
-    renderSurface(makeReviewRequest(), jest.fn(), onCollapse);
+    renderSurface({ onCollapse });
     await screen.findByText('Review — feat/topic');
 
     // When: clicking the TitleBar's collapse control

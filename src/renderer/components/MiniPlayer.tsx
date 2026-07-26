@@ -26,7 +26,7 @@ import { ProjectView } from './review/ProjectView';
 import { useProjectViewMorph } from '../hooks/useProjectViewMorph';
 import { useRepositoryMutations } from '../hooks/useRepositoryMutations';
 import { buildReviewOpenRequest } from './review/openReview';
-import { resolveMergeTarget } from './SyncView';
+import { useProjectViewWorkflows } from '../hooks/useProjectViewWorkflows';
 import { SyncView } from './SyncView';
 import { PlayerDialogs } from './PlayerDialogs';
 
@@ -55,6 +55,8 @@ interface PlayerCardProps {
   readonly onCollapse: () => void;
   // Receives the built open request — the card morphs into the Project View.
   readonly onOpenProjectView: (request: ReviewOpenRequest) => void;
+  readonly mergeTarget: string;
+  readonly hasRevisionsToLand: boolean;
 }
 
 // The full card surface: title bar, the connect page or sync view, and the
@@ -78,6 +80,8 @@ function PlayerCard({
   onEditRepo,
   onCollapse,
   onOpenProjectView,
+  mergeTarget,
+  hasRevisionsToLand,
 }: PlayerCardProps): ReactElement {
   const colorScheme = useComputedColorScheme('light');
   const currentBranchObj = branches.branches.find(branch => branch.isCurrent);
@@ -143,6 +147,8 @@ function PlayerCard({
                 onToggleWorkingSetOpen={workingSet.toggleWorkingSetOpen}
                 onToggleFile={workingSet.toggleFile}
                 onOpenProjectView={onOpenProjectView}
+                mergeTarget={mergeTarget}
+                hasRevisionsToLand={hasRevisionsToLand}
               />
             </Stack>
           </Box>
@@ -167,7 +173,7 @@ function PlayerCard({
                   repository: repos.selectedRepo,
                   branchName: branches.currentBranch,
                   currentRevision: graph.graph.current,
-                  targetBranch: resolveMergeTarget(graph.graph.parent?.name, branches.branches),
+                  targetBranch: mergeTarget,
                   workflow: 'commit',
                 })
               );
@@ -262,6 +268,13 @@ export function MiniPlayer(): ReactElement {
   const morph = useExpansion({ isConnected: server.isConnected });
   const projectView = useProjectViewMorph(morph.forceCollapse);
   const repoMutations = useRepositoryMutations(repos, branches);
+  const workflows = useProjectViewWorkflows(
+    repos.selectedRepo,
+    branches,
+    graph,
+    server.isConnected,
+    projectView.open
+  );
   const colorScheme = useComputedColorScheme('light');
 
   const signals = computeActionSignals({
@@ -311,6 +324,8 @@ export function MiniPlayer(): ReactElement {
               onEditRepo={repoMutations.setEditingRepo}
               onCollapse={morph.forceCollapse}
               onOpenProjectView={projectView.open}
+              mergeTarget={workflows.mergeTarget}
+              hasRevisionsToLand={workflows.hasRevisionsToLand}
             />
           </div>
         </div>
@@ -321,6 +336,8 @@ export function MiniPlayer(): ReactElement {
               request={projectView.request}
               onExit={projectView.close}
               onCollapse={projectView.collapseToPill}
+              onSwitchWorkflow={workflows.switchWorkflow}
+              mergeAvailable={workflows.mergeAvailable}
             />
           </div>
         )}

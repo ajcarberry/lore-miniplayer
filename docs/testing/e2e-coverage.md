@@ -76,7 +76,8 @@ their detailed assertions live in the [Scenario catalog](./scenario-catalog.md).
 | Empty repository shows a clean no-history state  | empty-repo                    | `live-server.spec.ts`                                    |
 | Clone progress streams to completion             | clone-progress                | `live-server.spec.ts`                                    |
 | Morph the card into the Project View (Review / Merge / footer icon) | review-commit, merge-mine | `live-review.spec.ts`, `live-merge.spec.ts` |
-| Review entry only while the working set is dirty; Merge only with revisions to land (withdrawn after landing) | review-commit, merge-mine | `live-review.spec.ts`, `live-merge.spec.ts` |
+| One card entry: Review while dirty, Merge only when clean with revisions to land (withdrawn after landing) | review-commit, merge-mine | `live-review.spec.ts`, `live-merge.spec.ts` |
+| Switch workflows inside the Project View; Merge segment gated (staged files / nothing to land / on the target) | merge-mine, merge-abort, review-commit | `live-merge.spec.ts`, `live-review.spec.ts` |
 | Exit the Project View — Back to the card, TitleBar collapse to the pill | review-commit, merge-abort | `live-review.spec.ts`, `live-merge.spec.ts` |
 | Review compare picker (revision ↔ working tree) | review-commit | `live-review.spec.ts` |
 | Review file rows (badges, binary), stage/unstage, commit, push | review-commit | `live-review.spec.ts` |

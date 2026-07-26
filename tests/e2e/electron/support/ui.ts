@@ -611,6 +611,14 @@ export async function acceptTheirs(page: Page, filePath: string): Promise<void> 
     .click();
 }
 
+// Choose a workflow in the Project View's header switcher. Clicks the
+// segment LABEL — Mantine visually hides the radio input itself, so the
+// input is never clickable. Scoped to the view (the card is hidden but
+// present during the crossfade).
+export async function chooseWorkflow(page: Page, label: 'Review' | 'Merge'): Promise<void> {
+  await projectView(page).locator('.mantine-SegmentedControl-label', { hasText: label }).click();
+}
+
 // The merge workflow's primary action (MergeBar.tsx) — gated on every
 // conflict resolved and the branch actually being ahead of the target.
 export async function completeMerge(page: Page): Promise<void> {

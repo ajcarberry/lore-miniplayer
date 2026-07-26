@@ -2,6 +2,7 @@ import type { ReactElement } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Box, Button, Center, Group, Loader, Stack } from '@mantine/core';
 import type {
+  ReviewWorkflowMode,
   FileDiffResult,
   MergeFileResolution,
   MergeState,
@@ -15,6 +16,7 @@ import { MergeBar } from './MergeBar';
 import { MergeFileArea } from './MergeFileArea';
 import { MergeSidebar } from './MergeSidebar';
 import { ReviewHeader } from './ReviewHeader';
+import { WorkflowSwitch } from './WorkflowSwitch';
 import { useReviewMeta } from './useReviewMeta';
 
 interface MergeStartErrorProps {
@@ -51,6 +53,8 @@ export interface MergeViewProps {
   readonly request: ReviewOpenRequest;
   // Morph back to the card.
   readonly onExit: () => void;
+  // Re-open the view with the other workflow (the header switcher).
+  readonly onSwitchWorkflow: (workflow: ReviewWorkflowMode) => void;
 }
 
 // The Project View's merge workflow. Truthful semantics: the merge
@@ -61,8 +65,83 @@ export interface MergeViewProps {
 // the diff bridge (MergeState carries no content), and drives resolve /
 // abort / complete. Errors from start and complete surface as Mantine alerts,
 // never silently.
+interface MergeLeaveDeps {
+  readonly repositoryPath: string;
+  readonly live: boolean;
+  readonly onExit: () => void;
+  readonly onSwitchWorkflow: (workflow: ReviewWorkflowMode) => void;
+}
+
+// Every way out of a live merge (Back, the workflow switcher, Abort) routes
+// through one discard confirmation — the on-disk merge would otherwise be
+// stranded with no surface able to finish it. A landed merge, a merge that
+// never started, or a start error leaves directly.
+function useMergeLeave(deps: MergeLeaveDeps): {
+  abortConfirmOpen: boolean;
+  closeAbortConfirm: () => void;
+  aborting: boolean;
+  handleAbort: () => void;
+  leaveMerge: (to: 'card' | 'commit') => void;
+  openAbortConfirm: () => void;
+} {
+  const { repositoryPath, live, onExit, onSwitchWorkflow } = deps;
+  const [abortConfirmOpen, setAbortConfirmOpen] = useState(false);
+  const [aborting, setAborting] = useState(false);
+  // Where a confirmed discard goes: the card or the commit view.
+  const [leaveTo, setLeaveTo] = useState<'card' | 'commit'>('card');
+
+  const handleAbort = useCallback((): void => {
+    setAborting(true);
+    void window.electronAPI.merge
+      .abort({ repositoryPath })
+      .then(result => {
+        if (result.success) {
+          setAbortConfirmOpen(false);
+          if (leaveTo === 'commit') {
+            onSwitchWorkflow('commit');
+          } else {
+            onExit();
+          }
+        } else {
+          notifyError('Abort failed', result.error);
+        }
+      })
+      .finally(() => setAborting(false));
+  }, [repositoryPath, leaveTo, onSwitchWorkflow, onExit]);
+
+  const leaveMerge = useCallback(
+    (to: 'card' | 'commit'): void => {
+      if (live) {
+        setLeaveTo(to);
+        setAbortConfirmOpen(true);
+        return;
+      }
+      if (to === 'commit') {
+        onSwitchWorkflow('commit');
+      } else {
+        onExit();
+      }
+    },
+    [live, onSwitchWorkflow, onExit]
+  );
+
+  const openAbortConfirm = useCallback((): void => {
+    setLeaveTo('card');
+    setAbortConfirmOpen(true);
+  }, []);
+
+  return {
+    abortConfirmOpen,
+    closeAbortConfirm: () => setAbortConfirmOpen(false),
+    aborting,
+    handleAbort,
+    leaveMerge,
+    openAbortConfirm,
+  };
+}
+
 export function MergeView(props: MergeViewProps): ReactElement {
-  const { request, onExit } = props;
+  const { request, onExit, onSwitchWorkflow } = props;
   const repositoryPath = request.repositoryPath;
   const sourceBranch = request.branchName;
   const targetBranch =
@@ -81,8 +160,12 @@ export function MergeView(props: MergeViewProps): ReactElement {
   const [completing, setCompleting] = useState(false);
   const [completeError, setCompleteError] = useState<string | null>(null);
   const [landedRevision, setLandedRevision] = useState<string | null>(null);
-  const [aborting, setAborting] = useState(false);
-  const [abortConfirmOpen, setAbortConfirmOpen] = useState(false);
+  const leave = useMergeLeave({
+    repositoryPath,
+    live: mergeState !== null && landedRevision === null,
+    onExit,
+    onSwitchWorkflow,
+  });
 
   // Start the merge once (the view remounts per request, so `starting` begins
   // true), then fetch both sides of every conflicted file. Both fetches set
@@ -179,38 +262,14 @@ export function MergeView(props: MergeViewProps): ReactElement {
       .finally(() => setCompleting(false));
   }, [repositoryPath]);
 
-  const handleAbort = useCallback((): void => {
-    setAborting(true);
-    void window.electronAPI.merge
-      .abort({ repositoryPath })
-      .then(result => {
-        if (result.success) {
-          setAbortConfirmOpen(false);
-          onExit();
-        } else {
-          notifyError('Abort failed', result.error);
-        }
-      })
-      .finally(() => setAborting(false));
-  }, [repositoryPath, onExit]);
-
-  // Back mid-merge routes through the abort confirmation — leaving the view
-  // would strand the on-disk merge with no surface able to finish it. A landed
-  // merge, a merge that never started, or a start error exits directly.
-  const handleBack = useCallback((): void => {
-    if (mergeState !== null && landedRevision === null) {
-      setAbortConfirmOpen(true);
-      return;
-    }
-    onExit();
-  }, [mergeState, landedRevision, onExit]);
+  const handleBack = useCallback((): void => leave.leaveMerge('card'), [leave]);
 
   if (startError !== null) {
     return (
       <MergeStartError
         error={startError}
-        aborting={aborting}
-        onAbort={handleAbort}
+        aborting={leave.aborting}
+        onAbort={leave.handleAbort}
         onExit={onExit}
       />
     );
@@ -230,6 +289,13 @@ export function MergeView(props: MergeViewProps): ReactElement {
           "<repo> · N commits · M conflicts" eyebrow, on the shared shell. */}
       <ReviewHeader
         onBack={handleBack}
+        right={
+          <WorkflowSwitch
+            workflow='merge'
+            mergeEnabled
+            onSwitch={() => leave.leaveMerge('commit')}
+          />
+        }
         title={`Merge — ${sourceBranch} → ${targetBranch}`}
         eyebrow={`${repositoryName ? `${repositoryName} · ` : ''}${revisions.length} ${pluralize(revisions.length, 'commit')} · ${conflictCount} ${pluralize(conflictCount, 'conflict')}`}
         icon={<IconGitMerge size={18} color='var(--acc-deep, #7a5b1e)' />}
@@ -273,16 +339,16 @@ export function MergeView(props: MergeViewProps): ReactElement {
         completing={completing}
         landedRevision={landedRevision}
         targetBranch={targetBranch}
-        onAbort={() => setAbortConfirmOpen(true)}
+        onAbort={leave.openAbortConfirm}
         onMerge={handleComplete}
       />
 
       <AbortMergeModal
-        opened={abortConfirmOpen}
+        opened={leave.abortConfirmOpen}
         sourceBranch={sourceBranch}
-        aborting={aborting}
-        onClose={() => setAbortConfirmOpen(false)}
-        onConfirm={handleAbort}
+        aborting={leave.aborting}
+        onClose={leave.closeAbortConfirm}
+        onConfirm={leave.handleAbort}
       />
     </Stack>
   );

@@ -10,6 +10,7 @@ import {
   writeInClone,
   loreInClone,
   openProjectView,
+  chooseWorkflow,
   exitProjectView,
   acceptMine,
   acceptTheirs,
@@ -173,6 +174,13 @@ test.describe('Live merge — the branch lands on main', () => {
       )
       .toBe(BRANCH_MESH);
 
+    // And: the header switcher crosses to the commit view directly — the
+    // merge landed, so nothing needs discarding — where the Merge segment
+    // reads disabled once the land predicate refreshes (nothing left to land).
+    await chooseWorkflow(window, 'Review');
+    await expect(window.getByLabel('Commit message')).toBeVisible({ timeout: 30_000 });
+    await expect(window.getByRole('radio', { name: 'Merge' })).toBeDisabled({ timeout: 60_000 });
+
     await exitProjectView(window);
 
     // And: the card withdraws its Merge entry — the branch has nothing left
@@ -265,10 +273,13 @@ test.describe('Live merge — the branch lands on main', () => {
     await expect(second.getByTestId(`conflict-block-${MESH}`)).toBeVisible({ timeout: 60_000 });
     await expect(second.getByText('0 of 1 conflicts resolved')).toBeVisible();
 
-    await second.getByLabel('Back').click();
+    // Leaving a live merge through the workflow switcher routes through the
+    // same discard confirmation, then lands in the commit view — not the card.
+    await chooseWorkflow(second, 'Review');
     const dialog = second.getByRole('dialog', { name: 'Discard this merge?' });
     await expect(dialog).toBeVisible();
     await dialog.getByRole('button', { name: 'Discard merge', exact: true }).click();
-    await expect(window.getByText('Working Set')).toBeVisible({ timeout: 30_000 });
+    await expect(second.getByLabel('Commit message')).toBeVisible({ timeout: 30_000 });
+    await exitProjectView(window);
   });
 });

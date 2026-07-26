@@ -175,10 +175,13 @@ function renderView(
       target: { kind: 'branchHead', branch: TARGET_BRANCH },
     },
   })
-): jest.Mock {
+): { onExit: jest.Mock; onSwitchWorkflow: jest.Mock } {
   const onExit = jest.fn();
-  renderWithMantine(<MergeView request={request} onExit={onExit} />);
-  return onExit;
+  const onSwitchWorkflow = jest.fn();
+  renderWithMantine(
+    <MergeView request={request} onExit={onExit} onSwitchWorkflow={onSwitchWorkflow} />
+  );
+  return { onExit, onSwitchWorkflow };
 }
 
 describe('MergeView — clean merge', () => {
@@ -339,7 +342,7 @@ describe('MergeView — abort', () => {
   it('confirms before discarding and exits to the card on abort', async () => {
     const api = installApi();
     const user = userEvent.setup();
-    const onExit = renderView();
+    const { onExit } = renderView();
     await screen.findByRole('button', { name: 'Abort' });
 
     await user.click(screen.getByRole('button', { name: 'Abort' }));
@@ -352,10 +355,28 @@ describe('MergeView — abort', () => {
     await waitFor(() => expect(onExit).toHaveBeenCalled());
   });
 
+  it('discards through the switcher confirmation, then lands in the commit view', async () => {
+    const api = installApi();
+    const user = userEvent.setup();
+    const { onExit, onSwitchWorkflow } = renderView();
+    await screen.findByRole('button', { name: 'Abort' });
+
+    // When: switching to Review mid-merge and confirming the discard
+    await user.click(screen.getByRole('radio', { name: 'Review' }));
+    expect(await screen.findByText('Discard this merge?')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Discard merge' }));
+
+    // Then: the merge is aborted and the leave goes to the commit view, not
+    // the card
+    expect(api.abort).toHaveBeenCalledWith({ repositoryPath: REPOSITORY_PATH });
+    await waitFor(() => expect(onSwitchWorkflow).toHaveBeenCalledWith('commit'));
+    expect(onExit).not.toHaveBeenCalled();
+  });
+
   it('routes Back through the abort confirmation while a merge is live', async () => {
     const api = installApi();
     const user = userEvent.setup();
-    const onExit = renderView();
+    const { onExit } = renderView();
     await screen.findByRole('button', { name: 'Abort' });
 
     // When: leaving via the header back control mid-merge
@@ -375,7 +396,7 @@ describe('MergeView — abort', () => {
     const api = installApi();
     api.abort.mockResolvedValue({ success: false, error: 'abort boom' });
     const user = userEvent.setup();
-    const onExit = renderView();
+    const { onExit } = renderView();
     await screen.findByRole('button', { name: 'Abort' });
 
     await user.click(screen.getByRole('button', { name: 'Abort' }));
@@ -433,7 +454,7 @@ describe('MergeView — start failure', () => {
   it('offers an abort so a stranded merge can be cleared from the error state', async () => {
     const api = installApi({ startError: 'A merge is already in progress' });
     const user = userEvent.setup();
-    const onExit = renderView();
+    const { onExit } = renderView();
     await screen.findByText('Could not start the merge');
 
     await user.click(screen.getByRole('button', { name: 'Abort merge' }));
@@ -446,7 +467,7 @@ describe('MergeView — start failure', () => {
     const api = installApi({ startError: 'A merge is already in progress' });
     api.abort.mockResolvedValue({ success: false, error: 'abort boom' });
     const user = userEvent.setup();
-    const onExit = renderView();
+    const { onExit } = renderView();
     await screen.findByText('Could not start the merge');
 
     await user.click(screen.getByRole('button', { name: 'Abort merge' }));

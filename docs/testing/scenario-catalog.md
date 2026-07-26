@@ -201,8 +201,9 @@ Project View — commit workflow (`live-review.spec.ts`)
 - **Compare picker, file rows, staging, and commit → push seen by a second
   client** — the card morphs into the Project View (same window) from the
   WorkingSet-header Review action, which appears only once the working set
-  reads dirty (a clean checkout offers no Review entry — asserted first): the
-  default compare (current revision → working tree) lists exactly the dirty
+  reads dirty (a clean checkout offers no Review entry — asserted first). The
+  header's workflow switcher reads Merge-disabled here — the checkout is ON
+  the merge target. The default compare (current revision → working tree) lists exactly the dirty
   set with one badge per change kind (M/A/D + binary sentinel), the compare
   endpoints move across revisions and back, staged state survives full
   refetches because it lives in Lore, and a commit + push from the review bar
@@ -218,17 +219,23 @@ Project View — merge workflow (`live-merge.spec.ts`)
   main** — the card morphs into the Project View from its Merge action with
   the checkout on a feature branch; theirs/mine content is read back through the diff bridge, diff3
   markers really exist on disk, the gate lifts on resolution, and a second
-  client syncing main sees the branch's content; afterwards the card withdraws
-  the Merge entry — the branch has nothing left that main lacks. The entry
-  itself is gated on the merge service's own ancestry predicate
-  (`lore:revisionsToLand` via `useRevisionsToLand`), so a merge that would
-  land nothing is never offered.
+  client syncing main sees the branch's content; afterwards the header
+  switcher crosses to the commit view directly (a landed merge needs no
+  discard), where the Merge segment reads disabled once the land predicate
+  refreshes, and the card withdraws its Merge entry — the branch has nothing
+  left that main lacks. The card offers ONE entry (Review when dirty; Merge
+  only when clean with revisions to land), gated on the merge service's own
+  ancestry predicate (`lore:revisionsToLand` via `useRevisionsToLand`), and
+  the merge pre-flight's staged-files refusal can never be reached from the
+  UI: staged files imply a dirty working set (Review entry), and the commit
+  view's Merge segment disables live while anything is staged.
 - **Resolved as THEIRS lands main's own content** — the branch's edit does not
   win.
 - **Aborting restores the working tree and frees a fresh merge** — cancel keeps
   the merge, confirm morphs back to the card by itself, restores the pre-merge
-  file, and a new merge starts clean; backing out of the fresh merge routes
-  through the same discard confirmation.
+  file, and a new merge starts clean; leaving the fresh merge through the
+  workflow switcher routes through the same discard confirmation and lands in
+  the commit view, not the card.
 
 Timeline constellation (`live-timeline.spec.ts`)
 

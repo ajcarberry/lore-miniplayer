@@ -2,6 +2,7 @@ import type { ReactElement } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Box, Group, Stack } from '@mantine/core';
 import type {
+  ReviewWorkflowMode,
   FileDiffResult,
   LoreFileStatusGroup,
   Result,
@@ -14,6 +15,7 @@ import { FileList } from './FileList';
 import { DiffPane } from './DiffPane';
 import { CommitBar } from './CommitBar';
 import { ReviewHeader } from './ReviewHeader';
+import { WorkflowSwitch } from './WorkflowSwitch';
 import { useReviewMeta } from './useReviewMeta';
 import { composeReviewFiles, compareTargetLabel } from './reviewModel';
 
@@ -21,6 +23,11 @@ export interface CommitReviewProps {
   readonly request: ReviewOpenRequest;
   // Morph back to the card.
   readonly onExit: () => void;
+  // Re-open the view with the other workflow (the header switcher).
+  readonly onSwitchWorkflow: (workflow: ReviewWorkflowMode) => void;
+  // Whether the merge workflow applies (distinct target, revisions to land);
+  // combined here with the live staged gate.
+  readonly mergeAvailable: boolean;
 }
 
 const EMPTY_STATUS: LoreFileStatusGroup = { untracked: [], unstaged: [], staged: [] };
@@ -154,7 +161,16 @@ export function CommitReview(props: CommitReviewProps): ReactElement {
         onBack={props.onExit}
         title={`Review — ${request.branchName}`}
         eyebrow={repositoryName ? `${repositoryName} · ${request.branchName}` : request.branchName}
-        right={<ComparePicker compare={compare} revisions={revisions} onChange={setCompare} />}
+        right={
+          <Group gap='sm' wrap='nowrap'>
+            <WorkflowSwitch
+              workflow='commit'
+              mergeEnabled={props.mergeAvailable && stagedCount === 0}
+              onSwitch={props.onSwitchWorkflow}
+            />
+            <ComparePicker compare={compare} revisions={revisions} onChange={setCompare} />
+          </Group>
+        }
       />
 
       <Group gap={0} align='stretch' wrap='nowrap' style={{ flex: 1, minHeight: 0 }}>

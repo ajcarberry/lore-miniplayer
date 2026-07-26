@@ -122,38 +122,40 @@ describe('buildReviewEntryProps', () => {
     };
   }
 
-  it('offers Review and Merge when files are dirty and the branch has work to land', () => {
+  it('offers ONLY Review when files are dirty, even with work to land', () => {
     // When: building the entry props on a dirty feature branch ahead of main
     const entry = buildReviewEntryProps(baseEntryInputs());
 
-    // Then: both entry points are offered
+    // Then: a single entry — the merge workflow is reachable from inside the
+    // Project View, and a dirty (possibly staged) working set cannot merge
     expect(entry.onReview).toBeDefined();
-    expect(entry.onMerge).toBeDefined();
+    expect(entry.onMerge).toBeUndefined();
   });
 
-  it('withholds Review while the working set is clean', () => {
-    // When: building with no dirty files
+  it('offers ONLY Merge when the working set is clean and the branch is ahead', () => {
+    // When: building with no dirty files and work to land
     const entry = buildReviewEntryProps(baseEntryInputs({ dirtyFileCount: 0 }));
 
-    // Then: there is nothing to review — no Review entry; Merge is unaffected
+    // Then: nothing to review; the merge is the one applicable action
     expect(entry.onReview).toBeUndefined();
     expect(entry.onMerge).toBeDefined();
   });
 
-  it('withholds Merge when the branch has nothing the target lacks', () => {
-    // When: building with the land predicate false (in sync, or already
-    // landed — by this app or another client)
-    const entry = buildReviewEntryProps(baseEntryInputs({ hasRevisionsToLand: false }));
+  it('offers nothing when clean with nothing the target lacks', () => {
+    // When: building clean with the land predicate false (in sync, or
+    // already landed — by this app or another client)
+    const entry = buildReviewEntryProps(
+      baseEntryInputs({ dirtyFileCount: 0, hasRevisionsToLand: false })
+    );
 
-    // Then: no Merge entry that would land nothing; Review is unaffected
-    expect(entry.onMerge).toBeUndefined();
-    expect(entry.onReview).toBeDefined();
+    // Then: no entry at all
+    expect(entry).toEqual({});
   });
 
   it('withholds Merge when the merge target IS the current branch', () => {
-    // When: building on main itself, even if the predicate were true
+    // When: building clean on main itself, even if the predicate were true
     const entry = buildReviewEntryProps(
-      baseEntryInputs({ branchName: 'main', mergeTarget: 'main' })
+      baseEntryInputs({ dirtyFileCount: 0, branchName: 'main', mergeTarget: 'main' })
     );
 
     // Then: Merge is withheld — it would merge main into main
@@ -174,8 +176,10 @@ describe('buildReviewEntryProps', () => {
     // Given: an observable opener callback
     const openProjectView = jest.fn();
 
-    // When: opening the merge workflow
-    buildReviewEntryProps(baseEntryInputs({ mergeTarget: 'trunk', openProjectView })).onMerge?.();
+    // When: opening the merge workflow (clean working set — the Merge entry)
+    buildReviewEntryProps(
+      baseEntryInputs({ mergeTarget: 'trunk', dirtyFileCount: 0, openProjectView })
+    ).onMerge?.();
 
     // Then: the built request targets the resolved branch's head
     expect(openProjectView).toHaveBeenCalledWith(

@@ -111,7 +111,11 @@ test.describe('Live review — commit workflow', () => {
     // (the Review entry appears once the working set reads dirty)
     const review = await openProjectView(window, 'Review');
 
-    // Then: the default compare (current revision → working tree) lists
+    // Then: the header switcher offers no merge here — the checkout is ON
+    // the merge target (main), so there is nothing to merge toward.
+    await expect(review.getByRole('radio', { name: 'Merge' })).toBeDisabled();
+
+    // And: the default compare (current revision → working tree) lists
     // exactly the dirty set, one row per change kind.
     await expect(review.getByLabel('Commit message')).toBeVisible({ timeout: 20_000 });
     await expect

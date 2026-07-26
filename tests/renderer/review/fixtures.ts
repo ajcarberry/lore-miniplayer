@@ -6,7 +6,9 @@ export function makeReviewRequest(overrides: Partial<ReviewOpenRequest> = {}): R
   return {
     repositoryPath: '/repos/my-repo',
     repositoryId: REPO_ID,
+    repositoryName: 'emberfall',
     branchName: 'feat/topic',
+    targetBranch: 'main',
     workflow: 'commit',
     compare: {
       source: { kind: 'revision', revision: 'r128' },

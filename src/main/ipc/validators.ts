@@ -36,6 +36,9 @@ export const BranchGraphRequestSchema = z.object({
 // carry revisions `targetBranch` lacks? (See useRevisionsToLand.)
 const invalidRevisionsToLandRequest = 'Invalid repository path or branches';
 
+// window:setView — the card <-> Project View morph's footprint switch.
+export const WindowViewSchema = z.enum(['card', 'projectView']);
+
 export const RevisionsToLandRequestSchema = z.object({
   repositoryPath: z.string(invalidRevisionsToLandRequest).min(1, invalidRevisionsToLandRequest),
   sourceBranch: z.string(invalidRevisionsToLandRequest).min(1, invalidRevisionsToLandRequest),

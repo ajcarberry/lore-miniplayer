@@ -5,24 +5,14 @@ import { isUnknownHash } from './branch-graph';
 import { collectEvents } from './lore-events';
 
 // Shared views over LoreFileStatusGroup's three arrays, so "every dirty file"
-// and "what counts as dirty" are defined in one place (used by the merge/diff
-// services, the workspace model's banding, and the teardown guard).
+// and "what counts as dirty" are defined in one place for the merge/diff
+// services.
 
 // Every file the status scan reported, across all three groups. A path can
 // appear in more than one group (e.g. staged AND unstaged) — callers that need
 // distinct paths de-duplicate on top.
 export function allStatusFiles(status: LoreFileStatusGroup): LoreFileStatus[] {
   return [...status.untracked, ...status.unstaged, ...status.staged];
-}
-
-// A working tree with anything untracked, unstaged, or staged is dirty.
-export function isDirty(status: LoreFileStatusGroup): boolean {
-  return status.untracked.length + status.unstaged.length + status.staged.length > 0;
-}
-
-// Any reported file carrying a conflict flag.
-export function hasConflict(status: LoreFileStatusGroup): boolean {
-  return allStatusFiles(status).some(file => file.conflict);
 }
 
 // A status row the SDK flags as part of a pending merge, whether it conflicted,
@@ -48,7 +38,7 @@ export function stagedPaths(status: LoreFileStatusGroup): Set<string> {
 
 // Staged rows that neither carry a merge flag nor were staged by the merge
 // itself (`imported`): the user's own work, which must never ride a merge
-// commit onto the target branch (the merge service's A3-dirty guard).
+// commit onto the target branch (the merge service's unrelated-staged guard).
 export function unrelatedStagedPaths(
   status: LoreFileStatusGroup,
   imported: ReadonlySet<string>

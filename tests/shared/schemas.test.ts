@@ -614,7 +614,9 @@ describe('ReviewOpenRequestSchema', () => {
   const valid = {
     repositoryPath: '/Users/dev/repos/my-repo',
     repositoryId,
+    repositoryName: 'My Repo',
     branchName: 'feat/topic',
+    targetBranch: 'main',
     workflow: 'commit' as const,
     compare: {
       source: { kind: 'revision' as const, revision: 'r128' },

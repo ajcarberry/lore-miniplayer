@@ -36,15 +36,6 @@ export function failure<T = never>(error: unknown): Result<T> {
 }
 
 /**
- * Registers an invoke-style IPC handler with the single Result<T> contract:
- * the handler's positional arguments are validated as a tuple with Zod
- * (safeParse — an invalid payload becomes a failure result carrying the
- * first issue's message, without reaching the operation), the operation's
- * return value is wrapped in success(), and a thrown error is logged with
- * the channel as the operation key and mapped to failure(). Handlers built
- * on this never throw across the IPC boundary.
- */
-/**
  * Single-request-object convenience over handleResult: a channel that takes
  * exactly one request payload passes its contract schema directly, without
  * declaring a positional-tuple wrapper of its own.
@@ -58,6 +49,15 @@ export function handleRequest<Req, T>(
   handleResult(log, channel, z.tuple([schema]), request => op(request));
 }
 
+/**
+ * Registers an invoke-style IPC handler with the single Result<T> contract:
+ * the handler's positional arguments are validated as a tuple with Zod
+ * (safeParse — an invalid payload becomes a failure result carrying the
+ * first issue's message, without reaching the operation), the operation's
+ * return value is wrapped in success(), and a thrown error is logged with
+ * the channel as the operation key and mapped to failure(). Handlers built
+ * on this never throw across the IPC boundary.
+ */
 export function handleResult<Args extends readonly unknown[], T>(
   log: MainLogger,
   channel: string,

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReviewOpenRequest } from '../../shared/types';
 
 // How long the CSS crossfade runs before the window shrinks back to the card
@@ -46,6 +46,7 @@ export function useProjectViewMorph(forcePillCollapse: () => void): ProjectViewM
       timer.current = null;
     }
   };
+  useEffect(() => clearTimer, []);
 
   const open = useCallback((openRequest: ReviewOpenRequest): void => {
     clearTimer();
@@ -69,16 +70,12 @@ export function useProjectViewMorph(forcePillCollapse: () => void): ProjectViewM
     }, PROJECT_VIEW_MORPH_MS);
   }, []);
 
-  // A live merge is backed out first (fire-and-forget): leaving it in flight
-  // would strand the on-disk merge with no surface driving it. Aborting a
-  // merge that already landed is a tolerated no-op.
+  // A live merge never reaches this directly — MergeView gates its collapse
+  // control behind the discard confirmation and aborts before calling it.
   const collapseToPill = useCallback((): void => {
-    if (request?.workflow === 'merge') {
-      void window.electronAPI.merge.abort({ repositoryPath: request.repositoryPath });
-    }
     close();
     forcePillCollapse();
-  }, [request, close, forcePillCollapse]);
+  }, [close, forcePillCollapse]);
 
   return { request, active, cardHidden, open, close, collapseToPill };
 }

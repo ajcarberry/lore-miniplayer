@@ -31,8 +31,6 @@ import {
   type WorkspaceRevisionStatus,
 } from './lore-status';
 
-// Re-exported so consumers keep importing the type from the owning service.
-
 // How far back to walk local revision history when looking for the
 // remote's latest hash to determine ahead-vs-behindOrDiverged direction.
 const DIVERGENCE_HISTORY_WALK_LENGTH = 100;
@@ -132,8 +130,8 @@ export class LoreRepositoryService extends EventEmitter {
   }
 
   // Builds the RepositoryNotification payload for a recognized event tag.
-  // branchPushed carries the pushing user's id (attribution toast, spec
-  // "Supporting signals"); branchCreated/branchDeleted carry none.
+  // branchPushed carries the pushing user's id; branchCreated/branchDeleted
+  // carry none.
   private toNotification(
     repositoryPath: string,
     kind: RepositoryNotificationKind,
@@ -232,7 +230,7 @@ export class LoreRepositoryService extends EventEmitter {
   }
 
   // The current checkout's branch, revision, and remote divergence from ONE
-  // cheap repositoryStatus({ revisionOnly: true }) call (C25/C27). The
+  // cheap repositoryStatus({ revisionOnly: true }) call. The
   // collection + derivation lives in ./lore-status.
   async getWorkspaceRevisionStatus(
     repositoryPath: string

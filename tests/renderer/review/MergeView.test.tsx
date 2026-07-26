@@ -175,13 +175,19 @@ function renderView(
       target: { kind: 'branchHead', branch: TARGET_BRANCH },
     },
   })
-): { onExit: jest.Mock; onSwitchWorkflow: jest.Mock } {
+): { onExit: jest.Mock; onSwitchWorkflow: jest.Mock; onCollapse: jest.Mock } {
   const onExit = jest.fn();
   const onSwitchWorkflow = jest.fn();
+  const onCollapse = jest.fn();
   renderWithMantine(
-    <MergeView request={request} onExit={onExit} onSwitchWorkflow={onSwitchWorkflow} />
+    <MergeView
+      request={request}
+      onExit={onExit}
+      onCollapse={onCollapse}
+      onSwitchWorkflow={onSwitchWorkflow}
+    />
   );
-  return { onExit, onSwitchWorkflow };
+  return { onExit, onSwitchWorkflow, onCollapse };
 }
 
 describe('MergeView — clean merge', () => {
@@ -252,6 +258,39 @@ describe('MergeView — sidebar', () => {
     expect(await screen.findByText('Merging commits')).toBeInTheDocument();
     expect(screen.getByText('Conflicts')).toBeInTheDocument();
     expect(screen.getByText('Flatten pacing')).toBeInTheDocument();
+  });
+
+  it('counts and lists only the commits the merge lands — never the shared trunk', async () => {
+    // Given: the walked lineage crosses the fork (r129 is the branch point,
+    // so only r130 is the branch's own work)
+    const api = installApi();
+    (window.electronAPI.lore.branchGraph as jest.Mock).mockResolvedValue({
+      success: true,
+      data: {
+        current: 'r130',
+        branch: {
+          name: 'feat/topic',
+          revisions: [
+            { revision: 'r130', revisionNumber: 130, message: 'Flatten pacing' },
+            { revision: 'r129', revisionNumber: 129, message: 'Retune ambush' },
+          ],
+        },
+        parent: {
+          name: 'main',
+          branchPoint: 'r129',
+          revisions: [{ revision: 'r129', revisionNumber: 129, message: 'Retune ambush' }],
+        },
+        mergesFromParent: [],
+        mergesToParent: [],
+      },
+    });
+    renderView();
+    void api;
+
+    // Then: the eyebrow counts one commit and the sidebar omits the trunk's
+    await expect(screen.findByText(/1 commit ·/)).resolves.toBeInTheDocument();
+    expect(screen.getByText('Flatten pacing')).toBeInTheDocument();
+    expect(screen.queryByText('Retune ambush')).not.toBeInTheDocument();
   });
 });
 
@@ -370,6 +409,24 @@ describe('MergeView — abort', () => {
     // the card
     expect(api.abort).toHaveBeenCalledWith({ repositoryPath: REPOSITORY_PATH });
     await waitFor(() => expect(onSwitchWorkflow).toHaveBeenCalledWith('commit'));
+    expect(onExit).not.toHaveBeenCalled();
+  });
+
+  it('gates the TitleBar collapse behind the discard confirmation while live', async () => {
+    const api = installApi();
+    const user = userEvent.setup();
+    const { onCollapse, onExit } = renderView();
+    await screen.findByRole('button', { name: 'Abort' });
+
+    // When: collapsing to the pill mid-merge and confirming the discard
+    await user.click(screen.getByLabelText('Collapse to pill'));
+    expect(await screen.findByText('Discard this merge?')).toBeInTheDocument();
+    expect(onCollapse).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Discard merge' }));
+
+    // Then: the merge is aborted, then the collapse proceeds — never silently
+    expect(api.abort).toHaveBeenCalledWith({ repositoryPath: REPOSITORY_PATH });
+    await waitFor(() => expect(onCollapse).toHaveBeenCalledTimes(1));
     expect(onExit).not.toHaveBeenCalled();
   });
 

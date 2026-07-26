@@ -177,8 +177,7 @@ export class DiffService {
   }
 
   // The Project View's compare picker: resolves both CompareTarget sides to
-  // revisions and diffs them with fileDiff. The working-tree side never needs
-  // the fileDump fallback.
+  // revisions and diffs them with fileDiff.
   async compare(request: DiffRequest): Promise<DiffResponse> {
     // Validated at the IPC boundary (validators.ts); typed in-process here.
     const { repositoryPath, source, target, paths } = request;

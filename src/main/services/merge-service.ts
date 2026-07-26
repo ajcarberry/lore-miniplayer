@@ -103,6 +103,9 @@ interface ActiveMerge {
 // typed error. All state transitions are logged.
 export class MergeService {
   private readonly activeMerges = new Map<string, ActiveMerge>();
+  // Repositories with a start() past its in-flight check but not yet
+  // recorded — closes the gap where two overlapping starts both pass it.
+  private readonly startingRepos = new Set<string>();
 
   constructor(
     private readonly log: MainLogger,
@@ -114,14 +117,23 @@ export class MergeService {
   // in-flight merge, and returns the composed MergeState. Refuses a second
   // concurrent merge for the same repository.
   async start(request: MergeStartRequest): Promise<MergeState> {
-    // Validated at the IPC boundary (validators.ts); typed in-process here.
-    const { repositoryPath, sourceBranch, targetBranch } = request;
-
-    if (this.activeMerges.has(repositoryPath)) {
+    const { repositoryPath } = request;
+    if (this.activeMerges.has(repositoryPath) || this.startingRepos.has(repositoryPath)) {
       throw new MergeOperationError(
         `A merge is already in progress for repository '${repositoryPath}'`
       );
     }
+    this.startingRepos.add(repositoryPath);
+    try {
+      return await this.runStart(request);
+    } finally {
+      this.startingRepos.delete(repositoryPath);
+    }
+  }
+
+  private async runStart(request: MergeStartRequest): Promise<MergeState> {
+    // Validated at the IPC boundary (validators.ts); typed in-process here.
+    const { repositoryPath, sourceBranch, targetBranch } = request;
 
     this.log.info('Merge start', {
       operation: 'merge:start',
@@ -279,8 +291,8 @@ export class MergeService {
         repositoryPath,
         message: sourceMessage,
       });
-      // The commit op itself streams the committed revision (C24) — no
-      // follow-up history read.
+      // The commit op itself streams the committed revision — no follow-up
+      // history read.
       record.committedRevision = await this.loreRepositoryService.commit(
         repositoryPath,
         sourceMessage
@@ -376,16 +388,15 @@ export class MergeService {
   // opaque "Cannot merge with staged state". Two very different situations
   // reach it:
   //
-  // A merge left materialized on disk by a previous session — the
-  // app restarted, or the Project View exited before its abort ran. Its rows
-  // may carry merge flags (a conflict) or, for a clean merge that only imported
-  // target-only files, NO flag at all: just staged rows the SDK never signed
-  // Both are backed out and the merge re-run: the user asked for
-  // this merge, and re-running reproduces it against the current target.
+  // A merge left materialized on disk by a previous session — the app
+  // restarted, or the Project View exited before its abort ran. Its rows may
+  // carry merge flags (a conflict) or, for a clean merge that only imported
+  // target-only files, no flag at all — just staged rows. Either shape is
+  // backed out and the merge re-run: the user asked for this merge, and
+  // re-running reproduces it against the current target.
   //
-  // (the user's own work) Anything still staged after that is the user's — it
-  // is not ours to discard, so the merge is refused by NAME, with the action
-  // that clears it.
+  // Anything still dirty after that is the user's own work — not ours to
+  // discard, so the merge is refused by NAME, with the action that clears it.
   private async requireMergeableCheckout(repositoryPath: string): Promise<void> {
     let status = await this.loreRepositoryService.getFileStatus(repositoryPath);
     if (allStatusFiles(status).some(isMergeFile) || status.staged.length > 0) {

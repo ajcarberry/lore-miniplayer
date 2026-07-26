@@ -136,8 +136,8 @@ export const BranchGraphSchema = z.object({
 // workflows).
 // ---------------------------------------------------------------------------
 
-// Per-file diff result (fileDiff / fileDump fallback), rendered in the
-// Project View's center pane.
+// Per-file diff result (fileDiff), rendered in the Project View's center
+// pane.
 export const FileDiffActionSchema = z.enum(['added', 'modified', 'deleted', 'moved']);
 
 export const LineStatsSchema = z.object({
@@ -212,7 +212,12 @@ export const ReviewCompareSchema = z.object({
 export const ReviewOpenRequestSchema = z.object({
   repositoryPath: z.string().min(1),
   repositoryId: RepositorySchema.shape.id,
+  // Carried for the header eyebrow, so the view never refetches the
+  // repository list just to recover a name the opener already had.
+  repositoryName: RepositorySchema.shape.name,
   branchName: z.string().min(1),
+  // The merge workflow's landing target (also the switcher's merge target).
+  targetBranch: z.string().min(1),
   workflow: ReviewWorkflowModeSchema,
   compare: ReviewCompareSchema,
 });

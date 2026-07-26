@@ -1,7 +1,6 @@
 import type { ReactElement } from 'react';
 import { Stack } from '@mantine/core';
 import type { ReviewOpenRequest, ReviewWorkflowMode } from '../../../shared/types';
-import { TitleBar } from '../TitleBar';
 import { CommitReview } from './CommitReview';
 import { MergeView } from './MergeView';
 
@@ -19,10 +18,10 @@ export interface ProjectViewProps {
 }
 
 // The Project View the card morphs into: routes the open request by
-// workflow — commit review and merge each own a view. Keyed on the request so
-// a re-open with different targets remounts the view with fresh seeded state.
-// The TitleBar's collapse control drops straight to the pill; the workflow
-// headers' Back returns to the card.
+// workflow — commit review and merge each own a view (including its TitleBar,
+// so the merge can gate the collapse control behind its discard
+// confirmation). Keyed on the request so a re-open with different targets
+// remounts the view with fresh seeded state.
 export function ProjectView({
   request,
   onExit,
@@ -33,12 +32,12 @@ export function ProjectView({
   const key = JSON.stringify(request);
   return (
     <Stack gap={0} h='100%' style={{ background: 'var(--paper)' }}>
-      <TitleBar onCollapse={onCollapse} />
       {request.workflow === 'merge' ? (
         <MergeView
           key={key}
           request={request}
           onExit={onExit}
+          onCollapse={onCollapse}
           onSwitchWorkflow={onSwitchWorkflow}
         />
       ) : (
@@ -46,6 +45,7 @@ export function ProjectView({
           key={key}
           request={request}
           onExit={onExit}
+          onCollapse={onCollapse}
           onSwitchWorkflow={onSwitchWorkflow}
           mergeAvailable={mergeAvailable}
         />

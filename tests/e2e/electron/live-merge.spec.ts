@@ -128,7 +128,8 @@ test.describe('Live merge — the branch lands on main', () => {
       timeout: 60_000,
     });
     await expect(review.getByTestId(`conflict-block-${MESH}`)).toBeVisible({ timeout: 30_000 });
-    await expect(review.getByText(/· 1 conflict$/)).toBeVisible();
+    // One OWN commit — the shared trunk must not inflate the count.
+    await expect(review.getByText(/· 1 commit · 1 conflict$/)).toBeVisible();
     await expect(conflictSide(review, MESH, 'Theirs — main')).toContainText('vertices: 512');
     await expect(conflictSide(review, MESH, `Mine — ${branchName}`)).toContainText('vertices: 256');
 

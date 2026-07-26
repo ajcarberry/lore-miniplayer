@@ -44,7 +44,9 @@ export function buildReviewOpenRequest(intent: OpenReviewIntent): ReviewOpenRequ
   return {
     repositoryPath: intent.repository.localPath,
     repositoryId: intent.repository.id,
+    repositoryName: intent.repository.name,
     branchName: intent.branchName,
+    targetBranch: intent.targetBranch,
     workflow: intent.workflow,
     compare: buildCompare(intent),
   };

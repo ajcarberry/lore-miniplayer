@@ -14,6 +14,7 @@ import { ComparePicker } from './ComparePicker';
 import { FileList } from './FileList';
 import { DiffPane } from './DiffPane';
 import { CommitBar } from './CommitBar';
+import { TitleBar } from '../TitleBar';
 import { ReviewHeader } from './ReviewHeader';
 import { WorkflowSwitch } from './WorkflowSwitch';
 import { useReviewMeta } from './useReviewMeta';
@@ -23,6 +24,8 @@ export interface CommitReviewProps {
   readonly request: ReviewOpenRequest;
   // Morph back to the card.
   readonly onExit: () => void;
+  // Collapse straight to the ambient pill.
+  readonly onCollapse: () => void;
   // Re-open the view with the other workflow (the header switcher).
   readonly onSwitchWorkflow: (workflow: ReviewWorkflowMode) => void;
   // Whether the merge workflow applies (distinct target, revisions to land);
@@ -45,11 +48,7 @@ export function CommitReview(props: CommitReviewProps): ReactElement {
   const [diffs, setDiffs] = useState<FileDiffResult[]>([]);
   const [status, setStatus] = useState<LoreFileStatusGroup>(EMPTY_STATUS);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
-  const { repositoryName, revisions } = useReviewMeta(
-    repositoryPath,
-    request.repositoryId,
-    request.branchName
-  );
+  const { revisions } = useReviewMeta(repositoryPath, request.branchName);
   const [message, setMessage] = useState<string>('');
   const [committing, setCommitting] = useState(false);
   const [committed, setCommitted] = useState(false);
@@ -160,10 +159,11 @@ export function CommitReview(props: CommitReviewProps): ReactElement {
 
   return (
     <Stack gap={0} style={{ flex: 1, minHeight: 0 }}>
+      <TitleBar onCollapse={props.onCollapse} />
       <ReviewHeader
         onBack={props.onExit}
         title={`Review — ${request.branchName}`}
-        eyebrow={repositoryName ? `${repositoryName} · ${request.branchName}` : request.branchName}
+        eyebrow={`${request.repositoryName} · ${request.branchName}`}
         right={
           <Group gap='sm' wrap='nowrap'>
             <WorkflowSwitch

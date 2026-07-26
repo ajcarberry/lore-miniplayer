@@ -86,11 +86,10 @@ export async function branchTip<E extends OperationError>(
 }
 
 // The SDK resolves a relative path arg against the process CWD, NOT
-// globalArgs.repositoryPath (known gotcha, first hit on fileStage — see
-// lore-handlers.ts). A repo-relative path such as 'Content/Caves/pass_1.txt'
-// would otherwise become '<app-cwd>/Content/Caves/pass_1.txt' and the op
-// rejects (fileDiff) or silently PATH_IGNOREs it (the merge resolve ops,
-// Every path handed to an SDK op must be
+// globalArgs.repositoryPath (see lore-handlers.ts for the same gotcha on
+// fileStage). A repo-relative path such as 'Content/Caves/pass_1.txt' would
+// otherwise become '<app-cwd>/Content/Caves/pass_1.txt' and the op rejects
+// or silently PATH_IGNOREs it. Every path handed to an SDK op must be
 // repo-absolute. Idempotent for a path that is already absolute.
 export function toRepoAbsolutePath(repositoryPath: string, filePath: string): string {
   return path.isAbsolute(filePath) ? filePath : path.join(repositoryPath, filePath);

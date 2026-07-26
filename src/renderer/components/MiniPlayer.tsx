@@ -25,7 +25,6 @@ import { UtilityFooter } from './UtilityFooter';
 import { ProjectView } from './review/ProjectView';
 import { useProjectViewMorph } from '../hooks/useProjectViewMorph';
 import { useRepositoryMutations } from '../hooks/useRepositoryMutations';
-import { buildReviewOpenRequest } from './review/openReview';
 import { useProjectViewWorkflows } from '../hooks/useProjectViewWorkflows';
 import { SyncView } from './SyncView';
 import { PlayerDialogs } from './PlayerDialogs';
@@ -55,6 +54,8 @@ interface PlayerCardProps {
   readonly onCollapse: () => void;
   // Receives the built open request — the card morphs into the Project View.
   readonly onOpenProjectView: (request: ReviewOpenRequest) => void;
+  // The footer's always-visible opener (commit workflow, current context).
+  readonly onOpenCommitView: () => void;
   readonly mergeTarget: string;
   readonly hasRevisionsToLand: boolean;
 }
@@ -80,6 +81,7 @@ function PlayerCard({
   onEditRepo,
   onCollapse,
   onOpenProjectView,
+  onOpenCommitView,
   mergeTarget,
   hasRevisionsToLand,
 }: PlayerCardProps): ReactElement {
@@ -166,19 +168,7 @@ function PlayerCard({
           onRefreshRepos={() => void repos.refresh()}
           serverUrl={server.serverUrl}
           onChangeServer={server.disconnect}
-          onOpenProjectView={() => {
-            if (repos.selectedRepo) {
-              onOpenProjectView(
-                buildReviewOpenRequest({
-                  repository: repos.selectedRepo,
-                  branchName: branches.currentBranch,
-                  currentRevision: graph.graph.current,
-                  targetBranch: mergeTarget,
-                  workflow: 'commit',
-                })
-              );
-            }
-          }}
+          onOpenProjectView={onOpenCommitView}
         />
       )}
     </Paper>
@@ -324,6 +314,7 @@ export function MiniPlayer(): ReactElement {
               onEditRepo={repoMutations.setEditingRepo}
               onCollapse={morph.forceCollapse}
               onOpenProjectView={projectView.open}
+              onOpenCommitView={() => workflows.switchWorkflow('commit')}
               mergeTarget={workflows.mergeTarget}
               hasRevisionsToLand={workflows.hasRevisionsToLand}
             />

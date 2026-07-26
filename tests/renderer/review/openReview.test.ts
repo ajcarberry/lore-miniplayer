@@ -34,7 +34,9 @@ describe('buildReviewOpenRequest', () => {
     expect(request).toEqual({
       repositoryPath: '/repos/emberfall',
       repositoryId: REPO_ID,
+      repositoryName: 'emberfall',
       branchName: 'feat/topic',
+      targetBranch: 'main',
       workflow: 'commit',
       compare: {
         source: { kind: 'revision', revision: 'r128' },

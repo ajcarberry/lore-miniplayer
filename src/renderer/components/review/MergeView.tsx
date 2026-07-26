@@ -15,6 +15,7 @@ import { AbortMergeModal } from './AbortMergeModal';
 import { MergeBar } from './MergeBar';
 import { MergeFileArea } from './MergeFileArea';
 import { MergeSidebar } from './MergeSidebar';
+import { TitleBar } from '../TitleBar';
 import { ReviewHeader } from './ReviewHeader';
 import { WorkflowSwitch } from './WorkflowSwitch';
 import { useReviewMeta } from './useReviewMeta';
@@ -49,46 +50,55 @@ function MergeStartError(props: MergeStartErrorProps): ReactElement {
   );
 }
 
+type LeaveDestination = 'card' | 'commit' | 'pill';
+
 export interface MergeViewProps {
   readonly request: ReviewOpenRequest;
   // Morph back to the card.
   readonly onExit: () => void;
+  // Collapse straight to the ambient pill.
+  readonly onCollapse: () => void;
   // Re-open the view with the other workflow (the header switcher).
   readonly onSwitchWorkflow: (workflow: ReviewWorkflowMode) => void;
 }
 
-// The Project View's merge workflow. Truthful semantics: the merge
-// runs IN the checkout (mine = the source branch, theirs =
-// the target branch, main); resolution is per FILE; and completion lands the
-// merge revision on the TARGET branch and pushes it. On mount it starts the
-// merge through the merge bridge, fetches both sides of each conflicted file via
-// the diff bridge (MergeState carries no content), and drives resolve /
-// abort / complete. Errors from start and complete surface as Mantine alerts,
-// never silently.
 interface MergeLeaveDeps {
   readonly repositoryPath: string;
   readonly live: boolean;
   readonly onExit: () => void;
+  readonly onCollapse: () => void;
   readonly onSwitchWorkflow: (workflow: ReviewWorkflowMode) => void;
 }
 
-// Every way out of a live merge (Back, the workflow switcher, Abort) routes
-// through one discard confirmation — the on-disk merge would otherwise be
-// stranded with no surface able to finish it. A landed merge, a merge that
-// never started, or a start error leaves directly.
+// Every way out of a live merge (Back, TitleBar collapse, the workflow
+// switcher, Abort) routes through one discard confirmation — the on-disk
+// merge would otherwise be stranded with no surface able to finish it. A
+// landed merge, a merge that never started, or a start error leaves directly.
 function useMergeLeave(deps: MergeLeaveDeps): {
   abortConfirmOpen: boolean;
   closeAbortConfirm: () => void;
   aborting: boolean;
   handleAbort: () => void;
-  leaveMerge: (to: 'card' | 'commit') => void;
+  leaveMerge: (to: LeaveDestination) => void;
   openAbortConfirm: () => void;
 } {
-  const { repositoryPath, live, onExit, onSwitchWorkflow } = deps;
+  const { repositoryPath, live, onExit, onCollapse, onSwitchWorkflow } = deps;
   const [abortConfirmOpen, setAbortConfirmOpen] = useState(false);
   const [aborting, setAborting] = useState(false);
-  // Where a confirmed discard goes: the card or the commit view.
-  const [leaveTo, setLeaveTo] = useState<'card' | 'commit'>('card');
+  // Where a confirmed discard goes.
+  const [leaveTo, setLeaveTo] = useState<LeaveDestination>('card');
+  const leaveNow = useCallback(
+    (to: LeaveDestination): void => {
+      if (to === 'commit') {
+        onSwitchWorkflow('commit');
+      } else if (to === 'pill') {
+        onCollapse();
+      } else {
+        onExit();
+      }
+    },
+    [onSwitchWorkflow, onCollapse, onExit]
+  );
 
   const handleAbort = useCallback((): void => {
     setAborting(true);
@@ -97,32 +107,24 @@ function useMergeLeave(deps: MergeLeaveDeps): {
       .then(result => {
         if (result.success) {
           setAbortConfirmOpen(false);
-          if (leaveTo === 'commit') {
-            onSwitchWorkflow('commit');
-          } else {
-            onExit();
-          }
+          leaveNow(leaveTo);
         } else {
           notifyError('Abort failed', result.error);
         }
       })
       .finally(() => setAborting(false));
-  }, [repositoryPath, leaveTo, onSwitchWorkflow, onExit]);
+  }, [repositoryPath, leaveTo, leaveNow]);
 
   const leaveMerge = useCallback(
-    (to: 'card' | 'commit'): void => {
+    (to: LeaveDestination): void => {
       if (live) {
         setLeaveTo(to);
         setAbortConfirmOpen(true);
         return;
       }
-      if (to === 'commit') {
-        onSwitchWorkflow('commit');
-      } else {
-        onExit();
-      }
+      leaveNow(to);
     },
-    [live, onSwitchWorkflow, onExit]
+    [live, leaveNow]
   );
 
   const openAbortConfirm = useCallback((): void => {
@@ -140,22 +142,34 @@ function useMergeLeave(deps: MergeLeaveDeps): {
   };
 }
 
+// The Project View's merge workflow. Truthful semantics: the merge runs IN
+// the checkout (mine = the source branch, theirs = the target branch);
+// resolution is per FILE; and completion lands the merge revision on the
+// TARGET branch and pushes it. On mount it starts the merge through the merge
+// bridge, fetches both sides of each conflicted file via the diff bridge
+// (MergeState carries no content), and drives resolve / abort / complete.
+// Errors from start and complete surface as Mantine alerts, never silently.
 export function MergeView(props: MergeViewProps): ReactElement {
-  const { request, onExit, onSwitchWorkflow } = props;
+  const { request, onExit, onCollapse, onSwitchWorkflow } = props;
   const repositoryPath = request.repositoryPath;
   const sourceBranch = request.branchName;
-  const targetBranch =
-    request.compare.target.kind === 'branchHead' ? request.compare.target.branch : 'main';
+  const targetBranch = request.targetBranch;
 
   const [mergeState, setMergeState] = useState<MergeState | null>(null);
   const [starting, setStarting] = useState(true);
   const [startError, setStartError] = useState<string | null>(null);
   const [bothSides, setBothSides] = useState<Map<string, FileDiffResult>>(new Map());
-  const { repositoryName, revisions } = useReviewMeta(
-    repositoryPath,
-    request.repositoryId,
-    sourceBranch
-  );
+  const { revisions, parentBranchPoint } = useReviewMeta(repositoryPath, sourceBranch);
+  // Only the branch's OWN commits land: the walked lineage crosses the fork
+  // into the shared trunk, so everything from the branch point down is the
+  // target's history, not work this merge brings.
+  const aheadRevisions = useMemo(() => {
+    const forkIdx =
+      parentBranchPoint === undefined
+        ? -1
+        : revisions.findIndex(revision => revision.revision === parentBranchPoint);
+    return forkIdx >= 0 ? revisions.slice(0, forkIdx) : revisions;
+  }, [revisions, parentBranchPoint]);
   const [resolvingPath, setResolvingPath] = useState<string | null>(null);
   const [completing, setCompleting] = useState(false);
   const [completeError, setCompleteError] = useState<string | null>(null);
@@ -164,6 +178,7 @@ export function MergeView(props: MergeViewProps): ReactElement {
     repositoryPath,
     live: mergeState !== null && landedRevision === null,
     onExit,
+    onCollapse,
     onSwitchWorkflow,
   });
 
@@ -264,27 +279,36 @@ export function MergeView(props: MergeViewProps): ReactElement {
 
   const handleBack = useCallback((): void => leave.leaveMerge('card'), [leave]);
 
+  const titleBar = <TitleBar onCollapse={() => leave.leaveMerge('pill')} />;
+
   if (startError !== null) {
     return (
-      <MergeStartError
-        error={startError}
-        aborting={leave.aborting}
-        onAbort={leave.handleAbort}
-        onExit={onExit}
-      />
+      <Stack gap={0} style={{ flex: 1, minHeight: 0 }}>
+        {titleBar}
+        <MergeStartError
+          error={startError}
+          aborting={leave.aborting}
+          onAbort={leave.handleAbort}
+          onExit={onExit}
+        />
+      </Stack>
     );
   }
 
   if (starting || mergeState === null) {
     return (
-      <Center style={{ flex: 1 }}>
-        <Loader />
-      </Center>
+      <Stack gap={0} style={{ flex: 1, minHeight: 0 }}>
+        {titleBar}
+        <Center style={{ flex: 1 }}>
+          <Loader />
+        </Center>
+      </Stack>
     );
   }
 
   return (
     <Stack gap={0} style={{ flex: 1, minHeight: 0 }}>
+      {titleBar}
       {/* Merge header: "Merge — <branch> → <target>" with a
           "<repo> · N commits · M conflicts" eyebrow, on the shared shell. */}
       <ReviewHeader
@@ -297,7 +321,7 @@ export function MergeView(props: MergeViewProps): ReactElement {
           />
         }
         title={`Merge — ${sourceBranch} → ${targetBranch}`}
-        eyebrow={`${repositoryName ? `${repositoryName} · ` : ''}${revisions.length} ${pluralize(revisions.length, 'commit')} · ${conflictCount} ${pluralize(conflictCount, 'conflict')}`}
+        eyebrow={`${request.repositoryName} · ${aheadRevisions.length} ${pluralize(aheadRevisions.length, 'commit')} · ${conflictCount} ${pluralize(conflictCount, 'conflict')}`}
         icon={<IconGitMerge size={18} color='var(--acc-deep, #7a5b1e)' />}
       />
 
@@ -319,7 +343,7 @@ export function MergeView(props: MergeViewProps): ReactElement {
         <Box w={300} style={{ minHeight: 0 }}>
           <MergeSidebar
             targetBranch={targetBranch}
-            revisions={revisions}
+            revisions={aheadRevisions}
             conflictFiles={conflictFiles}
           />
         </Box>

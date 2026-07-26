@@ -11,7 +11,11 @@ import {
 } from '../../shared/window-position';
 import type { Bounds, ExpandAnchor } from '../../shared/window-position';
 import { handleResult } from './result-helpers';
-import { WindowNoticeActiveSchema, WindowOpenTerminalArgsSchema } from './validators';
+import {
+  WindowNoticeActiveSchema,
+  WindowOpenTerminalArgsSchema,
+  WindowViewSchema,
+} from './validators';
 import type { MainLogger } from './logger';
 
 // Focus dimming with a notice override. The window dims to 70% opacity when it
@@ -228,13 +232,15 @@ export function registerWindowHandlers(log: MainLogger): void {
   let cardBoundsBeforeReview: Bounds | null = null;
   ipcMain.handle('window:setView', (event, rawView: unknown): void => {
     const win = BrowserWindow.fromWebContents(event.sender);
-    if ((rawView !== 'card' && rawView !== 'projectView') || !win) {
-      if (rawView !== 'card' && rawView !== 'projectView') {
-        log.error('Invalid setView payload', { rawView, operation: 'window:setView' });
-      }
+    const parsed = WindowViewSchema.safeParse(rawView);
+    if (!parsed.success) {
+      log.error('Invalid setView payload', { rawView, operation: 'window:setView' });
       return;
     }
-    if (rawView === 'projectView') {
+    if (!win) {
+      return;
+    }
+    if (parsed.data === 'projectView') {
       const current = win.getBounds();
       // Only the FIRST card → view transition remembers the card's bounds; a
       // repeat request (the workflow switcher re-opening the view) would

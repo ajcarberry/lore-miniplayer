@@ -25,6 +25,7 @@ jest.mock('@lore-vcs/sdk', () => {
   };
 });
 
+import * as path from 'node:path';
 import { lore, LoreError } from '@lore-vcs/sdk';
 import { LoreEventTag, LoreFileAction } from '@lore-vcs/sdk/types/enums';
 import {
@@ -225,9 +226,14 @@ describe('DiffService', () => {
       // Then: the repo-relative paths are absolutized against repositoryPath
       // before reaching the SDK (the SDK resolves relative path args against
       // the process CWD, not repositoryPath — see toAbsolutePath)
+      // (path.join keeps the expectation separator-correct on Windows)
       expect(mockLore.fileDiff).toHaveBeenCalledWith(
         { repositoryPath: '/repo' },
-        { sourceRevision: 'r1', targetRevision: '', paths: ['/repo/a.txt', '/repo/b.txt'] }
+        {
+          sourceRevision: 'r1',
+          targetRevision: '',
+          paths: [path.join('/repo', 'a.txt'), path.join('/repo', 'b.txt')],
+        }
       );
     });
 
@@ -254,7 +260,8 @@ describe('DiffService', () => {
       });
 
       // Then: the result path is repo-relative, not the absolute echo
-      expect(result[0]?.path).toBe('Content/Caves/pass_1.txt');
+      // (path.join keeps the expectation separator-correct on Windows)
+      expect(result[0]?.path).toBe(path.join('Content', 'Caves', 'pass_1.txt'));
     });
 
     it('omits the paths key entirely when no filter is given', async () => {

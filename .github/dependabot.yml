@@ -3,7 +3,9 @@ version: 2
 updates:
   # Minor/patch bumps arrive as two grouped PRs a week (runtime vs. tooling);
   # majors always come as their own PR so Electron/React/Vite jumps are
-  # reviewed in isolation.
+  # reviewed in isolation. @lore-vcs/* is excluded from the groups because it
+  # carries the native FFI binaries and pins the loreserver version the
+  # integration harness downloads — it gets its own PR at every level.
   - package-ecosystem: npm
     directory: /
     schedule:
@@ -20,6 +22,7 @@ updates:
         applies-to: version-updates
         dependency-type: production
         update-types: [minor, patch]
+        exclude-patterns: ['@lore-vcs/*']
       dev-deps:
         applies-to: version-updates
         dependency-type: development
@@ -27,6 +30,7 @@ updates:
       security-updates:
         applies-to: security-updates
         patterns: ['*']
+        exclude-patterns: ['@lore-vcs/*']
 
   - package-ecosystem: github-actions
     directory: /

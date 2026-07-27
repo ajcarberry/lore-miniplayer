@@ -33,8 +33,7 @@ describe('buildReviewOpenRequest', () => {
     // preloads current revision → working tree
     expect(request).toEqual({
       repositoryPath: '/repos/emberfall',
-      repositoryId: REPO_ID,
-      repositoryName: 'emberfall',
+        repositoryName: 'emberfall',
       branchName: 'feat/topic',
       targetBranch: 'main',
       workflow: 'commit',

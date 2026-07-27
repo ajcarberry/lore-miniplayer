@@ -121,6 +121,9 @@ export interface LoreFileStatus {
   readonly path: string;
   readonly isUntracked: boolean;
   readonly isStaged: boolean;
+  // Non-zero when the change comes from a merge (the SDK's flagMerged) —
+  // set on conflict rows AND on files a merge imported from the target.
+  readonly merged?: boolean;
   readonly conflict: boolean;
   readonly conflictUnresolved?: boolean;
   readonly conflictAutomerged?: boolean;
@@ -176,7 +179,7 @@ export type ReviewCompare = z.infer<typeof ReviewCompareSchema>;
 export type ReviewOpenRequest = z.infer<typeof ReviewOpenRequestSchema>;
 
 // IPC request/response payload types (the `T` inside each channel's
-// `Result<T>`; see IPC_CHANNELS in schemas.ts for the channel names).
+// `Result<T>`; channel names are declared at their call sites).
 // Requests are inferred from their boundary-validated Zod schemas; responses
 // are plain aliases of the underlying result types (nothing parses a
 // response at runtime).

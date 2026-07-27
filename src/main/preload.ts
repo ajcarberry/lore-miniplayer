@@ -23,7 +23,6 @@ import type {
   Result,
   VoidResult,
 } from '../shared/types';
-import { IPC_CHANNELS } from '../shared/schemas';
 
 // Expose window control APIs
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -228,9 +227,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // The Project View's compare picker.
   diff: {
     compare: async (request: DiffRequest): Promise<Result<DiffResponse>> => {
-      return ipcRenderer.invoke(IPC_CHANNELS.diff.compare, request) as Promise<
-        Result<DiffResponse>
-      >;
+      return ipcRenderer.invoke('diff:compare', request) as Promise<Result<DiffResponse>>;
     },
   },
   // The Project View's merge workflow: start a branch→target merge, resolve
@@ -238,22 +235,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // (commit + push). One merge in flight per repository.
   merge: {
     start: async (request: MergeStartRequest): Promise<Result<MergeStartResponse>> => {
-      return ipcRenderer.invoke(IPC_CHANNELS.merge.start, request) as Promise<
-        Result<MergeStartResponse>
-      >;
+      return ipcRenderer.invoke('merge:start', request) as Promise<Result<MergeStartResponse>>;
     },
     resolve: async (request: MergeResolveRequest): Promise<Result<MergeResolveResponse>> => {
-      return ipcRenderer.invoke(IPC_CHANNELS.merge.resolve, request) as Promise<
-        Result<MergeResolveResponse>
-      >;
+      return ipcRenderer.invoke('merge:resolve', request) as Promise<Result<MergeResolveResponse>>;
     },
     abort: async (request: MergeAbortRequest): Promise<Result<MergeAbortResponse>> => {
-      return ipcRenderer.invoke(IPC_CHANNELS.merge.abort, request) as Promise<
-        Result<MergeAbortResponse>
-      >;
+      return ipcRenderer.invoke('merge:abort', request) as Promise<Result<MergeAbortResponse>>;
     },
     complete: async (request: MergeCompleteRequest): Promise<Result<MergeCompleteResponse>> => {
-      return ipcRenderer.invoke(IPC_CHANNELS.merge.complete, request) as Promise<
+      return ipcRenderer.invoke('merge:complete', request) as Promise<
         Result<MergeCompleteResponse>
       >;
     },

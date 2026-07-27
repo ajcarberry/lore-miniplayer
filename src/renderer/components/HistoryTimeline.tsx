@@ -245,7 +245,6 @@ export function ConstellationTimeline({
     width,
     oldestChildX,
     branchPointX,
-    forkChildX,
     showForkConnector,
     hasElidedBefore,
     ledgerIndexByHash,
@@ -318,7 +317,7 @@ export function ConstellationTimeline({
               data-testid='branch-connector'
               x1={branchPointX}
               y1={PARENT_CY}
-              x2={forkChildX}
+              x2={oldestChildX}
               y2={CHILD_CY}
               stroke='var(--acc)'
               strokeOpacity={0.5}

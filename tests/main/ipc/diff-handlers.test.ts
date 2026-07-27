@@ -18,7 +18,6 @@ jest.mock('electron-log/main.js', () => ({
 
 import log from 'electron-log/main.js';
 import { registerDiffHandlers } from '../../../src/main/ipc/diff-handlers';
-import { IPC_CHANNELS } from '../../../src/shared/schemas';
 import type { DiffService } from '../../../src/main/services/diff-service';
 
 const mockDiffService = {
@@ -45,7 +44,7 @@ beforeEach(() => {
 describe('diff handler registration', () => {
   it('registers the compare channel', () => {
     // Then: diff:compare is reachable
-    expect(registeredHandlers.has(IPC_CHANNELS.diff.compare)).toBe(true);
+    expect(registeredHandlers.has('diff:compare')).toBe(true);
   });
 });
 
@@ -64,7 +63,7 @@ describe('diff:compare', () => {
     mockDiffService.compare.mockResolvedValue(diff);
 
     // When: invoking with a valid request
-    const result = await invoke(IPC_CHANNELS.diff.compare, request);
+    const result = await invoke('diff:compare', request);
 
     // Then: the service is called and the diff comes back wrapped
     expect(mockDiffService.compare).toHaveBeenCalledWith(request);
@@ -73,7 +72,7 @@ describe('diff:compare', () => {
 
   it('rejects a request missing a repositoryPath without touching the service', async () => {
     // When: invoking without a repositoryPath
-    const result = (await invoke(IPC_CHANNELS.diff.compare, {
+    const result = (await invoke('diff:compare', {
       ...request,
       repositoryPath: '',
     })) as { success: boolean };
@@ -85,7 +84,7 @@ describe('diff:compare', () => {
 
   it('rejects a request with a malformed CompareTarget', async () => {
     // When: invoking with an unknown target kind
-    const result = (await invoke(IPC_CHANNELS.diff.compare, {
+    const result = (await invoke('diff:compare', {
       ...request,
       target: { kind: 'bogus' },
     })) as { success: boolean };
@@ -100,7 +99,7 @@ describe('diff:compare', () => {
     mockDiffService.compare.mockRejectedValue(new Error('No such revision'));
 
     // When: invoking
-    const result = (await invoke(IPC_CHANNELS.diff.compare, request)) as {
+    const result = (await invoke('diff:compare', request)) as {
       success: boolean;
       error?: string;
     };

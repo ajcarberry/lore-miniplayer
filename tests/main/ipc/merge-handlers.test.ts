@@ -18,7 +18,6 @@ jest.mock('electron-log/main.js', () => ({
 
 import log from 'electron-log/main.js';
 import { registerMergeHandlers } from '../../../src/main/ipc/merge-handlers';
-import { IPC_CHANNELS } from '../../../src/shared/schemas';
 import type { MergeService } from '../../../src/main/services/merge-service';
 import type { MergeState } from '../../../src/shared/types';
 
@@ -56,10 +55,10 @@ beforeEach(() => {
 
 describe('merge handler registration', () => {
   it('registers the start/resolve/abort/complete channels', () => {
-    expect(registeredHandlers.has(IPC_CHANNELS.merge.start)).toBe(true);
-    expect(registeredHandlers.has(IPC_CHANNELS.merge.resolve)).toBe(true);
-    expect(registeredHandlers.has(IPC_CHANNELS.merge.abort)).toBe(true);
-    expect(registeredHandlers.has(IPC_CHANNELS.merge.complete)).toBe(true);
+    expect(registeredHandlers.has('merge:start')).toBe(true);
+    expect(registeredHandlers.has('merge:resolve')).toBe(true);
+    expect(registeredHandlers.has('merge:abort')).toBe(true);
+    expect(registeredHandlers.has('merge:complete')).toBe(true);
   });
 });
 
@@ -71,7 +70,7 @@ describe('merge:start', () => {
     mockMergeService.start.mockResolvedValue(mergeState);
 
     // When: invoking with a valid request
-    const result = await invoke(IPC_CHANNELS.merge.start, request);
+    const result = await invoke('merge:start', request);
 
     // Then: the service is called and the state comes back wrapped
     expect(mockMergeService.start).toHaveBeenCalledWith(request);
@@ -80,7 +79,7 @@ describe('merge:start', () => {
 
   it('rejects a request missing the source branch without touching the service', async () => {
     // When: invoking with an empty sourceBranch
-    const result = (await invoke(IPC_CHANNELS.merge.start, {
+    const result = (await invoke('merge:start', {
       ...request,
       sourceBranch: '',
     })) as { success: boolean };
@@ -95,7 +94,7 @@ describe('merge:start', () => {
     mockMergeService.start.mockRejectedValue(new Error('A merge is already in progress'));
 
     // When: invoking
-    const result = (await invoke(IPC_CHANNELS.merge.start, request)) as {
+    const result = (await invoke('merge:start', request)) as {
       success: boolean;
       error?: string;
     };
@@ -113,7 +112,7 @@ describe('merge:resolve', () => {
     mockMergeService.resolve.mockResolvedValue({ ...mergeState, allResolved: true });
 
     // When: invoking with a valid request
-    const result = await invoke(IPC_CHANNELS.merge.resolve, request);
+    const result = await invoke('merge:resolve', request);
 
     // Then: the service is called and the state is wrapped
     expect(mockMergeService.resolve).toHaveBeenCalledWith(request);
@@ -122,7 +121,7 @@ describe('merge:resolve', () => {
 
   it('rejects an unknown resolution value without touching the service', async () => {
     // When: invoking with an invalid resolution
-    const result = (await invoke(IPC_CHANNELS.merge.resolve, {
+    const result = (await invoke('merge:resolve', {
       ...request,
       resolution: 'both',
     })) as { success: boolean };
@@ -141,7 +140,7 @@ describe('merge:abort', () => {
     mockMergeService.abort.mockResolvedValue({ aborted: true });
 
     // When: invoking
-    const result = await invoke(IPC_CHANNELS.merge.abort, request);
+    const result = await invoke('merge:abort', request);
 
     // Then: the service is called and the confirmation wrapped
     expect(mockMergeService.abort).toHaveBeenCalledWith(request);
@@ -150,7 +149,7 @@ describe('merge:abort', () => {
 
   it('rejects a request missing the repository path', async () => {
     // When: invoking with an empty repositoryPath
-    const result = (await invoke(IPC_CHANNELS.merge.abort, { repositoryPath: '' })) as {
+    const result = (await invoke('merge:abort', { repositoryPath: '' })) as {
       success: boolean;
     };
 
@@ -168,7 +167,7 @@ describe('merge:complete', () => {
     mockMergeService.complete.mockResolvedValue({ revision: 'merge-rev' });
 
     // When: invoking
-    const result = await invoke(IPC_CHANNELS.merge.complete, request);
+    const result = await invoke('merge:complete', request);
 
     // Then: the service is called and the revision wrapped
     expect(mockMergeService.complete).toHaveBeenCalledWith(request);
@@ -180,7 +179,7 @@ describe('merge:complete', () => {
     mockMergeService.complete.mockRejectedValue(new Error('conflicts remain unresolved'));
 
     // When: invoking
-    const result = (await invoke(IPC_CHANNELS.merge.complete, request)) as {
+    const result = (await invoke('merge:complete', request)) as {
       success: boolean;
       error?: string;
     };

@@ -5,7 +5,6 @@ export const REPO_ID = '7b1a4c1e-9d2f-4e5a-8c3b-2f1e0d9c8b7a';
 export function makeReviewRequest(overrides: Partial<ReviewOpenRequest> = {}): ReviewOpenRequest {
   return {
     repositoryPath: '/repos/my-repo',
-    repositoryId: REPO_ID,
     repositoryName: 'emberfall',
     branchName: 'feat/topic',
     targetBranch: 'main',

@@ -227,20 +227,20 @@ test('staged pre-flight: the user\'s own staged work is refused by name instead 
   });
 });
 
-test('A2-restart-import: a stale merge that only IMPORTED files (no merge flags on any row) is backed out and re-run', async () => {
+test('A2-restart-import: a stale merge whose only rows are its own flag-merged imports is backed out and re-run', async () => {
   await withServer(async ({ server, service }) => {
     const scenario = await seedWorkspace(server, service);
 
     // Given: the target gained a file the branch never had, so the merge is
-    // clean and its only trace is a STAGED row carrying no merge flag at all
+    // clean and its only trace is a STAGED row the SDK marks flagMerged
     const user2 = await secondClient(server, scenario.repoUrl, 'user2');
     await user2.commitAndPush({ 'pillar.txt': 'raised\n' }, 'another author adds a file to main');
     await startMerge(scenario);
     const stale = await service.getFileStatus(scenario.workspacePath);
     assert.deepEqual(
-      stale.staged.map(file => ({ path: file.path, conflict: file.conflict })),
-      [{ path: 'pillar.txt', conflict: false }],
-      'the stale merge leaves a staged row with no merge signature'
+      stale.staged.map(file => ({ path: file.path, merged: file.merged, conflict: file.conflict })),
+      [{ path: 'pillar.txt', merged: true, conflict: false }],
+      "the merge's import carries the SDK's flagMerged signature, no conflict"
     );
 
     // And: the app restarted — the on-disk merge survives, the record does not
@@ -253,7 +253,7 @@ test('A2-restart-import: a stale merge that only IMPORTED files (no merge flags 
       targetBranch: TARGET_BRANCH,
     });
 
-    // Then: the unsigned stale merge was recognised, backed out and re-run —
+    // Then: the stale merge was recognised, backed out and re-run —
     // not reported as the user's own staged work, and not left wedged
     assert.equal(state.sourceBranch, SOURCE_BRANCH);
     const { revision } = await afterRestart.complete({
@@ -262,6 +262,41 @@ test('A2-restart-import: a stale merge that only IMPORTED files (no merge flags 
     const landedClone = await freshClone(server, scenario.repoUrl);
     const { stdout: history } = await server.lore(['history', '--repository', landedClone]);
     assert.match(history, new RegExp(revision));
+  });
+});
+
+test('A2-restart-protect: a pending merge is NOT discarded while the user has their own files staged on top', async () => {
+  await withServer(async ({ server, service }) => {
+    const scenario = await seedWorkspace(server, service);
+
+    // Given: a pending merge left by a previous session…
+    const user2 = await secondClient(server, scenario.repoUrl, 'user2');
+    await user2.commitAndPush({ 'pillar.txt': 'raised\n' }, 'another author adds a file to main');
+    await startMerge(scenario);
+    // …and the user staged their OWN file after the app restarted
+    await writeFile(join(scenario.workspacePath, 'mine.txt'), 'MY WORK\n');
+    await service.stageFiles(scenario.workspacePath, [abs(scenario.workspacePath, 'mine.txt')]);
+    const afterRestart = new MergeService(silentLog, service);
+
+    // When/Then: restarting the merge refuses by name — no destructive abort
+    const failure = await afterRestart
+      .start({
+        repositoryPath: scenario.workspacePath,
+        sourceBranch: SOURCE_BRANCH,
+        targetBranch: TARGET_BRANCH,
+      })
+      .then(
+        () => undefined,
+        (error: unknown) => error
+      );
+    assert.ok(
+      failure instanceof MergeOperationError,
+      `expected a typed error, got ${String(failure)}`
+    );
+    assert.match(failure.message, /mine\.txt/);
+
+    // And: every byte of the user's file survived — nothing was reset
+    assert.equal(await readFile(join(scenario.workspacePath, 'mine.txt'), 'utf8'), 'MY WORK\n');
   });
 });
 

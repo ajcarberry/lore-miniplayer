@@ -3,8 +3,11 @@ import { LoreEventTag } from '@lore-vcs/sdk/types/enums';
 import type { MainLogger } from '../ipc/logger';
 import type { LoreRepositoryService } from './lore-repository';
 import type { LoreEventDataOf } from './lore-events';
+import { collectEvents } from './lore-events';
+import type { LoreEventFFITyped } from '@lore-vcs/sdk/types/events';
 import { OperationError, operationHelpers, toRepoAbsolutePath } from './lore-operation';
-import { allStatusFiles, isMergeFile, stagedPaths, unrelatedStagedPaths } from './lore-status';
+import { isUnknownHash } from './branch-graph';
+import { allStatusFiles, distinctStatusPaths, unrelatedStagedPaths } from './lore-status';
 import type {
   LoreFileStatus,
   MergeAbortRequest,
@@ -41,7 +44,7 @@ const NO_MERGE_PATTERN = /no merge is in progress/i;
 
 // Shared run/collect scaffold (see ./lore-operation), typed to this service's
 // error class.
-const { run, collect, toOperationError } = operationHelpers(MergeOperationError);
+const { run, toOperationError } = operationHelpers(MergeOperationError);
 
 // The state retained per in-flight merge so resolve/complete can rebuild the
 // MergeState across IPC calls without re-driving the merge: which branches are
@@ -52,19 +55,14 @@ interface ActiveMerge {
   readonly sourceBranch: string;
   readonly targetBranch: string;
   readonly conflictPaths: readonly string[];
-  // The target-branch revision this merge brought in — its REMOTE tip (see
-  // readMergeTargetRevision).
+  // The target-branch revision this merge brought in, streamed by
+  // branchMergeStart itself (BRANCH_MERGE_START_BEGIN).
   readonly targetRevision: string;
   // Whether the source branch has revisions the target lacks — captured once at
   // start(). Distinguishes a clean phase-1 update with the branch still ahead
   // ("ready to land") from a branch whose tip is already on the target
   // ("nothing to merge"). Resolving conflicts never changes this.
   readonly hasChangesToLand: boolean;
-  // Everything the merge itself staged, including the target-added files the
-  // SDK stages with no merge flag at all (see isMergeFile). The start pre-flight
-  // guarantees the checkout had nothing staged beforehand, so anything staged
-  // AFTER this set is the user's own work for the unrelated-staged guard.
-  readonly importedPaths: ReadonlySet<string>;
   // Set once the resolved merge is committed on the source branch (phase 1
   // of complete()). If a subsequent landing step fails, this lets a retry skip
   // re-committing — the source-branch merge-commit is already durable.
@@ -142,43 +140,59 @@ export class MergeService {
       targetBranch,
     });
 
-    // The request names the branch the caller BELIEVES is checked out. If
-    // the checkout has since moved (the user switched by hand), merging the
-    // target in would resolve "mine" against the wrong branch — refuse before
-    // anything is materialized on disk.
-    await this.verifyCheckoutBranch(repositoryPath, sourceBranch);
-    // Everything branchMergeStart refuses to start on top of, checked (and
-    // where possible cleared) BEFORE it runs, so the user never meets the raw
-    // "Cannot merge with staged state".
-    await this.requireMergeableCheckout(repositoryPath);
+    // One revisionOnly status read answers both pre-flight questions: is the
+    // requested source branch actually checked out (the user may have
+    // switched by hand — merging would resolve "mine" against the wrong
+    // branch), and does the SDK record a pending merge on disk? An
+    // unreadable status degrades to "no answer" rather than blocking — the
+    // checks that follow still protect the on-disk state.
+    const workspace = await this.loreRepositoryService.getWorkspaceRevisionStatus(repositoryPath);
+    if (workspace && workspace.branchName !== sourceBranch) {
+      throw new MergeOperationError(
+        `Cannot merge into '${sourceBranch}': the checkout at '${repositoryPath}' is on '${workspace.branchName}'`
+      );
+    }
+    await this.requireMergeableCheckout(repositoryPath, workspace?.revisionMerged);
 
-    const conflictPaths = await collect(
-      lore.branchMergeStart({ repositoryPath }, { branch: targetBranch, noCommit: true }),
-      LoreEventTag.BRANCH_MERGE_CONFLICT_FILE,
-      (data: LoreEventDataOf<LoreEventTag.BRANCH_MERGE_CONFLICT_FILE>) => data.path,
-      `Failed to start merge of '${targetBranch}' into '${sourceBranch}'`
-    );
+    // One pass over the merge op's own event stream: the conflicted paths,
+    // and — from BRANCH_MERGE_START_BEGIN — the exact source revision this
+    // merge brought in. Reading it here (instead of a follow-up branch-tip
+    // query) can never race a concurrently advancing target.
+    const conflictPaths: string[] = [];
+    let targetRevision = '';
+    try {
+      await lore
+        .branchMergeStart({ repositoryPath }, { branch: targetBranch, noCommit: true })
+        .callback(event => {
+          if (event.tag === LoreEventTag.BRANCH_MERGE_CONFLICT_FILE) {
+            conflictPaths.push(
+              (event as LoreEventFFITyped<LoreEventTag.BRANCH_MERGE_CONFLICT_FILE>).clone().data
+                .path
+            );
+          } else if (event.tag === LoreEventTag.BRANCH_MERGE_START_BEGIN) {
+            targetRevision = (
+              event as LoreEventFFITyped<LoreEventTag.BRANCH_MERGE_START_BEGIN>
+            ).clone().data.revision;
+          }
+        })
+        .waitAsync();
+    } catch (error) {
+      throw toOperationError(
+        `Failed to start merge of '${targetBranch}' into '${sourceBranch}'`,
+        error
+      );
+    }
 
     // The merge is now materialized on disk but not yet recorded. If either
-    // branch read below fails, back the merge out before rethrowing — otherwise
+    // read below fails, back the merge out before rethrowing — otherwise
     // the checkout is stranded mid-merge with no in-flight record:
     // resolve/abort/complete would all refuse ("no merge in progress") and a
     // retried start would re-run branchMergeStart on an already-merging repo.
     let hasChangesToLand: boolean;
-    let targetRevision: string;
-    let importedPaths: ReadonlySet<string>;
     try {
-      // The pre-flight guarantees nothing was staged before the merge ran, so
-      // everything staged now is the merge's own import — including the
-      // target-added files the SDK stages with no merge flag at all.
-      importedPaths = stagedPaths(await this.loreRepositoryService.getFileStatus(repositoryPath));
       hasChangesToLand = await this.loreRepositoryService.hasRevisionsToLand(
         repositoryPath,
         sourceBranch,
-        targetBranch
-      );
-      targetRevision = await this.loreRepositoryService.getMergeTargetRevision(
-        repositoryPath,
         targetBranch
       );
     } catch (error) {
@@ -203,7 +217,6 @@ export class MergeService {
       targetRevision,
       conflictPaths,
       hasChangesToLand,
-      importedPaths,
     };
     this.rememberMerge(repositoryPath, record);
     return this.buildMergeState(repositoryPath, record);
@@ -275,7 +288,7 @@ export class MergeService {
 
     // Both commits below sweep in whatever is staged, so unrelated
     // staged work would silently ride the merge onto the target branch.
-    await this.refuseUnrelatedStagedWork(repositoryPath, record);
+    await this.refuseUnrelatedStagedWork(repositoryPath);
 
     // Phase 1: commit the resolved merge on the source branch.
     if (!record.committedRevision) {
@@ -344,7 +357,7 @@ export class MergeService {
     const context = `Failed to land '${record.sourceBranch}' on '${record.targetBranch}'`;
     let revisions: string[];
     try {
-      revisions = await collect(
+      revisions = await collectEvents(
         lore.branchMergeInto(
           { repositoryPath },
           {
@@ -353,16 +366,17 @@ export class MergeService {
           }
         ),
         LoreEventTag.BRANCH_MERGE_INTO_REVISION,
-        (data: LoreEventDataOf<LoreEventTag.BRANCH_MERGE_INTO_REVISION>) => data.revision,
-        context
+        (data: LoreEventDataOf<LoreEventTag.BRANCH_MERGE_INTO_REVISION>) => data.revision
       );
     } catch (error) {
       // The target moved after the source branch merged it in: the SDK refuses
       // rather than conflicting, and nothing has changed on either branch.
+      // Recognized against the SDK's OWN message, before wrapping adds app
+      // context (a branch name could otherwise false-positive the pattern).
       if (error instanceof Error && TARGET_ADVANCED_PATTERN.test(error.message)) {
         throw new TargetAdvancedError(error.message);
       }
-      throw error;
+      throw toOperationError(context, error);
     }
 
     const landedRevision = revisions[revisions.length - 1];
@@ -372,34 +386,31 @@ export class MergeService {
     return landedRevision;
   }
 
-  // Checkout guard: the checkout's current branch must be the request's source
-  // branch. An unreadable status degrades to "no answer" rather than blocking
-  // the merge — the checks that follow still protect the on-disk state.
-  private async verifyCheckoutBranch(repositoryPath: string, sourceBranch: string): Promise<void> {
-    const status = await this.loreRepositoryService.getWorkspaceRevisionStatus(repositoryPath);
-    if (status && status.branchName !== sourceBranch) {
-      throw new MergeOperationError(
-        `Cannot merge into '${sourceBranch}': the checkout at '${repositoryPath}' is on '${status.branchName}'`
-      );
-    }
-  }
-
   // Pre-flight for branchMergeStart, which refuses ANY staged state with the
-  // opaque "Cannot merge with staged state". Two very different situations
-  // reach it:
+  // opaque "Cannot merge with staged state". The SDK records the situation
+  // outright: `revisionMerged` is non-zero exactly when a merge is pending
+  // on disk (left by a previous session — app restart, or the Project View
+  // exited before its abort ran), and each of that merge's rows carries
+  // flagMerged. A pending merge is backed out and re-run — the user asked
+  // for this merge — UNLESS the user has since staged files of their own on
+  // top: the abort resets the working tree wholesale, so those are refused
+  // by NAME instead of destroyed.
   //
-  // A merge left materialized on disk by a previous session — the app
-  // restarted, or the Project View exited before its abort ran. Its rows may
-  // carry merge flags (a conflict) or, for a clean merge that only imported
-  // target-only files, no flag at all — just staged rows. Either shape is
-  // backed out and the merge re-run: the user asked for this merge, and
-  // re-running reproduces it against the current target.
-  //
-  // Anything still dirty after that is the user's own work — not ours to
-  // discard, so the merge is refused by NAME, with the action that clears it.
-  private async requireMergeableCheckout(repositoryPath: string): Promise<void> {
+  // Anything else dirty is the user's own work — not ours to discard, so the
+  // merge is refused by NAME, with the action that clears it.
+  private async requireMergeableCheckout(
+    repositoryPath: string,
+    revisionMerged: string | undefined
+  ): Promise<void> {
     let status = await this.loreRepositoryService.getFileStatus(repositoryPath);
-    if (allStatusFiles(status).some(isMergeFile) || status.staged.length > 0) {
+    if (revisionMerged !== undefined && !isUnknownHash(revisionMerged)) {
+      const userStaged = unrelatedStagedPaths(status).sort();
+      if (userStaged.length > 0) {
+        throw new MergeOperationError(
+          `Cannot restart the merge: a merge is pending in '${repositoryPath}' and these staged files are not part of it: ${userStaged.join(', ')}. ` +
+            'Commit or revert them first — discarding the pending merge resets the working tree and would destroy them.'
+        );
+      }
       this.log.warn('Merge start: backing out a merge left on disk by a previous session', {
         operation: 'merge:start',
         repositoryPath,
@@ -413,7 +424,7 @@ export class MergeService {
     // abort path (explicit, failure back-outs, stale-merge cleanup) resets
     // the working tree wholesale — unstaged edits revert and untracked files
     // are deleted.
-    const dirty = [...new Set(allStatusFiles(status).map(file => file.path))].sort();
+    const dirty = distinctStatusPaths(status).sort();
     if (dirty.length > 0) {
       throw new MergeOperationError(
         `Cannot start the merge with uncommitted changes in '${repositoryPath}': ${dirty.join(', ')}. ` +
@@ -427,9 +438,11 @@ export class MergeService {
   // failure throws.
   private async abortOnDisk(repositoryPath: string, context: string): Promise<boolean> {
     try {
-      await run(lore.branchMergeAbort({ repositoryPath }, {}), context);
+      await lore.branchMergeAbort({ repositoryPath }, {}).waitAsync();
       return true;
     } catch (error) {
+      // Recognized against the SDK's own message, before wrapping (see
+      // landOnTarget).
       if (error instanceof Error && NO_MERGE_PATTERN.test(error.message)) {
         this.log.info('Merge abort: nothing to abort on disk', {
           operation: 'merge:abort',
@@ -437,20 +450,17 @@ export class MergeService {
         });
         return false;
       }
-      throw error;
+      throw toOperationError(context, error);
     }
   }
 
-  // Unrelated-staged guard: staged files that the merge did not bring in would be swept
-  // into the merge commit (and from there onto the target branch). "The merge
-  // brought it in" means either a merge-flagged row or one of the paths the
-  // merge staged at start() — the target-added files the SDK leaves unflagged.
-  private async refuseUnrelatedStagedWork(
-    repositoryPath: string,
-    record: ActiveMerge
-  ): Promise<void> {
+  // Unrelated-staged guard: staged files the merge did not bring in would be
+  // swept into the merge commit (and from there onto the target branch).
+  // "The merge brought it in" is the row's flagMerged bit — set on conflicts
+  // and target-added imports alike (probed live 2026-07-27).
+  private async refuseUnrelatedStagedWork(repositoryPath: string): Promise<void> {
     const status = await this.loreRepositoryService.getFileStatus(repositoryPath);
-    const unrelated = unrelatedStagedPaths(status, record.importedPaths);
+    const unrelated = unrelatedStagedPaths(status);
     if (unrelated.length > 0) {
       throw new MergeOperationError(
         `Cannot complete the merge while unrelated staged changes are present: ${unrelated.join(', ')}. ` +

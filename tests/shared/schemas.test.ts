@@ -20,7 +20,6 @@ import {
   MergeResolveRequestSchema,
   MergeAbortRequestSchema,
   MergeCompleteRequestSchema,
-  IPC_CHANNELS,
 } from '../../src/shared/schemas';
 
 const validRepository = {
@@ -610,10 +609,8 @@ describe('ReviewWorkflowModeSchema', () => {
 });
 
 describe('ReviewOpenRequestSchema', () => {
-  const repositoryId = '4f8f2c9e-4b1f-4b7e-9a1a-1c2d3e4f5a6b';
   const valid = {
     repositoryPath: '/Users/dev/repos/my-repo',
-    repositoryId,
     repositoryName: 'My Repo',
     branchName: 'feat/topic',
     targetBranch: 'main',
@@ -750,16 +747,5 @@ describe('Merge IPC request/response schemas', () => {
 
     // Then: parsing succeeds
     expect(requestResult.success).toBe(true);
-  });
-});
-
-describe('IPC_CHANNELS', () => {
-  it('declares a unique channel name for every diff/merge operation', () => {
-    // When: flattening every declared channel name
-    const names = [...Object.values(IPC_CHANNELS.diff), ...Object.values(IPC_CHANNELS.merge)];
-
-    // Then: every name is a non-empty string and no two collide
-    expect(names.every(name => typeof name === 'string' && name.length > 0)).toBe(true);
-    expect(new Set(names).size).toBe(names.length);
   });
 });

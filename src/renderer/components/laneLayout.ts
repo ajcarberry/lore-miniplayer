@@ -191,6 +191,22 @@ export function computeLaneLayout(
   };
 }
 
+// The branch's OWN commits: the newest-first prefix of its walked lineage
+// strictly above the branch point. The lineage crosses the fork into the
+// shared trunk, so everything from the branch point down belongs to the
+// parent lineage. When the branch point is unknown or not in the walked
+// window, everything stays attributed to the branch rather than guessing.
+export function ownCommits(
+  revisions: RevisionSummary[],
+  branchPoint: string | undefined
+): RevisionSummary[] {
+  const forkIdx =
+    branchPoint === undefined
+      ? -1
+      : revisions.findIndex(revision => revision.revision === branchPoint);
+  return forkIdx >= 0 ? revisions.slice(0, forkIdx) : revisions;
+}
+
 export interface ConstellationModel {
   readonly childNodes: RevisionSummary[];
   readonly parentNodes: RevisionSummary[];
@@ -199,7 +215,6 @@ export interface ConstellationModel {
   readonly width: number;
   readonly oldestChildX: number;
   readonly branchPointX: number;
-  readonly forkChildX: number;
   readonly showForkConnector: boolean;
   readonly hasElidedBefore: boolean;
   readonly ledgerIndexByHash: ReadonlyMap<string, number>;
@@ -217,19 +232,16 @@ export function computeConstellationModel(
   mergesFromParent: ReadonlyArray<MergeFromParent>,
   mergesToParent: ReadonlyArray<MergeToParent>
 ): ConstellationModel {
-  // Ownership split at the branch point. When the branch point is not in the
-  // walked lineage (unknown hash, degraded graph), everything stays on the
-  // child lane rather than guessing.
-  const bpLedgerIdx = revisions.findIndex(r => r.revision === parent.branchPoint);
-  const childNodes = bpLedgerIdx >= 0 ? revisions.slice(0, bpLedgerIdx) : revisions;
+  // Ownership split at the branch point (see ownCommits).
+  const childNodes = ownCommits(revisions, parent.branchPoint);
   const parentNodes = parent.revisions;
 
   const parentNodeHashes = new Set(parentNodes.map(revision => revision.revision));
   // Trunk rows the ledger holds that the capped parent walk does not — mark
   // the parent lane's oldest node as elided when any exist.
   const hasElidedBefore =
-    bpLedgerIdx >= 0 &&
-    revisions.slice(bpLedgerIdx).some(revision => !parentNodeHashes.has(revision.revision));
+    childNodes.length < revisions.length &&
+    revisions.slice(childNodes.length).some(revision => !parentNodeHashes.has(revision.revision));
 
   // Anchor the fork: the oldest own commit sits at the branch point's x.
   const oldestOwn = childNodes.at(-1)?.revision;
@@ -268,9 +280,8 @@ export function computeConstellationModel(
     width: layout.width,
     oldestChildX,
     branchPointX,
-    // Fork connector: from the parent's branch-point node down to the child's
-    // oldest own commit; nothing to connect before the branch commits.
-    forkChildX: oldestChildX,
+    // Fork connector: parent branch-point node down to oldestChildX (the
+    // child's oldest own commit); nothing to connect before the branch commits.
     showForkConnector: childNodes.length > 0 && bpNodeIdx >= 0,
     hasElidedBefore,
     // Ledger rows per hash, for routing trunk-node selection back to the ledger.

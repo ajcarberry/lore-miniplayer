@@ -132,6 +132,11 @@ test.describe('Live review — commit workflow', () => {
     expect(await fileRowBadge(review, 'textures/rock-diffuse.tga')).toBe('M');
     await expect(review.getByText(/^4 files · \+\d+ −\d+ · stage for commit$/)).toBeVisible();
 
+    // And: selecting a text row renders the real server-produced hunk — the
+    // edited line is readable in the diff pane, not just counted in stats.
+    await review.getByText('meshes/cave-entrance.mesh', { exact: true }).click();
+    await expect(review.getByText('vertices: 256')).toBeVisible({ timeout: 20_000 });
+
     // And: the binary row reports "binary" instead of line stats, and its
     // diff pane says so rather than showing a patch.
     await expect(fileRow(review, 'textures/rock-diffuse.tga').getByText('binary')).toBeVisible();

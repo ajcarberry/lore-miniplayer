@@ -18,6 +18,7 @@ jest.mock('@lore-vcs/sdk', () => {
   return {
     LoreError,
     lore: {
+      branchInfo: jest.fn(),
       branchMergeStart: jest.fn(),
       branchMergeInto: jest.fn(),
       branchMergeResolveMine: jest.fn(),
@@ -120,17 +121,16 @@ describe('MergeService', () => {
       // commit resolves the committed revision the SDK streams
       // (REVISION_COMMIT_REVISION) — the service reads it from here.
       commit: jest.fn(async () => 'merge-rev'),
-      // The checkout reports the source branch as current (C3's happy path).
+      // The checkout reports the source branch as current (C3's happy path),
+      // with no merge pending on disk.
       getWorkspaceRevisionStatus: jest.fn(async () => ({
         branchName: SOURCE,
-        revision: 'source-tip',
-        divergence: { state: 'ahead' as const, latest: 'source-tip', latestRemote: 'base' },
+        revisionMerged: '0000000000000000000000000000000000000000',
       })),
       // The ancestry gate and the revision a merge addresses live on the
       // repository service (shared with the workspace model's card gating);
       // their own semantics are covered in lore-repository.test.ts.
       hasRevisionsToLand: jest.fn(async () => true),
-      getMergeTargetRevision: jest.fn(async () => 'target-tip'),
     } as unknown as jest.Mocked<LoreRepositoryService>;
     service = new MergeService(mockLog, lore_);
   });
@@ -164,25 +164,35 @@ describe('MergeService', () => {
       expect(state).toEqual({
         sourceBranch: SOURCE,
         targetBranch: TARGET,
-        targetRevision: 'target-tip',
+        targetRevision: '',
         files: [{ path: 'auto.txt', state: 'merged' }],
         allResolved: true,
         hasChangesToLand: true,
       });
     });
 
-    it('names the revision the merge actually brought in — the target branch as the repository service resolves it', async () => {
-      // Given: the target's addressed revision is its REMOTE tip (the local
-      // store's tip lags a push, and a landing only advances the remote)
-      mockLore.branchMergeStart.mockReturnValue(fluentMock() as never);
-      lore_.getMergeTargetRevision.mockResolvedValue('target-remote-tip');
+    it('names the revision the merge actually brought in — streamed by branchMergeStart itself, with no follow-up read', async () => {
+      // Given: the merge op streams BRANCH_MERGE_START_BEGIN with the source
+      // revision it is merging in — the recorded truth, no race with a
+      // separate branchInfo read
+      mockLore.branchMergeStart.mockReturnValue(
+        fluentMock({
+          events: [
+            {
+              tag: LoreEventTag.BRANCH_MERGE_START_BEGIN,
+              data: { branch: 'target-branch-id', revision: 'merged-in-rev', revisionNumber: 7 },
+            },
+          ],
+        }) as never
+      );
 
       // When: starting the merge
       const state = await service.start(startRequest());
 
-      // Then: the state names that revision, for the branch being merged in
-      expect(lore_.getMergeTargetRevision).toHaveBeenCalledWith(REPO, TARGET);
-      expect(state.targetRevision).toBe('target-remote-tip');
+      // Then: the state names the streamed revision, and no branch-tip read
+      // ever ran
+      expect(state.targetRevision).toBe('merged-in-rev');
+      expect(mockLore.branchInfo).not.toHaveBeenCalled();
     });
 
     it('reports the branch is ahead when phase-1 is clean but the branch has commits the target lacks (nothing-to-merge bug)', async () => {
@@ -516,8 +526,7 @@ describe('MergeService', () => {
       // Given: the checkout is on the target branch, not the requested source
       lore_.getWorkspaceRevisionStatus.mockResolvedValue({
         branchName: TARGET,
-        revision: 'target-tip',
-        divergence: { state: 'inSync', latest: 'target-tip', latestRemote: 'target-tip' },
+        revisionMerged: '0000000000000000000000000000000000000000',
       });
       mockLore.branchMergeStart.mockReturnValue(fluentMock() as never);
 
@@ -531,10 +540,16 @@ describe('MergeService', () => {
     });
 
     it('discards a merge left on disk by a previous session and re-runs it (A2-restart)', async () => {
-      // Given: a merge is materialized on disk (conflict flags) but this
-      // service instance has no record of it — the app restarted
+      // Given: the SDK records a pending merge (revisionMerged non-zero) that
+      // this service instance has no record of — the app restarted
+      lore_.getWorkspaceRevisionStatus.mockResolvedValue({
+        branchName: SOURCE,
+        revisionMerged: 'pending-merge-rev',
+      });
       lore_.getFileStatus.mockResolvedValueOnce(
-        statusGroup([fileStatus('conf.txt', { conflict: true, conflictUnresolved: true })])
+        statusGroup([
+          fileStatus('conf.txt', { merged: true, conflict: true, conflictUnresolved: true }),
+        ])
       );
       lore_.getFileStatus.mockResolvedValue(statusGroup([]));
       mockLore.branchMergeAbort.mockReturnValue(fluentMock() as never);
@@ -553,13 +568,17 @@ describe('MergeService', () => {
       expect(state.files).toEqual([{ path: 'conf.txt', state: 'conflict' }]);
     });
 
-    it('discards a stale merge whose ONLY trace is a staged row carrying no merge flag (A2-restart-import)', async () => {
+    it('discards a stale merge whose only rows are its own flag-merged imports (A2-restart-import)', async () => {
       // Given: the previous session's merge was clean and merely IMPORTED a
-      // target-only file. The SDK stages it with every conflict flag false, so
-      // nothing on disk says "merge" — yet branchMergeStart refuses to run
-      // over it ("Cannot merge with staged state").
+      // target-only file — staged with flagMerged and no conflict flags
+      // (probed live 2026-07-27), while revisionMerged records the pending
+      // merge itself.
+      lore_.getWorkspaceRevisionStatus.mockResolvedValue({
+        branchName: SOURCE,
+        revisionMerged: 'pending-merge-rev',
+      });
       lore_.getFileStatus.mockResolvedValueOnce(
-        statusGroup([fileStatus('imported.txt', { isUntracked: true })])
+        statusGroup([fileStatus('imported.txt', { isUntracked: true, merged: true })])
       );
       lore_.getFileStatus.mockResolvedValue(statusGroup([]));
       mockLore.branchMergeAbort.mockReturnValue(fluentMock() as never);
@@ -572,13 +591,10 @@ describe('MergeService', () => {
     });
 
     it("refuses the user's own uncommitted work by name instead of the SDK's opaque refusal", async () => {
-      // Given: staged work that is NOT a stale merge — the abort finds nothing
-      // to back out and the files are still staged afterwards
+      // Given: staged work with NO pending merge recorded (revisionMerged is
+      // zero in the default harness) — this is the user's own work
       lore_.getFileStatus.mockResolvedValue(
         statusGroup([fileStatus('notes.txt'), fileStatus('assets/rock.tga')])
-      );
-      mockLore.branchMergeAbort.mockReturnValue(
-        fluentMock({ error: loreError(9, 'No merge is in progress') }) as never
       );
       mockLore.branchMergeStart.mockReturnValue(fluentMock() as never);
 
@@ -587,7 +603,33 @@ describe('MergeService', () => {
       await expect(failure).rejects.toBeInstanceOf(MergeOperationError);
       await expect(failure).rejects.toThrow(/assets\/rock\.tga, notes\.txt/);
       await expect(failure).rejects.toThrow(/uncommitted changes/);
-      // And: nothing was materialized, and the user's staging was left alone
+      // And: nothing was materialized, no destructive abort ever ran, and the
+      // user's staging was left alone
+      expect(mockLore.branchMergeStart).not.toHaveBeenCalled();
+      expect(mockLore.branchMergeAbort).not.toHaveBeenCalled();
+    });
+
+    it('refuses to discard a pending merge when the user staged their own files on top', async () => {
+      // Given: a pending merge (revisionMerged non-zero) whose rows carry
+      // flagMerged — plus one staged row that does NOT (the user's own work,
+      // staged after the app restarted mid-merge)
+      lore_.getWorkspaceRevisionStatus.mockResolvedValue({
+        branchName: SOURCE,
+        revisionMerged: 'pending-merge-rev',
+      });
+      lore_.getFileStatus.mockResolvedValue(
+        statusGroup([
+          fileStatus('conf.txt', { merged: true, conflict: true, conflictUnresolved: true }),
+          fileStatus('mine.txt'),
+        ])
+      );
+      mockLore.branchMergeStart.mockReturnValue(fluentMock() as never);
+
+      // When/Then: refused by name — an abort would reset the tree and
+      // destroy mine.txt, so it must never run
+      const failure = service.start(startRequest());
+      await expect(failure).rejects.toThrow(/mine\.txt/);
+      expect(mockLore.branchMergeAbort).not.toHaveBeenCalled();
       expect(mockLore.branchMergeStart).not.toHaveBeenCalled();
     });
 
@@ -625,7 +667,7 @@ describe('MergeService', () => {
       await service.start(startRequest());
       lore_.getFileStatus.mockResolvedValue(
         statusGroup([
-          fileStatus('merged.txt', { conflictAutomerged: true }),
+          fileStatus('merged.txt', { merged: true, conflictAutomerged: true }),
           fileStatus('unrelated.txt'),
         ])
       );
@@ -638,25 +680,52 @@ describe('MergeService', () => {
 
       // And: the merge survives — unstaging the file lets it complete
       lore_.getFileStatus.mockResolvedValue(
-        statusGroup([fileStatus('merged.txt', { conflictAutomerged: true })])
+        statusGroup([fileStatus('merged.txt', { merged: true, conflictAutomerged: true })])
       );
       mockLore.branchMergeInto.mockReturnValue(landingMock() as never);
       await expect(service.complete({ repositoryPath: REPO })).resolves.toBeDefined();
     });
 
-    it('completes a merge whose own import the SDK stages with no merge flag at all (A3-import)', async () => {
+    it("completes a merge whose own import is a target-added file (A3-import)", async () => {
       // Given: the target added a file the branch never had. branchMergeStart
-      // stages it, and the status row carries NONE of the merge flags.
+      // stages it with flagMerged set (probed live 2026-07-27).
       mockLore.branchMergeStart.mockReturnValue(fluentMock() as never);
       lore_.getFileStatus.mockResolvedValueOnce(statusGroup([])); // pre-flight: clean
       lore_.getFileStatus.mockResolvedValue(
-        statusGroup([fileStatus('imported.txt', { isUntracked: true })])
+        statusGroup([fileStatus('imported.txt', { isUntracked: true, merged: true })])
       );
       await service.start(startRequest());
 
       // When/Then: the merge's own import does not trip the A3-dirty guard
       mockLore.branchMergeInto.mockReturnValue(landingMock() as never);
       await expect(service.complete({ repositoryPath: REPO })).resolves.toBeDefined();
+    });
+
+    it("does not mistake app-written context for the SDK's target-advanced refusal", async () => {
+      // Given: a source branch whose NAME contains the refusal's wording, and
+      // a landing that fails for an unrelated reason
+      const trickyBranch = 'feat/newer revision support';
+      lore_.getWorkspaceRevisionStatus.mockResolvedValue({
+        branchName: trickyBranch,
+        revisionMerged: '0000000000000000000000000000000000000000',
+      });
+      mockLore.branchMergeStart.mockReturnValue(fluentMock() as never);
+      await service.start({
+        repositoryPath: REPO,
+        sourceBranch: trickyBranch,
+        targetBranch: TARGET,
+      });
+      mockLore.branchMergeInto.mockReturnValue(
+        fluentMock({ error: loreError(9, 'Not authorized to access repository') }) as never
+      );
+
+      // When: completing fails at the landing
+      const failure = await service.complete({ repositoryPath: REPO }).catch((e: unknown) => e);
+
+      // Then: the failure is the retryable landing error — NOT the
+      // target-advanced discard, which only the SDK's own message may trigger
+      expect(String(failure)).toMatch(/failed to land/);
+      expect(String(failure)).not.toMatch(/advanced since/);
     });
 
     it('a refused landing leaves the workspace merge-commit intact, and the retry lands without re-committing (A3-push)', async () => {

@@ -167,11 +167,17 @@ describe('DiffService', () => {
       expect(result[0]).toMatchObject({ path: 'new.txt', action: 'added' });
     });
 
-    it('resolves a branchHead target to its tip revision via branchInfo', async () => {
-      // Given: branchInfo reports the branch's latest revision
+    it('resolves a branchHead target to its REMOTE tip — a landing advances only that', async () => {
+      // Given: the local store's tip of the branch lags its remote tip (a
+      // landing through branchMergeInto, or another client's push)
       mockLore.branchInfo.mockReturnValue(
         fluentMock({
-          events: [{ tag: LoreEventTag.BRANCH_INFO, data: { latest: 'branch-tip-rev' } }],
+          events: [
+            {
+              tag: LoreEventTag.BRANCH_INFO,
+              data: { latest: 'stale-local-tip', latestRemote: 'branch-remote-tip' },
+            },
+          ],
         }) as never
       );
       mockLore.fileDiff.mockReturnValue(fluentMock() as never);
@@ -183,14 +189,41 @@ describe('DiffService', () => {
         target: { kind: 'branchHead', branch: 'feature/x' },
       });
 
-      // Then: branchInfo resolved the branch name, and its tip fed fileDiff
+      // Then: branchInfo resolved the branch name, and its REMOTE tip fed
+      // fileDiff — the same rule every other branch-tip consumer applies
       expect(mockLore.branchInfo).toHaveBeenCalledWith(
         { repositoryPath: '/repo' },
         { branch: 'feature/x' }
       );
       expect(mockLore.fileDiff).toHaveBeenCalledWith(
         { repositoryPath: '/repo' },
-        { sourceRevision: 'r128', targetRevision: 'branch-tip-rev' }
+        { sourceRevision: 'r128', targetRevision: 'branch-remote-tip' }
+      );
+    });
+
+    it('falls back to the local tip when the branch has no known remote revision', async () => {
+      // Given: a branch never pushed — the remote tip is the all-zero sentinel
+      mockLore.branchInfo.mockReturnValue(
+        fluentMock({
+          events: [
+            {
+              tag: LoreEventTag.BRANCH_INFO,
+              data: { latest: 'local-only-tip', latestRemote: '0'.repeat(40) },
+            },
+          ],
+        }) as never
+      );
+      mockLore.fileDiff.mockReturnValue(fluentMock() as never);
+
+      await service.compare({
+        repositoryPath: '/repo',
+        source: { kind: 'revision', revision: 'r128' },
+        target: { kind: 'branchHead', branch: 'feature/x' },
+      });
+
+      expect(mockLore.fileDiff).toHaveBeenCalledWith(
+        { repositoryPath: '/repo' },
+        { sourceRevision: 'r128', targetRevision: 'local-only-tip' }
       );
     });
 

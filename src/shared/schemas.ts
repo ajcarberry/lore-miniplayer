@@ -211,7 +211,6 @@ export const ReviewCompareSchema = z.object({
 // morphs into the review surface in place.
 export const ReviewOpenRequestSchema = z.object({
   repositoryPath: z.string().min(1),
-  repositoryId: RepositorySchema.shape.id,
   // Carried for the header eyebrow, so the view never refetches the
   // repository list just to recover a name the opener already had.
   repositoryName: RepositorySchema.shape.name,
@@ -250,18 +249,3 @@ export const MergeAbortRequestSchema = z.object({
 export const MergeCompleteRequestSchema = z.object({
   repositoryPath: z.string().min(1),
 });
-
-// IPC channel names, grouped by domain and colon-namespaced to match the
-// existing 'lore:...' channels declared at their call sites in preload.ts /
-// lore-handlers.ts. Every channel is request/response (invoke).
-export const IPC_CHANNELS = {
-  diff: {
-    compare: 'diff:compare',
-  },
-  merge: {
-    start: 'merge:start',
-    resolve: 'merge:resolve',
-    abort: 'merge:abort',
-    complete: 'merge:complete',
-  },
-} as const;

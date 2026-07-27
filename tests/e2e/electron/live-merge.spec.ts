@@ -190,6 +190,12 @@ test.describe('Live merge — the branch lands on main', () => {
     await expect(window.getByRole('button', { name: 'Merge', exact: true })).toHaveCount(0, {
       timeout: 60_000,
     });
+
+    // And: the history constellation reflects the landing with NO sync —
+    // the merge-down link on the branch lane and the landing's rising link
+    // into main both render (toBeAttached: connectors can be zero-width).
+    await expect(window.getByTestId('merge-marker')).toBeAttached({ timeout: 60_000 });
+    await expect(window.getByTestId('merge-up-marker')).toBeAttached({ timeout: 60_000 });
   });
 
   test('a conflicted merge resolved as THEIRS lands main’s content on main', async ({

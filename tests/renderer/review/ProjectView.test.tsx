@@ -268,14 +268,12 @@ describe('ProjectView — commit workflow', () => {
     expect(await screen.findByText('Diff truncated')).toBeInTheDocument();
   });
 
-  it('surfaces error notices when diff, staging, commit, and push all fail', async () => {
+  it('surfaces error notices when the diff and status reads fail', async () => {
     const api = installApi();
-    // Fail every operation the commit workflow can invoke.
+    // Stage/commit/push failures live in the tests below — a failed diff
+    // leaves nothing to stage, so those branches are unreachable here.
     api.compare.mockResolvedValue({ success: false, error: 'diff boom' });
     api.getStatus.mockResolvedValue({ success: false, error: 'status boom' });
-    api.stage.mockResolvedValue({ success: false, error: 'stage boom' });
-    api.commit.mockResolvedValue({ success: false, error: 'commit boom' });
-    api.push.mockResolvedValue({ success: false, error: 'push boom' });
 
     renderSurface();
 

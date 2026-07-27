@@ -17,16 +17,13 @@ import type {
   BranchDivergence,
   BranchGraph,
   CloneProgress,
-  RepositoryNotification,
   RepositoryNotificationKind,
 } from '../../shared/types';
 import type { LoreEventFFITyped } from '@lore-vcs/sdk/types/events';
 import { assembleBranchGraph, getCurrentRevision, isUnknownHash } from './branch-graph';
-import { resolveRepositoryIdentity, type RepositoryIdentity } from './lore-repository-info';
 import { OperationError, operationHelpers } from './lore-operation';
 import {
   readHasRevisionsToLand,
-  readMergeTargetRevision,
   readWorkspaceRevisionStatus,
   type WorkspaceRevisionStatus,
 } from './lore-status';
@@ -119,7 +116,7 @@ export class LoreRepositoryService extends EventEmitter {
         .callback(event => {
           const kind = NOTIFICATION_KIND_BY_TAG[event.tag];
           if (kind) {
-            this.emit('notification', this.toNotification(repositoryPath, kind, event));
+            this.emit('notification', { repositoryPath, kind });
           }
         })
         .waitAsync();
@@ -127,23 +124,6 @@ export class LoreRepositoryService extends EventEmitter {
       this.notificationSubscriptions.delete(repositoryPath);
       throw toOperationError('Failed to subscribe to repository notifications', error);
     }
-  }
-
-  // Builds the RepositoryNotification payload for a recognized event tag.
-  // branchPushed carries the pushing user's id; branchCreated/branchDeleted
-  // carry none.
-  private toNotification(
-    repositoryPath: string,
-    kind: RepositoryNotificationKind,
-    event: LoreEventFFITyped<LoreEventTag>
-  ): RepositoryNotification {
-    if (event.tag === LoreEventTag.NOTIFICATION_BRANCH_PUSHED) {
-      const { userId } = (
-        event as LoreEventFFITyped<LoreEventTag.NOTIFICATION_BRANCH_PUSHED>
-      ).clone().data;
-      return { repositoryPath, kind, ...(userId ? { userId } : {}) };
-    }
-    return { repositoryPath, kind };
   }
 
   // Release the notification stream for a repository; a no-op when the
@@ -157,13 +137,6 @@ export class LoreRepositoryService extends EventEmitter {
       'Failed to unsubscribe from repository notifications'
     );
     this.notificationSubscriptions.delete(repositoryPath);
-  }
-
-  // Resolve a checkout's true Lore identity (composed url + stable id) from its
-  // `.lore/` config. Delegates to ./lore-repository-info (extracted for the
-  // max-lines limit); throws on SDK failure so callers can wrap + degrade.
-  async resolveRepositoryIdentity(repositoryPath: string): Promise<RepositoryIdentity | undefined> {
-    return resolveRepositoryIdentity(repositoryPath, toOperationError);
   }
 
   async listBranches(repositoryPath: string): Promise<LoreBranch[]> {
@@ -237,14 +210,6 @@ export class LoreRepositoryService extends EventEmitter {
   ): Promise<WorkspaceRevisionStatus | undefined> {
     return readWorkspaceRevisionStatus(repositoryPath, error =>
       toOperationError('Failed to read workspace revision status', error)
-    );
-  }
-
-  // The revision a merge toward `branch` addresses — its remote tip when known
-  // (see readMergeTargetRevision). '' when the branch reports nothing.
-  async getMergeTargetRevision(repositoryPath: string, branch: string): Promise<string> {
-    return readMergeTargetRevision(repositoryPath, branch, error =>
-      toOperationError(`Failed to read the tip of branch '${branch}'`, error)
     );
   }
 
@@ -396,6 +361,7 @@ export class LoreRepositoryService extends EventEmitter {
           path: data.path,
           isUntracked: data.action === LoreFileAction.ADD,
           isStaged: Boolean(data.flagStaged),
+          merged: Boolean(data.flagMerged),
           conflict: Boolean(data.flagConflict),
           conflictUnresolved: Boolean(data.flagConflictUnresolved),
           conflictAutomerged: Boolean(data.flagConflictAutomerged),

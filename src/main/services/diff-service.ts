@@ -12,12 +12,12 @@ import type {
 import type { LoreEventDataOf } from './lore-events';
 import {
   OperationError,
-  branchTip,
   operationHelpers,
   toRepoAbsolutePath,
   toRepoRelativePath,
 } from './lore-operation';
-import { allStatusFiles } from './lore-status';
+import { distinctStatusPaths, readMergeTargetRevision } from './lore-status';
+import { isUnknownHash } from './branch-graph';
 
 // Unified-diff patches over this many lines are stored/returned truncated
 // (head only); 4000 lines comfortably covers any single file that is still
@@ -137,13 +137,12 @@ export class DiffService {
       case 'workingTree':
         return '';
       case 'branchHead': {
-        const latest = await branchTip(
-          ops,
-          repositoryPath,
-          target.branch,
-          `Failed to resolve branch '${target.branch}'`
+        // The branch's remote-preferring tip (readMergeTargetRevision): the
+        // local tip lags other clients' pushes AND this app's own landings.
+        const latest = await readMergeTargetRevision(repositoryPath, target.branch, error =>
+          ops.toOperationError(`Failed to resolve branch '${target.branch}'`, error)
         );
-        if (!latest) {
+        if (!latest || isUnknownHash(latest)) {
           throw new DiffOperationError(`Branch '${target.branch}' has no known revision`);
         }
         return latest;
@@ -210,7 +209,7 @@ export class DiffService {
     diffs: FileDiffResult[]
   ): Promise<FileDiffResult[]> {
     const status = await this.repository.getFileStatus(repositoryPath);
-    const dirtyPaths = dedupePaths(allStatusFiles(status));
+    const dirtyPaths = distinctStatusPaths(status);
     const enumerated = new Set(diffs.map(diff => diff.path));
     const untracked = new Set(status.untracked.map(file => file.path));
     const missing = dirtyPaths
@@ -218,21 +217,6 @@ export class DiffService {
       .map(dirtyPath => cleanWorkingTreeEntry(dirtyPath, untracked.has(dirtyPath)));
     return missing.length > 0 ? [...diffs, ...missing] : diffs;
   }
-}
-
-// De-duplicates status entries to distinct paths (a path can carry both a
-// staged and a dirty flag — count it once), keeping
-// first-seen order.
-function dedupePaths(files: ReadonlyArray<{ path: string }>): string[] {
-  const seen = new Set<string>();
-  const paths: string[] = [];
-  for (const file of files) {
-    if (!seen.has(file.path)) {
-      seen.add(file.path);
-      paths.push(file.path);
-    }
-  }
-  return paths;
 }
 
 // A dirty file the current-revision -> working-tree diff did not enumerate

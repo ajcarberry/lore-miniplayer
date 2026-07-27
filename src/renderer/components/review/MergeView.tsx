@@ -9,6 +9,7 @@ import type {
   ReviewOpenRequest,
 } from '../../../shared/types';
 import { notifyError } from '../../utils/notify';
+import { ownCommits } from '../laneLayout';
 import { IconGitMerge } from '@tabler/icons-react';
 import { pluralize } from '../../utils/pluralize';
 import { AbortMergeModal } from './AbortMergeModal';
@@ -160,16 +161,11 @@ export function MergeView(props: MergeViewProps): ReactElement {
   const [startError, setStartError] = useState<string | null>(null);
   const [bothSides, setBothSides] = useState<Map<string, FileDiffResult>>(new Map());
   const { revisions, parentBranchPoint } = useReviewMeta(repositoryPath, sourceBranch);
-  // Only the branch's OWN commits land: the walked lineage crosses the fork
-  // into the shared trunk, so everything from the branch point down is the
-  // target's history, not work this merge brings.
-  const aheadRevisions = useMemo(() => {
-    const forkIdx =
-      parentBranchPoint === undefined
-        ? -1
-        : revisions.findIndex(revision => revision.revision === parentBranchPoint);
-    return forkIdx >= 0 ? revisions.slice(0, forkIdx) : revisions;
-  }, [revisions, parentBranchPoint]);
+  // Only the branch's OWN commits land — see ownCommits.
+  const aheadRevisions = useMemo(
+    () => ownCommits(revisions, parentBranchPoint),
+    [revisions, parentBranchPoint]
+  );
   const [resolvingPath, setResolvingPath] = useState<string | null>(null);
   const [completing, setCompleting] = useState(false);
   const [completeError, setCompleteError] = useState<string | null>(null);
@@ -206,10 +202,9 @@ export function MergeView(props: MergeViewProps): ReactElement {
           // Theirs = the target revision the merge actually brought in, on the
           // diff's source side; mine = source head (branch) on the target side,
           // so removed lines are theirs and added lines are mine. The target
-          // side is addressed by REVISION, not by branch head: a `branchHead`
-          // target resolves the LOCAL store's tip of main, which lags what
-          // another client pushed — and the merge merged the remote. Diffing the
-          // branch head would show the pre-merge base content as "theirs".
+          // side is addressed by REVISION, not by branch head: the merge's
+          // content is frozen at the revision branchMergeStart streamed, while
+          // the target's tip can advance underneath the open merge.
           const diffResult = await window.electronAPI.diff.compare({
             repositoryPath,
             source: { kind: 'revision', revision: result.data.targetRevision },

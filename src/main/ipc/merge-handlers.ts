@@ -1,6 +1,5 @@
 import type { MergeService } from '../services/merge-service';
 import {
-  IPC_CHANNELS,
   MergeStartRequestSchema,
   MergeResolveRequestSchema,
   MergeAbortRequestSchema,
@@ -14,19 +13,19 @@ import type { MainLogger } from './logger';
 // out, or complete to land the merge (commit + push). Each request is
 // re-validated at the boundary with its schema.
 export function registerMergeHandlers(log: MainLogger, mergeService: MergeService): void {
-  handleRequest(log, IPC_CHANNELS.merge.start, MergeStartRequestSchema, request =>
+  handleRequest(log, 'merge:start', MergeStartRequestSchema, request =>
     mergeService.start(request)
   );
 
-  handleRequest(log, IPC_CHANNELS.merge.resolve, MergeResolveRequestSchema, request =>
+  handleRequest(log, 'merge:resolve', MergeResolveRequestSchema, request =>
     mergeService.resolve(request)
   );
 
-  handleRequest(log, IPC_CHANNELS.merge.abort, MergeAbortRequestSchema, request =>
+  handleRequest(log, 'merge:abort', MergeAbortRequestSchema, request =>
     mergeService.abort(request)
   );
 
-  handleRequest(log, IPC_CHANNELS.merge.complete, MergeCompleteRequestSchema, request =>
+  handleRequest(log, 'merge:complete', MergeCompleteRequestSchema, request =>
     mergeService.complete(request)
   );
 }

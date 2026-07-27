@@ -607,7 +607,9 @@ describe('LoreRepositoryService', () => {
 
   // What the card's Merge action and the review window's Merge button are
   // gated on (T16): has this branch's work reached the target branch yet?
-  describe('getMergeTargetRevision / hasRevisionsToLand', () => {
+  // The target is addressed by its REMOTE tip (a landing advances only that),
+  // falling back to the local tip — exercised through hasRevisionsToLand.
+  describe('hasRevisionsToLand', () => {
     const ZERO_HASH = '0'.repeat(40);
     const SOURCE_TIP = 'aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111';
     const TARGET_LOCAL = 'bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222';
@@ -639,25 +641,9 @@ describe('LoreRepositoryService', () => {
       );
     }
 
-    it("addresses the target's REMOTE tip, since a landing advances only that", async () => {
-      // Given: the local store's tip of the target lags its remote tip
-      installBranches({ main: { latest: TARGET_LOCAL, latestRemote: TARGET_REMOTE } });
-
-      // When/Then: the remote tip is the revision a merge addresses
-      expect(await service.getMergeTargetRevision('/repo', 'main')).toBe(TARGET_REMOTE);
-    });
-
-    it('falls back to the local tip when the branch has no known remote revision', async () => {
-      // Given: a target branch that was never pushed — the all-zero sentinel
-      installBranches({ main: { latest: TARGET_LOCAL, latestRemote: ZERO_HASH } });
-
-      // When/Then: the local tip stands in
-      expect(await service.getMergeTargetRevision('/repo', 'main')).toBe(TARGET_LOCAL);
-    });
-
-    it('reports no revision when the branch streams no BRANCH_INFO at all', async () => {
+    it('fails closed — no merge offered — when no BRANCH_INFO streams at all', async () => {
       installBranches({});
-      expect(await service.getMergeTargetRevision('/repo', 'main')).toBe('');
+      expect(await service.hasRevisionsToLand('/repo', 'feat', 'main')).toBe(false);
     });
 
     it('reports work to land when the target history does not contain the branch tip', async () => {
@@ -1161,98 +1147,6 @@ describe('LoreRepositoryService', () => {
     });
   });
 
-  describe('resolveRepositoryIdentity', () => {
-    // REPOSITORY_DATA shape mirrors the live probe (2026-07-22): a checkout at
-    // any path self-reports its server url, repo name, and stable repo id.
-    const repositoryDataEvent = (data: Record<string, unknown>): MockEvent => ({
-      tag: LoreEventTag.REPOSITORY_DATA,
-      data,
-    });
-
-    it('composes <remoteUrl>/<name> and returns the stable repository id', async () => {
-      // Given: repositoryInfo streams REPOSITORY_DATA for the checkout
-      mockLore.repositoryInfo.mockReturnValue(
-        fluentMock({
-          events: [
-            repositoryDataEvent({
-              remoteUrl: 'lore://127.0.0.1',
-              name: 'demo-project',
-              id: '019f6e08-1234-4abc-8def-0123456789ab',
-            }),
-          ],
-        }) as never
-      );
-
-      // When: resolving the identity at the checkout path
-      const identity = await service.resolveRepositoryIdentity('/Users/alex/Lore_Test/adfa');
-
-      // Then: url is the true composed grouping key and the id is carried
-      expect(mockLore.repositoryInfo).toHaveBeenCalledWith(
-        { repositoryPath: '/Users/alex/Lore_Test/adfa' },
-        {}
-      );
-      expect(identity).toEqual({
-        url: 'lore://127.0.0.1/demo-project',
-        loreRepositoryId: '019f6e08-1234-4abc-8def-0123456789ab',
-      });
-    });
-
-    it('collapses duplicate slashes between a trailing-slash remoteUrl and name', async () => {
-      // Given: the server url arrives with a trailing slash
-      mockLore.repositoryInfo.mockReturnValue(
-        fluentMock({
-          events: [repositoryDataEvent({ remoteUrl: 'lore://127.0.0.1/', name: 'demo', id: 'x' })],
-        }) as never
-      );
-
-      // When: resolving
-      const identity = await service.resolveRepositoryIdentity('/repo');
-
-      // Then: the composed url has exactly one separator
-      expect(identity?.url).toBe('lore://127.0.0.1/demo');
-    });
-
-    it('omits loreRepositoryId when the event carries no id', async () => {
-      // Given: REPOSITORY_DATA has a url and name but a blank id
-      mockLore.repositoryInfo.mockReturnValue(
-        fluentMock({
-          events: [repositoryDataEvent({ remoteUrl: 'lore://host', name: 'r', id: '' })],
-        }) as never
-      );
-
-      // When: resolving
-      const identity = await service.resolveRepositoryIdentity('/repo');
-
-      // Then: url resolves but no id field is present
-      expect(identity).toEqual({ url: 'lore://host/r' });
-    });
-
-    it('returns undefined when the event lacks a usable url or name', async () => {
-      // Given: REPOSITORY_DATA is missing remoteUrl
-      mockLore.repositoryInfo.mockReturnValue(
-        fluentMock({
-          events: [repositoryDataEvent({ remoteUrl: '', name: 'r', id: 'y' })],
-        }) as never
-      );
-
-      // When: resolving
-      const identity = await service.resolveRepositoryIdentity('/repo');
-
-      // Then: there is nothing truthful to record
-      expect(identity).toBeUndefined();
-    });
-
-    it('throws LoreOperationError when the SDK fails (caller decides to degrade)', async () => {
-      // Given: the SDK rejects
-      mockLore.repositoryInfo.mockReturnValue(
-        fluentMock({ error: loreError(1, 'No repository at path') }) as never
-      );
-
-      // When/Then: resolution surfaces the failure for the caller to handle
-      await expect(service.resolveRepositoryIdentity('/repo')).rejects.toThrow(LoreOperationError);
-    });
-  });
-
   describe('listRemoteRepositories', () => {
     it('should list repositories from the given server address', async () => {
       // Given: the SDK streams repository list entries
@@ -1369,6 +1263,7 @@ describe('LoreRepositoryService', () => {
       // Then: files are grouped, directory nodes are excluded, and none of
       // these files carry any conflict flags from the SDK
       const noConflict = {
+        merged: false,
         conflict: false,
         conflictUnresolved: false,
         conflictAutomerged: false,
@@ -1419,6 +1314,7 @@ describe('LoreRepositoryService', () => {
           path: 'conflicted.txt',
           isUntracked: false,
           isStaged: false,
+          merged: false,
           conflict: true,
           conflictUnresolved: true,
           conflictAutomerged: false,
@@ -1461,6 +1357,7 @@ describe('LoreRepositoryService', () => {
           path: 'automerged.txt',
           isUntracked: false,
           isStaged: false,
+          merged: false,
           conflict: true,
           conflictUnresolved: false,
           conflictAutomerged: true,
@@ -1505,6 +1402,7 @@ describe('LoreRepositoryService', () => {
             path: 'resolved.txt',
             isUntracked: false,
             isStaged: false,
+            merged: false,
             conflict: true,
             conflictUnresolved: false,
             conflictAutomerged: false,
@@ -1630,8 +1528,8 @@ describe('LoreRepositoryService', () => {
       );
     }
 
-    it('resolves branch, revision, and inSync divergence from one revisionOnly call', async () => {
-      // Given: a status event whose local and remote tips match
+    it('resolves the checkout branch and pending-merge marker from one revisionOnly call', async () => {
+      // Given: a status event with no pending merge
       statusReturning(statusRevisionEventData());
 
       // When: reading the workspace revision status
@@ -1642,50 +1540,24 @@ describe('LoreRepositoryService', () => {
         { repositoryPath: '/repo' },
         { revisionOnly: true }
       );
-      expect(status?.branchName).toBe('feature-a');
-      expect(status?.revision).toBe('a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2');
-      expect(BranchDivergenceSchema.parse(status?.divergence).state).toBe('inSync');
+      expect(status).toEqual({
+        branchName: 'feature-a',
+        revisionMerged: '0000000000000000000000000000000000000000',
+      });
       // And: no branchInfo/history walk happened
       expect(mockLore.branchInfo).not.toHaveBeenCalled();
       expect(mockLore.revisionHistory).not.toHaveBeenCalled();
     });
 
-    it('maps a local-only lead (isLocalAhead, not isRemoteAhead) to ahead', async () => {
+    it('carries the incoming revision of a pending merge straight from the SDK', async () => {
       statusReturning(
         statusRevisionEventData({
-          revisionRemote: 'f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3b2a1f6e5',
-          isLocalAhead: true,
+          revisionMerged: 'f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3b2a1f6e5',
         })
       );
 
       const status = await service.getWorkspaceRevisionStatus('/repo');
-      expect(status?.divergence.state).toBe('ahead');
-    });
-
-    it('maps a remote lead to behindOrDiverged (true divergence included)', async () => {
-      statusReturning(
-        statusRevisionEventData({
-          revisionRemote: 'f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3b2a1f6e5',
-          isLocalAhead: true,
-          isRemoteAhead: true,
-        })
-      );
-
-      const status = await service.getWorkspaceRevisionStatus('/repo');
-      expect(status?.divergence.state).toBe('behindOrDiverged');
-    });
-
-    it('fails closed to unknown when the remote tip is a zero hash (never pushed)', async () => {
-      statusReturning(
-        statusRevisionEventData({
-          revisionRemote: '0000000000000000000000000000000000000000',
-          revisionRemoteNumber: 0,
-          isLocalAhead: true,
-        })
-      );
-
-      const status = await service.getWorkspaceRevisionStatus('/repo');
-      expect(status?.divergence.state).toBe('unknown');
+      expect(status?.revisionMerged).toBe('f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3b2a1f6e5');
     });
 
     it('returns undefined when the SDK streams no revision event', async () => {
@@ -1818,7 +1690,7 @@ describe('LoreRepositoryService notification subscriptions', () => {
     });
   }
 
-  it('emits a notification carrying userId when a branch-pushed event arrives after subscribe resolved', async () => {
+  it('emits a branch-pushed notification when the event arrives after subscribe resolved', async () => {
     // Given: a subscription whose SDK call resolves immediately
     const chain = fluentMock({
       events: [{ tag: LoreEventTag.NOTIFICATION_SUBSCRIBED, data: { repository: 'repo-id' } }],
@@ -1838,10 +1710,8 @@ describe('LoreRepositoryService notification subscriptions', () => {
       userId: 'user',
     });
 
-    // Then: the pushing user's id survives the mapping
-    expect(received).toEqual([
-      { repositoryPath: '/repos/a', kind: 'branchPushed', userId: 'user' },
-    ]);
+    // Then: the notification carries exactly the schema's payload
+    expect(received).toEqual([{ repositoryPath: '/repos/a', kind: 'branchPushed' }]);
   });
 
   it('maps branch-created and branch-deleted events to their kinds', async () => {

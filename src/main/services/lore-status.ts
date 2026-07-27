@@ -1,6 +1,6 @@
 import { lore } from '@lore-vcs/sdk';
 import { LoreEventTag } from '@lore-vcs/sdk/types/enums';
-import type { BranchDivergence, LoreFileStatus, LoreFileStatusGroup } from '../../shared/types';
+import type { LoreFileStatus, LoreFileStatusGroup } from '../../shared/types';
 import { isUnknownHash } from './branch-graph';
 import { collectEvents } from './lore-events';
 
@@ -15,37 +15,25 @@ export function allStatusFiles(status: LoreFileStatusGroup): LoreFileStatus[] {
   return [...status.untracked, ...status.unstaged, ...status.staged];
 }
 
-// A status row the SDK flags as part of a pending merge, whether it conflicted,
-// was resolved, or automerged. NOT every file the merge touched: a file the
-// TARGET added which the source branch never had is staged by the merge with
-// every one of these flags false (`{isUntracked: true, isStaged:
-// true, conflict*: false}`), which is why the merge service also carries the
-// paths its own merge staged (see unrelatedStagedPaths).
+// The distinct paths of every reported file (a path can carry both a staged
+// and a dirty flag — count it once), keeping first-seen order.
+export function distinctStatusPaths(status: LoreFileStatusGroup): string[] {
+  return [...new Set(allStatusFiles(status).map(file => file.path))];
+}
+
+// A status row the SDK flags as part of a pending merge — the flagMerged
+// bit, set on conflict rows AND on files the merge imported from the target
+// (probed live 2026-07-27; a user's own row staged on top of a pending merge
+// carries no flagMerged).
 export function isMergeFile(file: LoreFileStatus): boolean {
-  return Boolean(
-    file.conflict ||
-    file.conflictUnresolved ||
-    file.conflictAutomerged ||
-    file.conflictMine ||
-    file.conflictTheirs
-  );
+  return Boolean(file.merged);
 }
 
-// The repo-relative paths staged in a status group.
-export function stagedPaths(status: LoreFileStatusGroup): Set<string> {
-  return new Set(status.staged.map(file => file.path));
-}
-
-// Staged rows that neither carry a merge flag nor were staged by the merge
-// itself (`imported`): the user's own work, which must never ride a merge
-// commit onto the target branch (the merge service's unrelated-staged guard).
-export function unrelatedStagedPaths(
-  status: LoreFileStatusGroup,
-  imported: ReadonlySet<string>
-): string[] {
-  return status.staged
-    .filter(file => !isMergeFile(file) && !imported.has(file.path))
-    .map(file => file.path);
+// Staged rows the pending merge did NOT bring in: the user's own work, which
+// must never ride a merge commit onto the target branch (the merge service's
+// unrelated-staged guard) nor be destroyed by a merge abort's tree reset.
+export function unrelatedStagedPaths(status: LoreFileStatusGroup): string[] {
+  return status.staged.filter(file => !isMergeFile(file)).map(file => file.path);
 }
 
 // --- landing ancestry (is this branch's work already on the target?) --------
@@ -148,42 +136,20 @@ export async function readHasRevisionsToLand(
   return !history.has(sourceTip);
 }
 
-// The current checkout's branch, revision, and remote divergence — everything
-// one repositoryStatus({ revisionOnly: true }) event carries (see
-// readWorkspaceRevisionStatus).
+// The checkout's current branch and pending-merge marker — the two
+// REPOSITORY_STATUS_REVISION fields the merge workflow's guards consume.
 export interface WorkspaceRevisionStatus {
   readonly branchName: string;
-  readonly revision: string;
-  readonly divergence: BranchDivergence;
+  // Incoming revision of a pending merge, straight from the SDK; an unknown
+  // hash (all zeros) means no merge is pending on disk.
+  readonly revisionMerged: string;
 }
 
-// Divergence state straight from REPOSITORY_STATUS_REVISION's ahead flags —
-// the SDK-computed equivalent of lore-repository's deriveDivergence history
-// walk, valid for the checkout's CURRENT branch. Unknown hashes fail closed
-// to 'unknown' (matching deriveDivergence); differing tips without a provable
-// local-only lead read as behindOrDiverged.
-function deriveDivergenceFromFlags(info: {
-  latest: string;
-  latestRemote: string;
-  isLocalAhead: boolean;
-  isRemoteAhead: boolean;
-}): BranchDivergence['state'] {
-  if (isUnknownHash(info.latest) || isUnknownHash(info.latestRemote)) {
-    return 'unknown';
-  }
-  if (info.latest === info.latestRemote) {
-    return 'inSync';
-  }
-  return info.isLocalAhead && !info.isRemoteAhead ? 'ahead' : 'behindOrDiverged';
-}
-
-// One cheap repositoryStatus({ revisionOnly: true }) call: the checkout's
-// current branch + revision plus the SDK's native ahead/behind divergence —
-// replacing a branchInfo + bounded history walk for consumers that only ever
-// ask about the checkout's current branch (workspace cards, the teardown
-// guard, the anchor). Undefined when the SDK streamed no revision event
-// (callers degrade/fail closed). Failures are wrapped through `wrapError`
-// (the owning service's operation-error context).
+// One cheap repositoryStatus({ revisionOnly: true }) call answering "what
+// branch is checked out, and is a merge pending?" for the checkout's CURRENT
+// branch. Undefined when the SDK streamed no revision event (callers
+// degrade/fail closed). Failures are wrapped through `wrapError` (the owning
+// service's operation-error context).
 export async function readWorkspaceRevisionStatus(
   repositoryPath: string,
   wrapError: (error: unknown) => Error
@@ -193,25 +159,9 @@ export async function readWorkspaceRevisionStatus(
     LoreEventTag.REPOSITORY_STATUS_REVISION,
     data => ({
       branchName: data.branchName,
-      revision: data.revision,
-      latest: data.revisionLocal,
-      latestRemote: data.revisionRemote,
-      isLocalAhead: Boolean(data.isLocalAhead),
-      isRemoteAhead: Boolean(data.isRemoteAhead),
+      revisionMerged: data.revisionMerged,
     }),
     wrapError
   );
-  const info = entries[entries.length - 1];
-  if (!info) {
-    return undefined;
-  }
-  return {
-    branchName: info.branchName,
-    revision: info.revision,
-    divergence: {
-      state: deriveDivergenceFromFlags(info),
-      latest: info.latest,
-      latestRemote: info.latestRemote,
-    },
-  };
+  return entries[entries.length - 1];
 }

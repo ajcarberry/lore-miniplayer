@@ -1,5 +1,5 @@
 import type { DiffService } from '../services/diff-service';
-import { IPC_CHANNELS, DiffRequestSchema } from '../../shared/schemas';
+import { DiffRequestSchema } from '../../shared/schemas';
 import { handleRequest } from './result-helpers';
 import type { MainLogger } from './logger';
 
@@ -7,7 +7,5 @@ import type { MainLogger } from './logger';
 // the working tree, or a branch's head). Re-validated at the boundary with
 // the DiffRequest contract.
 export function registerDiffHandlers(log: MainLogger, diffService: DiffService): void {
-  handleRequest(log, IPC_CHANNELS.diff.compare, DiffRequestSchema, request =>
-    diffService.compare(request)
-  );
+  handleRequest(log, 'diff:compare', DiffRequestSchema, request => diffService.compare(request));
 }

@@ -43,7 +43,6 @@ function buildCompare(intent: OpenReviewIntent): ReviewCompare {
 export function buildReviewOpenRequest(intent: OpenReviewIntent): ReviewOpenRequest {
   return {
     repositoryPath: intent.repository.localPath,
-    repositoryId: intent.repository.id,
     repositoryName: intent.repository.name,
     branchName: intent.branchName,
     targetBranch: intent.targetBranch,

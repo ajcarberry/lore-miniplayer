@@ -1,6 +1,5 @@
-import { lore } from '@lore-vcs/sdk';
 import type { LoreFluentApi } from '@lore-vcs/sdk';
-import { LoreEventTag } from '@lore-vcs/sdk/types/enums';
+import type { LoreEventTag } from '@lore-vcs/sdk/types/enums';
 import * as path from 'node:path';
 import { collectEvents } from './lore-events';
 import type { LoreEventDataOf } from './lore-events';
@@ -65,24 +64,6 @@ export function operationHelpers<E extends OperationError>(
       return collectEvents(operation, tag, map, error => toOperationError(context, error));
     },
   };
-}
-
-// The latest revision hash of a branch (its tip) via branchInfo, or undefined
-// when the branch reports no revision. The caller decides how to treat an
-// absent tip (degrade vs throw).
-export async function branchTip<E extends OperationError>(
-  helpers: OperationHelpers<E>,
-  repositoryPath: string,
-  branch: string,
-  context: string
-): Promise<string | undefined> {
-  const infos = await helpers.collect(
-    lore.branchInfo({ repositoryPath }, { branch }),
-    LoreEventTag.BRANCH_INFO,
-    (data: LoreEventDataOf<LoreEventTag.BRANCH_INFO>) => data.latest,
-    context
-  );
-  return infos[infos.length - 1];
 }
 
 // The SDK resolves a relative path arg against the process CWD, NOT

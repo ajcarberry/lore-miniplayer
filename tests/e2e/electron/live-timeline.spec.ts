@@ -59,17 +59,23 @@ test.describe('Live timeline — branch fork constellation', () => {
     const forkX = await connector.getAttribute('x1');
     expect(await connector.getAttribute('x2')).toBe(forkX);
 
-    // …the parent lane renders BOTH main revisions (the trunk, not a single
-    // collapsed fork node), with its branch-point node (r=2.5) at the fork x…
-    await expect(window.locator('g[data-revision] > circle')).toHaveCount(2);
-    expect(await window.locator("circle[r='2.5']").getAttribute('cx')).toBe(forkX);
+    // …the parent lane renders BOTH main revisions — the trunk belongs to
+    // main and rides main's lane, staying selectable as ledger rows…
+    await expect(window.locator('g[data-revision]')).toHaveCount(2);
 
-    // …and on the child lane it is r2 — main's tip, the revision the branch
-    // was created off — that sits under the fork, NOT the repo root r1 (the
-    // regression drew the fork over the oldest child node).
-    const childCx = async (label: string): Promise<string | null> =>
-      window.locator(`g[aria-label='${label}'] > circle`).first().getAttribute('cx');
-    expect(await childCx('Select revision r2')).toBe(forkX);
-    expect(await childCx('Select revision r1')).not.toBe(forkX);
+    const nodeAttr = async (label: string, attr: 'cx' | 'cy'): Promise<string | null> =>
+      window.locator(`g[aria-label='${label}'] circle`).last().getAttribute(attr);
+
+    // …with the branch point (r2, main's tip the branch was created off) on
+    // the PARENT lane at the fork x, and the repo root r1 to its left…
+    expect(await nodeAttr('Select revision r2', 'cy')).toBe('10');
+    expect(await nodeAttr('Select revision r2', 'cx')).toBe(forkX);
+    expect(await nodeAttr('Select revision r1', 'cy')).toBe('10');
+    expect(Number(await nodeAttr('Select revision r1', 'cx'))).toBeLessThan(Number(forkX));
+
+    // …and the branch's own commit (r3) is the child lane's only node,
+    // sprouting directly under the fork.
+    expect(await nodeAttr('Select revision r3', 'cy')).toBe('30');
+    expect(await nodeAttr('Select revision r3', 'cx')).toBe(forkX);
   });
 });

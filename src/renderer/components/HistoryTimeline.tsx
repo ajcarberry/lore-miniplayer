@@ -7,8 +7,12 @@ import type {
   MergeToParent,
   RevisionSummary,
 } from '../../shared/types';
-import type { LaneLayoutAnchor } from './laneLayout';
-import { EDGE_PADDING_PX, computeLaneLayout, laneWidthPx, lanePositionsPx } from './laneLayout';
+import {
+  EDGE_PADDING_PX,
+  computeConstellationModel,
+  laneWidthPx,
+  lanePositionsPx,
+} from './laneLayout';
 import { CHILD_CY, LANE_TIMELINE_HEIGHT, MergeAnnotation, PARENT_CY } from './MergeAnnotation';
 
 const TIMELINE_HEIGHT = 28;
@@ -36,9 +40,12 @@ interface TimelineNodeProps {
   readonly selected: boolean;
   readonly isCurrent: boolean;
   readonly onSelect: () => void;
+  // Set on parent-lane nodes so tests and tools can address them by hash;
+  // child-lane nodes are addressed by their aria-label.
+  readonly revision?: string;
 }
 
-// A clickable child-lane node. The selection halo (soft, translucent) and the
+// A clickable lane node. The selection halo (soft, translucent) and the
 // current-revision ring (solid accent) are distinct and can co-exist on the
 // same node. Reduced-motion is honored for free — nothing animates.
 function TimelineNode({
@@ -48,12 +55,14 @@ function TimelineNode({
   selected,
   isCurrent,
   onSelect,
+  revision,
 }: TimelineNodeProps): ReactElement {
   return (
     <g
       role='button'
       tabIndex={0}
       data-current={isCurrent ? 'true' : undefined}
+      {...(revision !== undefined && { 'data-revision': revision })}
       aria-label={`Select revision r${revisionNumber}`}
       style={{ cursor: 'pointer' }}
       onClick={onSelect}
@@ -163,37 +172,61 @@ interface ConstellationTimelineProps {
   readonly onSelect: (index: number) => void;
 }
 
-// The parent lane's rendered window. When the parent has advanced past the
-// branch point (bpIdx > 0), show only its post-fork commits down to the branch
-// point — the shared pre-fork trunk is elided, since it already rides the
-// child ledger. When the parent has NOT advanced (its tip IS the branch point,
-// the normal case for a freshly created branch), there are no post-fork
-// commits to show, so render the parent trunk rather than collapsing the lane
-// to the single fork node — otherwise the constellation reads as a single
-// lane and the parent's lane appears missing. When the branch point isn't in
-// the walked window, render the walked parent revisions as-is.
-function parentWindow(parent: BranchGraphParentLane): {
-  parentNodes: RevisionSummary[];
-  hasElidedBefore: boolean;
-  bpNodeIdx: number;
-} {
-  const bpIdx = parent.revisions.findIndex(revision => revision.revision === parent.branchPoint);
-  const parentNodes = bpIdx > 0 ? parent.revisions.slice(0, bpIdx + 1) : parent.revisions;
-  return {
-    parentNodes,
-    hasElidedBefore: bpIdx > 0 && bpIdx + 1 < parent.revisions.length,
-    bpNodeIdx: parentNodes.findIndex(revision => revision.revision === parent.branchPoint),
-  };
+// Two-lane constellation drawn by OWNERSHIP: every revision renders on the
+// lane of the branch it was committed on. The checkout's own commits — the
+// newest-first prefix of its lineage strictly above the branch point — form
+// the child lane; the shared pre-fork trunk belongs to the parent lineage and
+// rides the parent lane, which renders its full walked window (no fork-side
+// elision). Trunk rows stay selectable ledger rows: their nodes render on the
+// parent lane with full selection/current markers, mapping clicks back to
+// ledger indices. Both lanes share one pixel canvas, laid out by
+// computeLaneLayout so the fork (oldest own commit under the branch point)
+// and every merge pair it could anchor land at the same x on both lanes —
+// those connectors render vertical; a pair the layout could NOT anchor still
+// connects its two real nodes, as a diagonal.
+interface ParentLaneNodeProps {
+  readonly revision: RevisionSummary;
+  readonly cx: number;
+  readonly isBranchPoint: boolean;
+  // The revision's ledger row, when the checkout's lineage holds it.
+  readonly ledgerIdx: number | undefined;
+  readonly selectedIndex: number;
+  readonly current: string;
+  readonly onSelect: (index: number) => void;
 }
 
-// Two-lane constellation: the parent branch above, the current branch below,
-// with a branch-point connector from the fork down to the child's first node
-// and a distinct marker on each child merge node accepted from the parent.
-// The child lane keeps full selection/scrub behavior and the current-revision
-// marker; the parent lane is informational in v1. Both lanes share one pixel
-// canvas, laid out by computeLaneLayout so the branch point and every merge
-// whose true source falls within the rendered parent window land at the
-// same x on both lanes — their connectors are guaranteed vertical.
+// A parent-lane node. Trunk revisions the checkout's ledger holds stay fully
+// selectable — the row's node simply lives on its owning lane, and clicks
+// route back to the ledger index; parent-only revisions are informational.
+function ParentLaneNode({
+  revision,
+  cx,
+  isBranchPoint,
+  ledgerIdx,
+  selectedIndex,
+  current,
+  onSelect,
+}: ParentLaneNodeProps): ReactElement {
+  if (ledgerIdx !== undefined) {
+    return (
+      <TimelineNode
+        cx={cx}
+        cy={PARENT_CY}
+        revisionNumber={revision.revisionNumber}
+        selected={ledgerIdx === selectedIndex}
+        isCurrent={current !== '' && revision.revision === current}
+        onSelect={() => onSelect(ledgerIdx)}
+        revision={revision.revision}
+      />
+    );
+  }
+  return (
+    <g data-revision={revision.revision} aria-hidden='true'>
+      <circle cx={cx} cy={PARENT_CY} r={isBranchPoint ? 2.5 : 1.8} fill='var(--ink-faint)' />
+    </g>
+  );
+}
+
 export function ConstellationTimeline({
   branchName,
   revisions,
@@ -204,50 +237,34 @@ export function ConstellationTimeline({
   selectedIndex,
   onSelect,
 }: ConstellationTimelineProps): ReactElement {
-  const childNodes = revisions;
-  const { parentNodes, hasElidedBefore, bpNodeIdx } = parentWindow(parent);
+  const {
+    childNodes,
+    parentNodes,
+    childX,
+    parentX,
+    width,
+    oldestChildX,
+    branchPointX,
+    forkChildX,
+    showForkConnector,
+    hasElidedBefore,
+    ledgerIndexByHash,
+    parentIndexByHash,
+    childIndexByHash,
+    mergeSourceByChild,
+    mergeUpSourceByParent,
+  } = computeConstellationModel(revisions, parent, mergesFromParent, mergesToParent);
 
-  // Anchor the shared branch-point node on both lanes (else the child's oldest).
-  const childBpIdx = childNodes.findIndex(r => r.revision === parent.branchPoint);
-  const branchAnchorChild = childBpIdx >= 0 ? parent.branchPoint : childNodes.at(-1)?.revision;
-  const branchAnchors: LaneLayoutAnchor[] =
-    bpNodeIdx >= 0 && branchAnchorChild !== undefined
-      ? [{ child: branchAnchorChild, parent: parent.branchPoint }]
-      : [];
-  const parentNodeHashes = new Set(parentNodes.map(revision => revision.revision));
-  const mergeAnchors: LaneLayoutAnchor[] = mergesFromParent
-    .filter(pair => parentNodeHashes.has(pair.parentSource))
-    .map(pair => ({ child: pair.child, parent: pair.parentSource }));
-  const childNodeHashes = new Set(childNodes.map(revision => revision.revision));
-  const mergeUpAnchors: LaneLayoutAnchor[] = mergesToParent
-    .filter(pair => parentNodeHashes.has(pair.parent) && childNodeHashes.has(pair.childSource))
-    .map(pair => ({ child: pair.childSource, parent: pair.parent }));
-
-  const layout = computeLaneLayout(
-    childNodes.map(revision => revision.revision),
-    parentNodes.map(revision => revision.revision),
-    [...branchAnchors, ...mergeAnchors, ...mergeUpAnchors]
-  );
-  const childX = layout.childPositions;
-  const parentX = layout.parentPositions;
-  const width = layout.width;
-  const oldestChildX = childX[childX.length - 1] ?? EDGE_PADDING_PX;
-  const branchPointX = bpNodeIdx >= 0 ? (parentX[bpNodeIdx] ?? EDGE_PADDING_PX) : EDGE_PADDING_PX;
-  // Fork connector's child end: the shared branch-point node (vertical drop),
-  // else the child's oldest node.
-  const forkChildX = childBpIdx >= 0 ? (childX[childBpIdx] ?? oldestChildX) : oldestChildX;
-
-  const parentIndexByHash = new Map(parentNodes.map((revision, j) => [revision.revision, j]));
-  const mergeSourceByChild = new Map(mergesFromParent.map(pair => [pair.child, pair.parentSource]));
-  const childIndexByHash = new Map(childNodes.map((revision, i) => [revision.revision, i]));
-  const mergeUpSourceByParent = new Map(
-    mergesToParent.map(pair => [pair.parent, pair.childSource])
-  );
+  // The played segment runs on the child lane only while the selection is an
+  // own commit (child lane indices are a ledger prefix, so indices agree).
   const selectedX =
     selectedIndex >= 0 && selectedIndex < childNodes.length ? childX[selectedIndex] : undefined;
 
   const viewportRef = useRef<HTMLDivElement | null>(null);
-  useScrollToNewest(viewportRef, childNodes.map(revision => revision.revision).join('|'));
+  useScrollToNewest(
+    viewportRef,
+    `${childNodes.map(revision => revision.revision).join('|')}|${parentNodes[0]?.revision ?? ''}`
+  );
 
   return (
     <Box>
@@ -295,8 +312,8 @@ export function ConstellationTimeline({
               strokeWidth={1.5}
             />
           )}
-          {/* Branch-point connector: parent fork node → child's first node */}
-          {childNodes.length > 0 && (
+          {/* Branch-point connector: parent fork node → child's oldest own commit */}
+          {showForkConnector && (
             <line
               data-testid='branch-connector'
               x1={branchPointX}
@@ -309,10 +326,11 @@ export function ConstellationTimeline({
               strokeDasharray='2 2'
             />
           )}
-          {/* Elided pre-fork history marker on the branch-point node */}
+          {/* Elided history marker on the parent lane's oldest node, when the
+              ledger's trunk runs deeper than the walked parent window */}
           {hasElidedBefore && (
             <circle
-              cx={branchPointX}
+              cx={parentX[parentX.length - 1] ?? EDGE_PADDING_PX}
               cy={PARENT_CY}
               r={4}
               fill='none'
@@ -320,22 +338,23 @@ export function ConstellationTimeline({
               strokeDasharray='1 1'
             />
           )}
-          {/* Parent lane nodes (informational) */}
           {parentNodes.map((revision, j) => (
-            <g key={revision.revision} data-revision={revision.revision} aria-hidden='true'>
-              <circle
-                cx={parentX[j]}
-                cy={PARENT_CY}
-                r={revision.revision === parent.branchPoint ? 2.5 : 1.8}
-                fill='var(--ink-faint)'
-              />
-            </g>
+            <ParentLaneNode
+              key={revision.revision}
+              revision={revision}
+              cx={parentX[j] ?? 0}
+              isBranchPoint={revision.revision === parent.branchPoint}
+              ledgerIdx={ledgerIndexByHash.get(revision.revision)}
+              selectedIndex={selectedIndex}
+              current={current}
+              onSelect={onSelect}
+            />
           ))}
           {/* Merge-from-parent annotations on the child lane. When the true
-              source sits in the rendered parent window, computeLaneLayout
-              has already anchored childX[i] to that node's x, so this drop
-              points at the real source. Otherwise (source elided/out of
-              window) the drop can't be anchored — a small label names the
+              source sits in the rendered parent window, the connector runs
+              from that node — vertical when computeLaneLayout anchored the
+              pair, diagonal otherwise. When the source is elided/out of
+              window there is no node to point at — a small label names the
               source so the annotation doesn't imply the wrong node. */}
           {childNodes.map((revision, i) => {
             const parentSource = mergeSourceByChild.get(revision.revision);
@@ -352,7 +371,7 @@ export function ConstellationTimeline({
                 x={childX[i] ?? 0}
                 direction='down'
                 title={`Merged from ${parent.name}`}
-                anchored={sourceIdx !== undefined && childX[i] === parentX[sourceIdx]}
+                sourceX={sourceIdx !== undefined ? parentX[sourceIdx] : undefined}
                 fallbackLabel={
                   sourceRevisionNumber !== undefined
                     ? `from r${sourceRevisionNumber}`
@@ -364,10 +383,12 @@ export function ConstellationTimeline({
           })}
           {/* Merge-to-parent annotations: a rising connector from the child
               source node up to the parent merge node, arrowhead at the
-              parent lane. When both ends are rendered, computeLaneLayout has
-              anchored them to one x — the connector is vertical and points
-              at the real nodes. Otherwise a small label names the child
-              source so the annotation doesn't imply the wrong node. */}
+              parent lane. When both ends are rendered the connector runs
+              between the real nodes — vertical when computeLaneLayout
+              anchored them to one x, diagonal when the child source's x is
+              already claimed (every workspace landing: the child merge
+              commit anchors under ITS source first). When the child source
+              isn't rendered a small label names it instead. */}
           {parentNodes.map((revision, j) => {
             const childSource = mergeUpSourceByParent.get(revision.revision);
             if (childSource === undefined) {
@@ -383,7 +404,7 @@ export function ConstellationTimeline({
                 x={parentX[j] ?? 0}
                 direction='up'
                 title={`Merged to ${parent.name}`}
-                anchored={sourceIdx !== undefined && parentX[j] === childX[sourceIdx]}
+                sourceX={sourceIdx !== undefined ? childX[sourceIdx] : undefined}
                 fallbackLabel={
                   sourceRevisionNumber !== undefined
                     ? `from r${sourceRevisionNumber}`

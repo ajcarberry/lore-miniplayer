@@ -254,17 +254,15 @@ describe('ConstellationTimeline geometry', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('falls back to a labeled, unanchored drop when the merge source is outside the rendered parent window', () => {
-    // Given: a parent lane whose branch point elides everything before it,
-    // and a merge whose source is one of the elided (pre-branch-point,
-    // hence unrendered) revisions
+  it('falls back to a labeled, unanchored drop when the merge source is outside the walked parent window', () => {
+    // Given: a merge whose true source lies beyond the parent lane's walked
+    // window (older than the cap), so no rendered node can be pointed at
     const parent: BranchGraphParentLane = {
       name: 'main',
       branchPoint: 'main-bp',
       revisions: [
         { revision: 'main-tip', revisionNumber: 5 },
         { revision: 'main-bp', revisionNumber: 4 },
-        { revision: 'main-elided', revisionNumber: 3 },
       ],
     };
     const childRevisions: RevisionSummary[] = [
@@ -272,7 +270,7 @@ describe('ConstellationTimeline geometry', () => {
       { revision: 'child-merge', revisionNumber: 1 },
     ];
     const mergesFromParent: MergeFromParent[] = [
-      { child: 'child-merge', parentSource: 'main-elided' },
+      { child: 'child-merge', parentSource: 'main-beyond-window' },
     ];
 
     // When: rendering the constellation
@@ -290,13 +288,13 @@ describe('ConstellationTimeline geometry', () => {
     );
 
     // Then: the drop still renders, vertical, but with a small mono label
-    // naming the true (unrendered) source by revision number
+    // naming the parent, since the true source has no rendered node
     const mergeLine = container.querySelector('[data-testid="merge-marker"] line');
     expect(mergeLine).not.toBeNull();
     expect(mergeLine?.getAttribute('x1')).toBe(mergeLine?.getAttribute('x2'));
     const label = container.querySelector('[data-testid="merge-marker-fallback-label"]');
     expect(label).toBeInTheDocument();
-    expect(label?.textContent).toBe('from r3');
+    expect(label?.textContent).toBe('from parent');
   });
 
   it('anchors an up-merge connector to the true parent merge node, arrow at the top', () => {
@@ -399,7 +397,7 @@ describe('ConstellationTimeline geometry', () => {
     expect(label).toBeInTheDocument();
   });
 
-  it('resolves a same-node dual-anchor conflict: the down-merge (earlier) stays anchored, the up-merge (later) falls back', () => {
+  it('resolves a same-node dual-anchor conflict: the down-merge (earlier) stays vertical, the up-merge (later) goes diagonal', () => {
     // Given: 'child-x' is BOTH the target of a down-merge from parent's
     // 'main-a' AND, later, cited as the source of an up-merge into parent's
     // 'main-b' — a ≠ b, so both connectors can't be vertical at once
@@ -447,17 +445,33 @@ describe('ConstellationTimeline geometry', () => {
     ).not.toBeInTheDocument();
 
     // And: the up-merge (later — can only cite child-x after it exists)
-    // could NOT also anchor child-x under main-b — child-x's actual x (fixed
-    // by the down-merge) does not match the up connector's x — so it falls
-    // back to the labeled, unanchored annotation instead of a wrongly-
-    // implied vertical
+    // could NOT also anchor child-x under main-b — child-x's x is fixed by
+    // the down-merge — so its connector runs DIAGONALLY from child-x's real
+    // position up to main-b, pointing at both true nodes, with no label
     const upLine = container.querySelector('[data-testid="merge-up-marker"] line');
     const childXNode = screen.getByRole('button', { name: 'Select revision r2' });
     const childXCircle = childXNode.querySelector('circle');
-    expect(Number(upLine?.getAttribute('x1'))).not.toBe(Number(childXCircle?.getAttribute('cx')));
+    const mainBCircle = container.querySelector('[data-revision="main-b"] circle');
+    expect(Number(upLine?.getAttribute('x1'))).toBe(Number(childXCircle?.getAttribute('cx')));
+    expect(Number(upLine?.getAttribute('x2'))).toBe(Number(mainBCircle?.getAttribute('cx')));
+    expect(Number(upLine?.getAttribute('x1'))).not.toBe(Number(upLine?.getAttribute('x2')));
     expect(
       container.querySelector('[data-testid="merge-up-marker-fallback-label"]')
-    ).toBeInTheDocument();
+    ).not.toBeInTheDocument();
+
+    // And: the arrowhead is rotated to align with the diagonal — the merge
+    // node sits to the RIGHT of the child source here, so the chevron leans
+    // clockwise (positive angle), pivoting on its apex at the receiving node
+    const upPath = container.querySelector('[data-testid="merge-up-marker"] path');
+    const transform = upPath?.getAttribute('transform') ?? '';
+    const rotation = Number(/rotate\((-?[\d.]+)/.exec(transform)?.[1]);
+    expect(rotation).toBeGreaterThan(0);
+    expect(rotation).toBeLessThan(90);
+
+    // While the vertical down-merge keeps its unrotated chevron
+    expect(
+      container.querySelector('[data-testid="merge-marker"] path')?.getAttribute('transform')
+    ).toBeNull();
   });
 });
 
@@ -496,8 +510,9 @@ describe('ConstellationTimeline for a freshly forked branch (parent not advanced
     ],
   };
 
+  // Parent lane nodes, informational or selectable — one group per node.
   function parentCircleCount(container: HTMLElement): number {
-    return container.querySelectorAll('g[data-revision] circle').length;
+    return container.querySelectorAll('g[data-revision]').length;
   }
 
   it('renders the parent trunk as a visible multi-node lane, not a single collapsed fork node', () => {
@@ -532,8 +547,9 @@ describe('ConstellationTimeline for a freshly forked branch (parent not advanced
     expect(parentCircleCount(container)).toBe(3);
   });
 
-  it('anchors the shared branch-point node at one x on both lanes with a vertical fork connector', () => {
-    // Given: a branch with one own commit atop main's shared lineage
+  it('sprouts the child lane at the fork: the first own commit sits under the parent branch point', () => {
+    // Given: a branch with one own commit atop main's shared lineage — the
+    // trunk revisions belong to main and ride the PARENT lane, not the child
     const childFull: RevisionSummary[] = [
       { revision: 'c1', revisionNumber: 4 },
       { revision: 'r3', revisionNumber: 3 },
@@ -544,18 +560,139 @@ describe('ConstellationTimeline for a freshly forked branch (parent not advanced
     // When: rendering the constellation
     const { container } = renderWithMantine(constellation(childFull, notAdvancedParent));
 
-    // Then: the branch point (r3) sits at the same pixel x on the parent lane
-    // circle and the child lane node, so the trunk stays parallel
+    // Then: the child's own commit is the only node on the child lane, and it
+    // sits at the same x as the parent lane's branch-point node
     const parentBranchPoint = container.querySelector('g[data-revision="r3"] circle');
-    const childBranchPoint = screen.getByRole('button', { name: 'Select revision r3' });
+    const ownNode = screen.getByRole('button', { name: 'Select revision r4' });
     const parentX = Number(parentBranchPoint?.getAttribute('cx'));
-    const childX = Number(childBranchPoint.querySelector('circle')?.getAttribute('cx'));
-    expect(parentX).toBe(childX);
+    expect(Number(ownNode.querySelector('circle')?.getAttribute('cx'))).toBe(parentX);
 
-    // And: the fork connector is a vertical line dropping at that shared x
+    // And: the trunk's r3 is selectable on the PARENT lane (its owning
+    // branch), not duplicated onto the child lane
+    const trunkNode = screen.getByRole('button', { name: 'Select revision r3' });
+    expect(Number(trunkNode.querySelector('circle')?.getAttribute('cy'))).toBe(10);
+    expect(Number(ownNode.querySelector('circle')?.getAttribute('cy'))).toBe(30);
+
+    // And: the fork connector is a vertical line dropping at the shared x
     const connector = container.querySelector('[data-testid="branch-connector"]');
     expect(connector).not.toBeNull();
     expect(Number(connector?.getAttribute('x1'))).toBe(Number(connector?.getAttribute('x2')));
     expect(Number(connector?.getAttribute('x1'))).toBe(parentX);
+  });
+});
+
+describe('ConstellationTimeline ownership lanes (trunk rides the parent lane)', () => {
+  // Mid-history fork with the parent advanced past it: the checkout's full
+  // lineage is [own2, own1, bp, t1]; main's walked lineage is [p-adv, bp, t1].
+  // Every revision renders on the lane of the branch that owns it.
+  const parent: BranchGraphParentLane = {
+    name: 'main',
+    branchPoint: 'bp',
+    revisions: [
+      { revision: 'p-adv', revisionNumber: 3 },
+      { revision: 'bp', revisionNumber: 2 },
+      { revision: 't1', revisionNumber: 1 },
+    ],
+  };
+  const ledger: RevisionSummary[] = [
+    { revision: 'own2', revisionNumber: 4 },
+    { revision: 'own1', revisionNumber: 3 },
+    { revision: 'bp', revisionNumber: 2 },
+    { revision: 't1', revisionNumber: 1 },
+  ];
+
+  function constellation(
+    selectedIndex: number,
+    onSelect: (index: number) => void = jest.fn(),
+    current = '',
+    parentLane: BranchGraphParentLane = parent
+  ): ReactElement {
+    return (
+      <ConstellationTimeline
+        branchName='feature/x'
+        revisions={ledger}
+        current={current}
+        parent={parentLane}
+        mergesFromParent={[]}
+        mergesToParent={[]}
+        selectedIndex={selectedIndex}
+        onSelect={onSelect}
+      />
+    );
+  }
+
+  it('draws own commits on the child lane and the shared trunk on the parent lane', () => {
+    const { container } = renderWithMantine(constellation(0));
+
+    // The child lane holds ONLY the branch's own commits…
+    const childCircles = screen
+      .getAllByRole('button')
+      .map(node => node.querySelector('circle'))
+      .filter(circle => Number(circle?.getAttribute('cy')) === 30);
+    expect(childCircles).toHaveLength(2);
+
+    // …while the trunk rows (bp, t1) are selectable on the PARENT lane, and
+    // main's own advance (p-adv, not in the ledger) stays informational
+    const bpNode = screen.getByRole('button', { name: 'Select revision r2' });
+    const t1Node = screen.getByRole('button', { name: 'Select revision r1' });
+    expect(Number(bpNode.querySelector('circle')?.getAttribute('cy'))).toBe(10);
+    expect(Number(t1Node.querySelector('circle')?.getAttribute('cy'))).toBe(10);
+    const pAdv = container.querySelector('g[data-revision="p-adv"]');
+    expect(pAdv?.querySelector('circle')).not.toBeNull();
+    expect(pAdv?.closest('[role="button"]')).toBeNull();
+
+    // And: the oldest own commit (own1, r3) anchors at the branch point's x
+    // on the child lane — the fork sprouts there, vertically
+    const bpX = Number(bpNode.querySelector('circle')?.getAttribute('cx'));
+    const own1 = screen.getByRole('button', { name: 'Select revision r3' });
+    expect(Number(own1.querySelector('circle')?.getAttribute('cy'))).toBe(30);
+    expect(Number(own1.querySelector('circle')?.getAttribute('cx'))).toBe(bpX);
+    const connector = container.querySelector('[data-testid="branch-connector"]');
+    expect(Number(connector?.getAttribute('x1'))).toBe(bpX);
+    expect(Number(connector?.getAttribute('x1'))).toBe(Number(connector?.getAttribute('x2')));
+  });
+
+  it('routes trunk-node clicks to the LEDGER index and halos the parent lane node when selected', () => {
+    const onSelect = jest.fn();
+    const { container } = renderWithMantine(constellation(2, onSelect));
+
+    // Selecting the trunk row highlights its node on the PARENT lane
+    const bpNode = screen.getByRole('button', { name: 'Select revision r2' });
+    const halo = bpNode.querySelector('circle[r="5.5"]');
+    expect(halo).not.toBeNull();
+    expect(Number(halo?.getAttribute('cy'))).toBe(10);
+    void container;
+
+    // Clicking a trunk node reports its LEDGER index (bp = index 2)
+    screen.getByRole('button', { name: 'Select revision r1' }).dispatchEvent(
+      new MouseEvent('click', { bubbles: true })
+    );
+    expect(onSelect).toHaveBeenCalledWith(3);
+  });
+
+  it('marks the current revision on the parent lane when the checkout sits on the trunk', () => {
+    renderWithMantine(constellation(0, jest.fn(), 'bp'));
+
+    const bpNode = screen.getByRole('button', { name: 'Select revision r2' });
+    const ring = bpNode.querySelector('circle[r="4.5"]');
+    expect(ring).not.toBeNull();
+    expect(Number(ring?.getAttribute('cy'))).toBe(10);
+  });
+
+  it('marks the oldest parent node as elided when the ledger trunk extends beyond the walked window', () => {
+    // Given: the parent walk is capped before t1, which the ledger still holds
+    const cappedParent: BranchGraphParentLane = {
+      name: 'main',
+      branchPoint: 'bp',
+      revisions: [
+        { revision: 'p-adv', revisionNumber: 3 },
+        { revision: 'bp', revisionNumber: 2 },
+      ],
+    };
+    const { container } = renderWithMantine(constellation(0, jest.fn(), '', cappedParent));
+
+    // Then: the dashed elision ring marks the parent lane's oldest node
+    const ring = container.querySelector('circle[stroke-dasharray="1 1"]');
+    expect(ring).not.toBeNull();
   });
 });

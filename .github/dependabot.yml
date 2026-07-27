@@ -1,0 +1,43 @@
+version: 2
+
+updates:
+  # Minor/patch bumps arrive as two grouped PRs a week (runtime vs. tooling);
+  # majors always come as their own PR so Electron/React/Vite jumps are
+  # reviewed in isolation.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: America/New_York
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      runtime-deps:
+        applies-to: version-updates
+        dependency-type: production
+        update-types: [minor, patch]
+      dev-deps:
+        applies-to: version-updates
+        dependency-type: development
+        update-types: [minor, patch]
+      security-updates:
+        applies-to: security-updates
+        patterns: ['*']
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: America/New_York
+    commit-message:
+      prefix: ci
+      include: scope
+    groups:
+      actions:
+        patterns: ['*']

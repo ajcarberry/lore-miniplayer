@@ -751,6 +751,13 @@ describe('LoreRepositoryService', () => {
         // history fixtures so branchList tips match the walked lineages.
         mainTip?: string;
         featureTip?: string;
+        // main's REMOTE tip as branchInfo reports it — a landing advances
+        // only this tip, so it can run ahead of mainTip (the local one).
+        mainRemoteTip?: string;
+        // Walk result for mainRemoteTip when it differs from mainTip.
+        mainRemoteHistory?: typeof mainHistoryFixture | Error;
+        // branchInfo outcome for the PARENT branch's own tip read.
+        mainBranchInfo?: Error;
         extraBranchEntries?: MockEvent[];
         revisionInfoEvents?: MockEvent[];
         currentFails?: boolean;
@@ -762,6 +769,9 @@ describe('LoreRepositoryService', () => {
         featureHistory = featureHistoryFixture,
         mainTip = MAIN_TIP,
         featureTip = FEATURE_TIP,
+        mainRemoteTip = mainTip,
+        mainRemoteHistory = mainHistory,
+        mainBranchInfo,
         currentRev = featureTip,
         extraBranchEntries = [],
         revisionInfoEvents = [],
@@ -780,11 +790,34 @@ describe('LoreRepositoryService', () => {
         }) as never
       );
 
-      mockLore.branchInfo.mockReturnValue(
-        (Array.isArray(branchInfo)
+      // branchInfo serves two callers: the child's parent/branch-point read
+      // (any branch name) and the parent lane's tip read (always 'main' here).
+      mockLore.branchInfo.mockImplementation(((
+        _globalArgs: unknown,
+        args: Record<string, unknown>
+      ) => {
+        if (args['branch'] === 'main') {
+          if (mainBranchInfo) {
+            return fluentMock({ error: mainBranchInfo });
+          }
+          // The 'main' graph test reads main's OWN parent through this arm,
+          // so honor an explicit branchInfo override here too.
+          if (Array.isArray(branchInfo) && branchInfo[0]?.data === mainBranchInfoFixture) {
+            return fluentMock({ events: branchInfo });
+          }
+          return fluentMock({
+            events: [
+              {
+                tag: LoreEventTag.BRANCH_INFO,
+                data: { ...mainBranchInfoFixture, latest: mainTip, latestRemote: mainRemoteTip },
+              },
+            ],
+          });
+        }
+        return Array.isArray(branchInfo)
           ? fluentMock({ events: branchInfo })
-          : fluentMock({ error: branchInfo })) as never
-      );
+          : fluentMock({ error: branchInfo });
+      }) as never);
 
       mockLore.revisionHistory.mockImplementation(((_g: unknown, args: Record<string, unknown>) => {
         const revision = args['revision'] as string | undefined;
@@ -803,6 +836,16 @@ describe('LoreRepositoryService', () => {
                 ]
               : [],
           });
+        }
+        if (revision === mainRemoteTip && mainRemoteTip !== mainTip) {
+          return mainRemoteHistory instanceof Error
+            ? fluentMock({ error: mainRemoteHistory })
+            : fluentMock({
+                events: mainRemoteHistory.map(data => ({
+                  tag: LoreEventTag.REVISION_HISTORY_ENTRY,
+                  data,
+                })),
+              });
         }
         if (revision === mainTip) {
           return fluentMock({
@@ -1000,6 +1043,54 @@ describe('LoreRepositoryService', () => {
         FEATURE_MERGE,
         BRANCH_POINT,
       ]);
+    });
+
+    it('walks the parent lane from its remote tip when a landing advanced it past the local one', async () => {
+      // Given: main's local tip is stale at MAIN_R3 while its remote tip is
+      // MAIN_TIP — the shape branchMergeInto leaves behind, since a landing
+      // advances only the remote tip
+      setupGraphMocks({
+        mainTip: MAIN_R3,
+        mainHistory: mainHistoryFixture.slice(1),
+        mainRemoteTip: MAIN_TIP,
+        mainRemoteHistory: mainHistoryFixture,
+      });
+
+      // When: assembling the graph for the child branch
+      const graph = await service.getBranchGraph('/path/to/repo', 'feature/x');
+
+      // Then: the parent lane anchors on the remote tip — the landed
+      // revision is part of the lane, not invisible until a local sync
+      expect(graph.parent?.revisions[0]?.revision).toBe(MAIN_TIP);
+      expect(graph.mergesFromParent).toEqual([{ child: FEATURE_MERGE, parentSource: MAIN_R3 }]);
+    });
+
+    it('falls back to the local parent tip when the remote tip is not walkable locally', async () => {
+      // Given: main's remote tip is known but its revisions were never
+      // fetched into the local store (an external landing, not yet synced)
+      setupGraphMocks({
+        mainTip: MAIN_R3,
+        mainHistory: mainHistoryFixture.slice(1),
+        mainRemoteTip: MAIN_TIP,
+        mainRemoteHistory: loreError(3, 'unknown revision'),
+      });
+
+      // When: assembling the graph for the child branch
+      const graph = await service.getBranchGraph('/path/to/repo', 'feature/x');
+
+      // Then: the lane still resolves, anchored on the walkable local tip
+      expect(graph.parent?.revisions[0]?.revision).toBe(MAIN_R3);
+    });
+
+    it('keeps the parent lane on the local tip when the parent tip read fails', async () => {
+      // Given: the parent branch's own branchInfo read rejects (e.g. offline)
+      setupGraphMocks({ mainBranchInfo: loreError(2, 'server unavailable') });
+
+      // When: assembling the graph for the child branch
+      const graph = await service.getBranchGraph('/path/to/repo', 'feature/x');
+
+      // Then: the parent lane still resolves from the local tip
+      expect(graph.parent?.revisions[0]?.revision).toBe(MAIN_TIP);
     });
 
     it('caps the parent lane at 100 revisions', async () => {

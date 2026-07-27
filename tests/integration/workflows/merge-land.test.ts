@@ -170,6 +170,52 @@ for (const resolution of ['mine', 'theirs'] as const) {
   });
 }
 
+test('a workspace-completed landing is visible in the branch graph: the parent lane carries the landed revision and both merge links', async () => {
+  await withServer(async ({ server, service }) => {
+    const scenario = await seedWorkspace(server, service);
+
+    // Given: another author moved main, so the merge has real reconciliation
+    const user2 = await secondClient(server, scenario.repoUrl, 'user2');
+    await user2.commitAndPush(
+      { 'notes.txt': 'alpha\nMAIN-EDIT\ncharlie\n' },
+      'another author edits the same line on main'
+    );
+
+    // When: the workspace merges, resolves, and lands
+    await scenario.merge.start({
+      repositoryPath: scenario.workspacePath,
+      sourceBranch: SOURCE_BRANCH,
+      targetBranch: TARGET_BRANCH,
+    });
+    await scenario.merge.resolve({
+      repositoryPath: scenario.workspacePath,
+      path: 'notes.txt',
+      resolution: 'mine',
+    });
+    const { revision: landed } = await scenario.merge.complete({
+      repositoryPath: scenario.workspacePath,
+    });
+
+    // Then: the branch graph tells the whole story WITHOUT a local sync of
+    // main — the landing only advances main's remote tip, and that is the
+    // tip the parent lane must anchor on
+    const graph = await service.getBranchGraph(scenario.workspacePath, SOURCE_BRANCH);
+    const parentLane = (graph.parent?.revisions ?? []).map(entry => entry.revision);
+    assert.ok(
+      parentLane.includes(landed),
+      `the parent lane must carry the landed revision ${landed}; got [${parentLane.join(', ')}]`
+    );
+    const childMerge = graph.branch.revisions[0]?.revision ?? '';
+    assert.deepEqual(
+      graph.mergesToParent,
+      [{ parent: landed, childSource: childMerge }],
+      'the landing must be classified as a merge up from the child merge commit'
+    );
+    assert.equal(graph.mergesFromParent.length, 1, 'the child merge commit must link to its true main source');
+    assert.equal(graph.mergesFromParent[0]?.child, childMerge);
+  });
+});
+
 test('a branch that already landed reports nothing left to merge', async () => {
   await withServer(async ({ server, service }) => {
     const scenario = await seedWorkspace(server, service);

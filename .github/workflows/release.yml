@@ -11,7 +11,7 @@ jobs:
   check-version:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # A prerelease suffix on the tag (v0.1.0-ci.1) is allowed so the
       # pipeline can be tested without bumping package.json.
@@ -45,7 +45,7 @@ jobs:
       # from looking for one.
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v4
 

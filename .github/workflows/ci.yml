@@ -107,7 +107,7 @@ jobs:
       # writes to its own folder so it doesn't clobber the main report.
       - name: Upload Playwright HTML report
         if: always() && runner.os != 'Linux'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report-${{ matrix.os }}
           if-no-files-found: ignore
@@ -121,7 +121,7 @@ jobs:
       # skipped that cleanup, hence if-no-files-found: ignore.
       - name: Upload Playwright failure artifacts
         if: failure() && runner.os != 'Linux'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-results-${{ matrix.os }}
           path: |

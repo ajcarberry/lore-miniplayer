@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@fontsource/cormorant-garamond':
-        specifier: ^5.2.11
-        version: 5.2.11
+        specifier: ^5.3.0
+        version: 5.3.0
       '@fontsource/hanken-grotesk':
         specifier: ^5.2.8
         version: 5.2.8
@@ -796,8 +796,8 @@ packages:
   '@floating-ui/utils@0.2.12':
     resolution: {integrity: sha512-HpCo8tmWzLVad5s2d19EhAz5zqrrQ6s69qd6moPMQvkOuSwDT1YgRfWSVuc4ennqrgv3OHppiOGMQ7oC13yIww==}
 
-  '@fontsource/cormorant-garamond@5.2.11':
-    resolution: {integrity: sha512-5JjpN023lhA5soijgVT0BdRGzmlijm402ppjccMd6h+vRE0mX2lJnE+41UPfnlidrkV9/rCo1mf58WZlHnB0CA==}
+  '@fontsource/cormorant-garamond@5.3.0':
+    resolution: {integrity: sha512-weuGsCirGVWBWqpt6YUp0yLThTe4G8YO45noq8wxeJCRvEpq5lFrxNMFSTxcyOyV5k5otzJ8guDzYegdYlcLMQ==}
 
   '@fontsource/hanken-grotesk@5.2.8':
     resolution: {integrity: sha512-J/e6hdfNCbyc4WK5hmZtk0zjaIsFx3pvCdPVxY25iYw2C9v1ZggGz4nfHnRjMhcz4WfaadUuwLNtvj8sQ70tkg==}
@@ -4901,7 +4901,7 @@ snapshots:
 
   '@floating-ui/utils@0.2.12': {}
 
-  '@fontsource/cormorant-garamond@5.2.11': {}
+  '@fontsource/cormorant-garamond@5.3.0': {}
 
   '@fontsource/hanken-grotesk@5.2.8': {}
 

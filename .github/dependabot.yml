@@ -38,11 +38,12 @@ updates:
       day: monday
       time: '06:00'
       timezone: America/New_York
+    open-pull-requests-limit: 10
     commit-message:
       prefix: ci
       include: scope
     groups:
-      # Artifacts written by one major aren't readable by another, and
+      # Upload and download have to stay on compatible artifact versions, and
       # release.yml downloads what the build uploads.
       artifact-actions:
         patterns: ['actions/*-artifact']

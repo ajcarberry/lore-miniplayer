@@ -131,10 +131,8 @@ export const BranchGraphSchema = z.object({
   mergesToParent: z.array(MergeToParentSchema),
 });
 
-// ---------------------------------------------------------------------------
 // Project View: diff/merge review of the working directory (commit and merge
 // workflows).
-// ---------------------------------------------------------------------------
 
 // Per-file diff result (fileDiff), rendered in the Project View's center
 // pane.
@@ -221,7 +219,7 @@ export const ReviewOpenRequestSchema = z.object({
   compare: ReviewCompareSchema,
 });
 
-// --- IPC request/response payloads ------------------------------------------
+// IPC request/response payloads.
 
 export const DiffRequestSchema = z.object({
   repositoryPath: z.string().min(1),

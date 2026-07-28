@@ -339,8 +339,6 @@ export class MergeService {
     return { revision: landedRevision };
   }
 
-  // --- internals ------------------------------------------------------------
-
   // Land the source branch's merge-commit on the target branch: one
   // `branchMergeInto` from the source checkout, which commits the merge on the
   // target and publishes it to the server in the same call (the

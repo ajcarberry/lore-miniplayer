@@ -150,10 +150,8 @@ export interface PathValidationResult {
   readonly normalizedPath?: string;
 }
 
-// ---------------------------------------------------------------------------
 // Project View: diff/merge review of the working directory (commit and merge
 // workflows).
-// ---------------------------------------------------------------------------
 
 export type FileDiffAction = z.infer<typeof FileDiffActionSchema>;
 

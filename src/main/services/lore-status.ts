@@ -25,7 +25,7 @@ export function distinctStatusPaths(status: LoreFileStatusGroup): string[] {
 // bit, set on conflict rows AND on files the merge imported from the target
 // (probed live 2026-07-27; a user's own row staged on top of a pending merge
 // carries no flagMerged).
-export function isMergeFile(file: LoreFileStatus): boolean {
+function isMergeFile(file: LoreFileStatus): boolean {
   return Boolean(file.merged);
 }
 
@@ -36,7 +36,7 @@ export function unrelatedStagedPaths(status: LoreFileStatusGroup): string[] {
   return status.staged.filter(file => !isMergeFile(file)).map(file => file.path);
 }
 
-// --- landing ancestry (is this branch's work already on the target?) --------
+// Landing ancestry: is this branch's work already on the target?
 
 // How far back the target branch's lineage is walked when deciding whether the
 // source branch has revisions the target lacks. Bounded work; a branch that

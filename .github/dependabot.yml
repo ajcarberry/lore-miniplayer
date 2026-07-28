@@ -1,0 +1,49 @@
+version: 2
+
+# One PR per dependency by default. Groups exist only for families that cannot
+# pass CI apart — a solo PR for one member is red by construction — not to
+# reduce PR volume.
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: America/New_York
+    open-pull-requests-limit: 20
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      # react-dom tracks react exactly; the @types packages track the major.
+      react:
+        patterns: ['react', 'react-dom', '@types/react', '@types/react-dom']
+      # Mantine requires an identical version across all @mantine/* packages.
+      mantine:
+        patterns: ['@mantine/*']
+      # jest-environment-jsdom is versioned with jest; ts-jest peer-depends on
+      # it; @types/jest tracks the major.
+      jest:
+        patterns: ['jest', 'jest-environment-*', 'ts-jest', '@types/jest']
+      # pnpm lint only runs when core, plugins, and typescript-eslint are
+      # mutually peer-compatible.
+      eslint:
+        patterns: ['eslint', '@eslint/*', '@typescript-eslint/*', 'eslint-plugin-*']
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: America/New_York
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: ci
+      include: scope
+    groups:
+      # Upload and download have to stay on compatible artifact versions, and
+      # release.yml downloads what the build uploads.
+      artifact-actions:
+        patterns: ['actions/*-artifact']

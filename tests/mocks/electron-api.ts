@@ -17,6 +17,7 @@ export function createMockElectronAPI(): ElectronAPI {
       move: jest.fn(),
       setNoticeActive: jest.fn(),
       setExpanded: jest.fn().mockResolvedValue({ anchor: 'bottom' }),
+      setView: jest.fn().mockResolvedValue(undefined),
       openTerminal: jest.fn().mockResolvedValue({ success: true, data: undefined }),
     },
     repository: {
@@ -37,6 +38,7 @@ export function createMockElectronAPI(): ElectronAPI {
         data: { current: '', branch: { name: '', revisions: [] }, mergesFromParent: [] },
       }),
       currentRevision: jest.fn().mockResolvedValue({ success: true, data: '' }),
+      revisionsToLand: jest.fn().mockResolvedValue({ success: true, data: false }),
       repository: {
         listBranches: jest.fn().mockResolvedValue({ success: true, data: [] }),
         listRemoteRepositories: jest.fn().mockResolvedValue({ success: true, data: [] }),

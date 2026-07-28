@@ -1,4 +1,4 @@
-import { readdir } from 'node:fs/promises';
+import { readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ElectronApplication, Locator, Page } from '@playwright/test';
 import { test as base, expect } from '@playwright/test';
@@ -10,7 +10,28 @@ import {
   createCloneBaseDir,
   type LoreTestServer,
 } from '../live-server.setup';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { writeSeedFiles, type SeedFiles } from '../../../integration/support/world';
+import { isolatedHomeEnv } from '../../../integration/harness/server';
+import { ensureLoreBinaries } from '../../../integration/harness/binaries';
+
+const execFileAsync = promisify(execFile);
+
+// Run the real `lore` CLI against the app's own clone, under the app's
+// isolated HOME (the clone's store lives there) — the out-of-band way an
+// agent or terminal user moves a checkout onto its own branch.
+export async function loreInClone(
+  homeDir: string,
+  clonePath: string,
+  ...invocations: string[][]
+): Promise<void> {
+  const { lore } = await ensureLoreBinaries();
+  const env = { ...process.env, ...isolatedHomeEnv(homeDir) };
+  for (const args of invocations) {
+    await execFileAsync(lore, [...args, '--repository', clonePath], { env });
+  }
+}
 
 // Page-object helper layer over the live Electron app, so each selector lives in
 // one place. Launch model: workers:1 / fullyParallel:false sustains many
@@ -27,11 +48,27 @@ interface LiveFixtures {
   electronApp: ElectronApplication;
   window: Page;
   server: LoreTestServer;
+  // The isolated $HOME the launched app's FFI reads/writes (see
+  // isolatedFfiHomeEnv), exposed so tests can drive the `lore` CLI against
+  // the app's own clone (its store lives under this HOME).
+  homeDir: string;
 }
 
 export const test = base.extend<LiveFixtures>({
-  electronApp: async ({}, use) => {
-    const { app, userDataDir } = await launchApp(undefined, await isolatedFfiHomeEnv());
+  // Same isolated HOME the electronApp fixture launches with — derived once
+  // here and reconstructed into env vars for the launch, so both fixtures
+  // agree on the same directory.
+  homeDir: async ({}, use) => {
+    const env = await isolatedFfiHomeEnv();
+    const home = env['HOME'];
+    if (home === undefined) {
+      throw new Error('isolatedFfiHomeEnv() did not set HOME');
+    }
+    await use(home);
+    await rm(home, { recursive: true, force: true });
+  },
+  electronApp: async ({ homeDir }, use) => {
+    const { app, userDataDir } = await launchApp(undefined, isolatedHomeEnv(homeDir));
     await use(app);
     await closeAppBounded(app);
     removeTempUserDataDir(userDataDir);
@@ -445,4 +482,191 @@ export async function stubOpenExternals(app: ElectronApplication): Promise<OpenE
     explorerCalls: () => read('explorer'),
     terminalCalls: () => read('terminal'),
   };
+}
+
+// --- Review window -----------------------------------------------------
+
+export type ReviewCardAction = 'Review' | 'Merge';
+
+// Click the card's WorkingSet-header Review/Merge action; the card morphs
+// into the Project View in the SAME window (returned for assertion
+// continuity). Awaits the view's Back control so callers see it mounted.
+export async function openProjectView(window: Page, action: ReviewCardAction): Promise<Page> {
+  // Scoped to the card: for ~400ms after a previous exit the dying view is
+  // still in the accessibility tree with its own 'Merge' bar button.
+  await window.locator('.morph-card').getByRole('button', { name: action, exact: true }).click();
+  await expect(window.getByLabel('Back')).toBeVisible({ timeout: 30_000 });
+  return window;
+}
+
+// The footer's always-visible opener (left of Open in File Explorer).
+export async function openProjectViewFromFooter(window: Page): Promise<Page> {
+  await window.getByRole('button', { name: 'Open Project View' }).click();
+  await expect(window.getByLabel('Back')).toBeVisible({ timeout: 30_000 });
+  return window;
+}
+
+// Leave the Project View through its header Back control and await the card
+// taking back over.
+export async function exitProjectView(window: Page): Promise<void> {
+  await window.getByLabel('Back').click();
+  await expect(window.getByText('Working Set')).toBeVisible({ timeout: 30_000 });
+}
+
+// Collapse from the Project View straight to the ambient pill via its
+// TitleBar control (scoped to the view — the hidden card carries the same
+// control until its visibility flips).
+export async function collapseFromProjectView(window: Page): Promise<void> {
+  await window.locator('.morph-project-view').getByLabel('Collapse to pill').click();
+  await expect(window.locator('.morph-pill-bar')).toBeVisible({ timeout: 30_000 });
+}
+
+// Change the compare picker's source or target endpoint to the menu item
+// matching `label` (a revision string, "<revision> · <message>", or — target
+// only — "working tree"; see ComparePicker.tsx).
+export async function selectCompareEndpoint(
+  page: Page,
+  endpoint: 'source' | 'target',
+  label: string
+): Promise<void> {
+  const ariaLabel = endpoint === 'source' ? 'Change compare source' : 'Change compare target';
+  await page.getByLabel(ariaLabel).click();
+  // .last(): a just-closed sibling menu's DOM can linger through its close
+  // transition, briefly duplicating revision items; portals mount in open
+  // order, so the newest menu is last.
+  await page.getByRole('menuitem', { name: label }).last().click();
+}
+
+// Stage/unstage a review file-list row via its checkbox (FileList.tsx;
+// unresolved conflicts render a warning icon instead and cannot be staged).
+// Deliberately click + await rather than Locator.check()/uncheck(): the box is
+// a CONTROLLED input whose checked state only flips after the stage IPC round
+// trip resolves, and check() verifies the state immediately after its click
+// with no retry ("Clicking the checkbox did not change its state"). Mirrors
+// the working-set helper's click-then-assert shape.
+export async function stageFileRow(page: Page, relPath: string): Promise<void> {
+  const checkbox = page.getByLabel(`Stage ${relPath}`);
+  await checkbox.click();
+  await expect(checkbox).toBeChecked({ timeout: 30_000 });
+}
+
+export async function unstageFileRow(page: Page, relPath: string): Promise<void> {
+  const checkbox = page.getByLabel(`Stage ${relPath}`);
+  await checkbox.click();
+  await expect(checkbox).not.toBeChecked({ timeout: 30_000 });
+}
+
+// The file-list row's single-letter change-kind badge (M/A/D/R — FileList.tsx's
+// ACTION_BADGE), read the same structural way as the working-set fileKindBadge
+// above.
+export async function fileRowBadge(page: Page, relPath: string): Promise<'A' | 'M' | 'D' | 'R'> {
+  const isBadge =
+    'normalize-space()="A" or normalize-space()="M" or normalize-space()="D" or normalize-space()="R"';
+  const badge = page
+    .getByLabel(`Stage ${relPath}`)
+    .locator(`xpath=ancestor::div[.//p[${isBadge}]][1]//p[${isBadge}]`)
+    .first();
+  const text = (await badge.textContent())?.trim();
+  if (text === 'A' || text === 'M' || text === 'D' || text === 'R') {
+    return text;
+  }
+  throw new Error(`unexpected file-row badge for ${relPath}: ${JSON.stringify(text)}`);
+}
+
+// The Project View's own subtree. Bar-level role queries must scope here:
+// during the card ↔ view crossfade (the first ~400ms) the card's controls are
+// still in the accessibility tree, so an unscoped 'Merge'/'Commit' button
+// query can hit both surfaces at once.
+function projectView(page: Page): Locator {
+  return page.locator('.morph-project-view');
+}
+
+// Fill the commit message and commit (CommitBar.tsx); awaits the bar's swap to
+// its post-commit Push action.
+export async function commitFromReview(page: Page, message: string): Promise<void> {
+  await page.getByLabel('Commit message').fill(message);
+  await projectView(page).getByRole('button', { name: 'Commit', exact: true }).click();
+  await expect(projectView(page).getByRole('button', { name: 'Push', exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
+}
+
+export async function pushFromReview(page: Page): Promise<void> {
+  await projectView(page).getByRole('button', { name: 'Push', exact: true }).click();
+}
+
+// Resolve one side of a conflicted file, scoped to its ConflictBlock
+// (data-testid="conflict-block-<path>" — button text alone is not per-file).
+export async function acceptMine(page: Page, filePath: string): Promise<void> {
+  await page
+    .getByTestId(`conflict-block-${filePath}`)
+    .getByRole('button', { name: 'Accept mine', exact: true })
+    .click();
+}
+
+export async function acceptTheirs(page: Page, filePath: string): Promise<void> {
+  await page
+    .getByTestId(`conflict-block-${filePath}`)
+    .getByRole('button', { name: 'Accept theirs', exact: true })
+    .click();
+}
+
+// The main window's real OS-level bounds, read from the main process — the
+// morphs are asserted against actual window geometry, not just DOM state.
+export async function mainWindowBounds(
+  app: ElectronApplication
+): Promise<{ x: number; y: number; width: number; height: number }> {
+  return app.evaluate(({ BrowserWindow }) => {
+    const win = BrowserWindow.getAllWindows()[0];
+    if (!win) {
+      throw new Error('no window');
+    }
+    return win.getBounds();
+  });
+}
+
+// Choose a workflow in the Project View's header switcher. Clicks the
+// segment LABEL — Mantine visually hides the radio input itself, so the
+// input is never clickable. Scoped to the view (the card is hidden but
+// present during the crossfade).
+export async function chooseWorkflow(page: Page, label: 'Review' | 'Merge'): Promise<void> {
+  await projectView(page).locator('.mantine-SegmentedControl-label', { hasText: label }).click();
+}
+
+// The merge workflow's primary action (MergeBar.tsx) — gated on every
+// conflict resolved and the branch actually being ahead of the target.
+export async function completeMerge(page: Page): Promise<void> {
+  await projectView(page).getByRole('button', { name: 'Merge', exact: true }).click();
+}
+
+interface AbortMergeOptions {
+  // Default true: confirms the "Discard merge?" modal. false clicks "Keep
+  // merging" instead, cancelling the abort.
+  readonly confirm?: boolean;
+}
+
+export async function abortMerge(page: Page, options: AbortMergeOptions = {}): Promise<void> {
+  await page.getByRole('button', { name: 'Abort', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Discard this merge?' });
+  await expect(dialog).toBeVisible();
+  if (options.confirm ?? true) {
+    await dialog.getByRole('button', { name: 'Discard merge', exact: true }).click();
+  } else {
+    await dialog.getByRole('button', { name: 'Keep merging', exact: true }).click();
+  }
+}
+
+// Whether the merge workflow's primary action is currently clickable.
+export async function mergeGateEnabled(page: Page): Promise<boolean> {
+  return projectView(page).getByRole('button', { name: 'Merge', exact: true }).isEnabled();
+}
+
+// The landed-merge line ("Landed <rev> on <target>" — MergeBar.tsx), or null
+// before the merge completes.
+export async function landedBannerText(page: Page): Promise<string | null> {
+  const banner = page.getByText(/^Landed .* on /);
+  if ((await banner.count()) === 0) {
+    return null;
+  }
+  return ((await banner.first().textContent()) ?? '').trim();
 }

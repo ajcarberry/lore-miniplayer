@@ -1,11 +1,7 @@
 import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { launchApp, removeTempUserDataDir } from './launch';
-import {
-  isolatedFfiHomeEnv,
-  startLoreServer,
-  type LoreTestServer,
-} from './live-server.setup';
+import { isolatedFfiHomeEnv, startLoreServer, type LoreTestServer } from './live-server.setup';
 
 // P-U1 isolation-model reliability check. Proves the launch/isolation model the
 // live-server scenario packets (WP-U2…U6) consume: >=6 sequential REAL app
@@ -55,10 +51,9 @@ test.describe('P-U1 launch isolation model', () => {
         const firstWindowMs = Date.now() - started;
         // The reported "4th firstWindow() hangs" ceiling would surface here as a
         // multi-minute stall; assert it stays fast on every iteration instead.
-        expect(
-          firstWindowMs,
-          `launch ${i}/${LAUNCHES}: firstWindow() must not hang`
-        ).toBeLessThan(30_000);
+        expect(firstWindowMs, `launch ${i}/${LAUNCHES}: firstWindow() must not hang`).toBeLessThan(
+          30_000
+        );
         await connect(window);
       } finally {
         await app.close();

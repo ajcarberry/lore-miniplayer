@@ -174,7 +174,9 @@ function verifyDigest(asset: ReleaseAsset, buffer: Buffer): void {
   const expected = asset.digest.slice(prefix.length);
   const actual = createHash('sha256').update(buffer).digest('hex');
   if (actual !== expected) {
-    throw new Error(`Checksum mismatch for ${asset.name}: expected sha256 ${expected}, got ${actual}`);
+    throw new Error(
+      `Checksum mismatch for ${asset.name}: expected sha256 ${expected}, got ${actual}`
+    );
   }
 }
 

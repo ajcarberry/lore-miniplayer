@@ -11,12 +11,7 @@ const MESH_PATH = 'meshes/cave-entrance.mesh';
 // matches the remote exactly (no remote-side change involved).
 test('reset sync discards a dirty working copy and matches the remote', async () => {
   await withServer(async ({ server, service }) => {
-    const { clonePath: user1Path } = await seedAndClone(
-      server,
-      service,
-      'repo1',
-      sampleFiles()
-    );
+    const { clonePath: user1Path } = await seedAndClone(server, service, 'repo1', sampleFiles());
 
     const originalContent = await readFile(join(user1Path, MESH_PATH), 'utf8');
     await writeFile(join(user1Path, MESH_PATH), 'HALF-FINISHED SCRATCH EDIT, never staged\n');

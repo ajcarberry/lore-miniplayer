@@ -221,6 +221,36 @@ function enrichAll(
   return Promise.all(raw.map(entry => enrichRevision(deps, repositoryPath, entry)));
 }
 
+// The parent lane's walk anchor: the parent's REMOTE tip when known, else its
+// local one. A landing through `branchMergeInto` advances ONLY the remote tip
+// (the same rule as lore-status's readMergeTargetRevision), so anchoring on
+// the local tip hides every landed merge — including this app's own — until
+// the local store happens to sync. A failed tip read degrades to the local
+// tip rather than dropping the lane.
+async function readParentWalkTip(
+  deps: BranchGraphDeps,
+  repositoryPath: string,
+  parentEntry: BranchEntry
+): Promise<string> {
+  try {
+    const tips = await collectEvents(
+      lore.branchInfo({ repositoryPath }, { branch: parentEntry.name }),
+      LoreEventTag.BRANCH_INFO,
+      data => data.latestRemote ?? ''
+    );
+    const latestRemote = tips[tips.length - 1] ?? '';
+    if (!isUnknownHash(latestRemote)) {
+      return latestRemote;
+    }
+  } catch (error) {
+    deps.emitLog(
+      LoreLogLevel.WARN,
+      `Failed to read the remote tip of '${parentEntry.name}'; using the local tip: ${errorMessage(error)}`
+    );
+  }
+  return parentEntry.latest;
+}
+
 // Resolve the parent lane from branchInfo's parent id + branch point, walking
 // the parent branch's tip (capped at PARENT_LANE_CAP). The raw (capped)
 // entries ride along so the caller can classify merges accepted INTO the
@@ -242,7 +272,23 @@ async function resolveParentLane(
     if (!parentEntry || isUnknownHash(parentEntry.latest)) {
       return undefined;
     }
-    const raw = await walkLineage(deps, repositoryPath, parentEntry.latest, PARENT_LANE_CAP + 1);
+    const walkTip = await readParentWalkTip(deps, repositoryPath, parentEntry);
+    let raw: RawRevision[];
+    try {
+      raw = await walkLineage(deps, repositoryPath, walkTip, PARENT_LANE_CAP + 1);
+    } catch (error) {
+      if (walkTip === parentEntry.latest) {
+        throw error;
+      }
+      // The remote tip is known but its revisions were never fetched into
+      // the local store (an external landing before any sync) — the local
+      // tip is the best walkable anchor.
+      deps.emitLog(
+        LoreLogLevel.WARN,
+        `Parent remote tip '${walkTip}' is not walkable locally; using the local tip: ${errorMessage(error)}`
+      );
+      raw = await walkLineage(deps, repositoryPath, parentEntry.latest, PARENT_LANE_CAP + 1);
+    }
     let capped = raw;
     if (raw.length > PARENT_LANE_CAP) {
       deps.emitLog(

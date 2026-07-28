@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import type { LoreRepositoryService } from '../services/lore-repository';
-import { handleResult } from './result-helpers';
+import { handleRequest, handleResult } from './result-helpers';
 import {
   LoreRepositoryPathArgsSchema,
   LoreLocalPathArgsSchema,
@@ -11,6 +11,7 @@ import {
   LoreCommitArgsSchema,
   LoreBranchInfoArgsSchema,
   LoreBranchGraphArgsSchema,
+  RevisionsToLandRequestSchema,
 } from './validators';
 import type { MainLogger } from './logger';
 
@@ -120,5 +121,15 @@ export function registerLoreHandlers(
 
   handleResult(log, 'lore:branchGraph', LoreBranchGraphArgsSchema, ({ repositoryPath, branch }) =>
     loreRepositoryService.getBranchGraph(repositoryPath, branch)
+  );
+
+  // The card's merge-entry gate: whether the branch carries revisions the
+  // target lacks — the same ancestry predicate MergeService lands on.
+  handleRequest(
+    log,
+    'lore:revisionsToLand',
+    RevisionsToLandRequestSchema,
+    ({ repositoryPath, sourceBranch, targetBranch }) =>
+      loreRepositoryService.hasRevisionsToLand(repositoryPath, sourceBranch, targetBranch)
   );
 }

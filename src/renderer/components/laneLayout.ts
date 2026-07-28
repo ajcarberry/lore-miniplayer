@@ -3,6 +3,13 @@
 // apart, and the canvas always has at least EDGE_PADDING_PX clearance at
 // each end — comfortably past the largest halo (the selection ring's
 // radius, 5.5) so nothing ever clips.
+import type {
+  BranchGraphParentLane,
+  MergeFromParent,
+  MergeToParent,
+  RevisionSummary,
+} from '../../shared/types';
+
 export const NODE_SPACING_PX = 26;
 export const EDGE_PADDING_PX = 14;
 
@@ -181,5 +188,107 @@ export function computeLaneLayout(
     childPositions: [...childPos].reverse(),
     parentPositions: [...parentPos].reverse(),
     width: rightmost + EDGE_PADDING_PX,
+  };
+}
+
+// The branch's OWN commits: the newest-first prefix of its walked lineage
+// strictly above the branch point. The lineage crosses the fork into the
+// shared trunk, so everything from the branch point down belongs to the
+// parent lineage. When the branch point is unknown or not in the walked
+// window, everything stays attributed to the branch rather than guessing.
+export function ownCommits(
+  revisions: RevisionSummary[],
+  branchPoint: string | undefined
+): RevisionSummary[] {
+  const forkIdx =
+    branchPoint === undefined
+      ? -1
+      : revisions.findIndex(revision => revision.revision === branchPoint);
+  return forkIdx >= 0 ? revisions.slice(0, forkIdx) : revisions;
+}
+
+export interface ConstellationModel {
+  readonly childNodes: RevisionSummary[];
+  readonly parentNodes: RevisionSummary[];
+  readonly childX: number[];
+  readonly parentX: number[];
+  readonly width: number;
+  readonly oldestChildX: number;
+  readonly branchPointX: number;
+  readonly showForkConnector: boolean;
+  readonly hasElidedBefore: boolean;
+  readonly ledgerIndexByHash: ReadonlyMap<string, number>;
+  readonly parentIndexByHash: ReadonlyMap<string, number>;
+  readonly childIndexByHash: ReadonlyMap<string, number>;
+  readonly mergeSourceByChild: ReadonlyMap<string, string>;
+  readonly mergeUpSourceByParent: ReadonlyMap<string, string>;
+}
+
+// The constellation's lane model: the ownership split, both lanes' pixel
+// positions, the fork geometry, and the hash lookups the render needs.
+export function computeConstellationModel(
+  revisions: RevisionSummary[],
+  parent: BranchGraphParentLane,
+  mergesFromParent: ReadonlyArray<MergeFromParent>,
+  mergesToParent: ReadonlyArray<MergeToParent>
+): ConstellationModel {
+  // Ownership split at the branch point (see ownCommits).
+  const childNodes = ownCommits(revisions, parent.branchPoint);
+  const parentNodes = parent.revisions;
+
+  const parentNodeHashes = new Set(parentNodes.map(revision => revision.revision));
+  // Trunk rows the ledger holds that the capped parent walk does not — mark
+  // the parent lane's oldest node as elided when any exist.
+  const hasElidedBefore =
+    childNodes.length < revisions.length &&
+    revisions.slice(childNodes.length).some(revision => !parentNodeHashes.has(revision.revision));
+
+  // Anchor the fork: the oldest own commit sits at the branch point's x.
+  const oldestOwn = childNodes.at(-1)?.revision;
+  const bpNodeIdx = parentNodes.findIndex(revision => revision.revision === parent.branchPoint);
+  const branchAnchors: LaneLayoutAnchor[] =
+    bpNodeIdx >= 0 && oldestOwn !== undefined
+      ? [{ child: oldestOwn, parent: parent.branchPoint }]
+      : [];
+  const mergeAnchors: LaneLayoutAnchor[] = mergesFromParent
+    .filter(pair => parentNodeHashes.has(pair.parentSource))
+    .map(pair => ({ child: pair.child, parent: pair.parentSource }));
+  const childNodeHashes = new Set(childNodes.map(revision => revision.revision));
+  const mergeUpAnchors: LaneLayoutAnchor[] = mergesToParent
+    .filter(pair => parentNodeHashes.has(pair.parent) && childNodeHashes.has(pair.childSource))
+    .map(pair => ({ child: pair.childSource, parent: pair.parent }));
+
+  // Merge anchors take precedence over the fork anchor on a shared child
+  // node (the oldest own commit can itself be a merge-from-parent commit):
+  // a merge connector points at a specific source, while the fork connector
+  // reads fine as a diagonal.
+  const layout = computeLaneLayout(
+    childNodes.map(revision => revision.revision),
+    parentNodes.map(revision => revision.revision),
+    [...mergeAnchors, ...mergeUpAnchors, ...branchAnchors]
+  );
+  const childX = layout.childPositions;
+  const parentX = layout.parentPositions;
+  const oldestChildX = childX[childX.length - 1] ?? EDGE_PADDING_PX;
+  const branchPointX = bpNodeIdx >= 0 ? (parentX[bpNodeIdx] ?? EDGE_PADDING_PX) : EDGE_PADDING_PX;
+
+  return {
+    childNodes,
+    parentNodes,
+    childX,
+    parentX,
+    width: layout.width,
+    oldestChildX,
+    branchPointX,
+    // Fork connector: parent branch-point node down to oldestChildX (the
+    // child's oldest own commit); nothing to connect before the branch commits.
+    showForkConnector: childNodes.length > 0 && bpNodeIdx >= 0,
+    hasElidedBefore,
+    // Ledger rows per hash, for routing trunk-node selection back to the ledger.
+    ledgerIndexByHash: new Map(revisions.map((revision, i) => [revision.revision, i])),
+    parentIndexByHash: new Map(parentNodes.map((revision, j) => [revision.revision, j])),
+    childIndexByHash: new Map(childNodes.map((revision, i) => [revision.revision, i])),
+    mergeSourceByChild: new Map(mergesFromParent.map(pair => [pair.child, pair.parentSource])),
+    mergeUpSourceByParent: new Map(mergesToParent.map(pair => [pair.parent, pair.childSource])),
   };
 }

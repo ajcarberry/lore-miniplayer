@@ -38,6 +38,8 @@ import log from 'electron-log/main.js';
 import { registerIpcHandlers } from '../../../src/main/ipc/handlers';
 import type { RepositoryService } from '../../../src/main/services/repository';
 import type { LoreRepositoryService } from '../../../src/main/services/lore-repository';
+import type { DiffService } from '../../../src/main/services/diff-service';
+import type { MergeService } from '../../../src/main/services/merge-service';
 
 const mockRepositoryService = {
   getAll: jest.fn(),
@@ -62,7 +64,19 @@ const mockLoreRepositoryService = {
   subscribeNotifications: jest.fn(),
   unsubscribeNotifications: jest.fn(),
   getCurrentRevision: jest.fn(),
+  hasRevisionsToLand: jest.fn(),
 } as unknown as jest.Mocked<LoreRepositoryService>;
+
+const mockDiffService = {
+  compare: jest.fn(),
+} as unknown as jest.Mocked<DiffService>;
+
+const mockMergeService = {
+  start: jest.fn(),
+  resolve: jest.fn(),
+  abort: jest.fn(),
+  complete: jest.fn(),
+} as unknown as jest.Mocked<MergeService>;
 
 function invoke(channel: string, ...args: unknown[]): unknown {
   const handler = registeredHandlers.get(channel);
@@ -74,7 +88,13 @@ function invoke(channel: string, ...args: unknown[]): unknown {
 
 beforeAll(() => {
   mockUserData.dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lore-miniplayer-handlers-test-'));
-  registerIpcHandlers(log, mockRepositoryService, mockLoreRepositoryService);
+  registerIpcHandlers(
+    log,
+    mockRepositoryService,
+    mockLoreRepositoryService,
+    mockDiffService,
+    mockMergeService
+  );
 });
 
 afterAll(() => {
@@ -433,16 +453,16 @@ describe('lore repository happy paths', () => {
   });
 
   it('should commit through the service without pushing', async () => {
-    // Given: a successful commit
-    mockLoreRepositoryService.commit.mockResolvedValue(undefined);
+    // Given: a successful commit (the service resolves the committed revision)
+    mockLoreRepositoryService.commit.mockResolvedValue('rev-1');
 
     // When: committing
     const result = await invoke('lore:repository:commit', '/repo', 'A message');
 
-    // Then: the service is called and a void success returned
+    // Then: the service is called and the committed revision returned
     expect(mockLoreRepositoryService.commit).toHaveBeenCalledWith('/repo', 'A message');
     expect(mockLoreRepositoryService.push).not.toHaveBeenCalled();
-    expect(result).toEqual({ success: true, data: undefined });
+    expect(result).toEqual({ success: true, data: 'rev-1' });
   });
 
   it('should push through the service without committing', async () => {
@@ -456,6 +476,39 @@ describe('lore repository happy paths', () => {
     expect(mockLoreRepositoryService.push).toHaveBeenCalledWith('/repo');
     expect(mockLoreRepositoryService.commit).not.toHaveBeenCalled();
     expect(result).toEqual({ success: true, data: undefined });
+  });
+
+  it('should answer whether a branch carries revisions its target lacks', async () => {
+    // Given: the ancestry gate reports work to land
+    mockLoreRepositoryService.hasRevisionsToLand.mockResolvedValue(true);
+
+    // When: asking through the merge-entry gate channel
+    const result = await invoke('lore:revisionsToLand', {
+      repositoryPath: '/repo',
+      sourceBranch: 'feat/topic',
+      targetBranch: 'main',
+    });
+
+    // Then: the service predicate answers and passes through
+    expect(mockLoreRepositoryService.hasRevisionsToLand).toHaveBeenCalledWith(
+      '/repo',
+      'feat/topic',
+      'main'
+    );
+    expect(result).toEqual({ success: true, data: true });
+  });
+
+  it('should reject a revisionsToLand request missing a branch', async () => {
+    // When: asking with an empty source branch
+    const result = await invoke('lore:revisionsToLand', {
+      repositoryPath: '/repo',
+      sourceBranch: '',
+      targetBranch: 'main',
+    });
+
+    // Then: the boundary refuses it and the service is never called
+    expect(result).toEqual(expect.objectContaining({ success: false }));
+    expect(mockLoreRepositoryService.hasRevisionsToLand).not.toHaveBeenCalled();
   });
 
   it('should convert clone failures into failure results', async () => {

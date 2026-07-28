@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron';
-import type { z } from 'zod';
+import { z } from 'zod';
 import type { Result, VoidResult } from '../../shared/types';
 import type { MainLogger } from './logger';
 
@@ -33,6 +33,20 @@ export function failure<T = never>(error: unknown): Result<T> {
   }
 
   return { success: false, error: errorMessage };
+}
+
+/**
+ * Single-request-object convenience over handleResult: a channel that takes
+ * exactly one request payload passes its contract schema directly, without
+ * declaring a positional-tuple wrapper of its own.
+ */
+export function handleRequest<Req, T>(
+  log: MainLogger,
+  channel: string,
+  schema: z.ZodType<Req>,
+  op: (request: Req) => T | Promise<T>
+): void {
+  handleResult(log, channel, z.tuple([schema]), request => op(request));
 }
 
 /**

@@ -9,7 +9,14 @@ import type { BranchGraphState } from '../hooks/useBranchGraph';
 import type { SyncActionsState } from '../hooks/useSyncActions';
 import type { FileStagingState } from '../hooks/useFileStaging';
 import { WorkingSet } from './WorkingSet';
-import type { WorkingSetFile } from './WorkingSet';
+import type { WorkingSetFile, WorkingSetProps } from './WorkingSet';
+import { buildReviewOpenRequest } from './review/openReview';
+import type {
+  LoreBranch,
+  Repository,
+  ReviewOpenRequest,
+  ReviewWorkflowMode,
+} from '../../shared/types';
 import { HistorySection } from './HistorySection';
 import { PlayerHeader } from './PlayerHeader';
 import { BranchSwitcher } from './BranchSwitcher';
@@ -115,6 +122,64 @@ export function buildTransportProps(inputs: TransportInputs): TransportProps {
   };
 }
 
+// The merge workflow's landing target: the branch's parent lane when the
+// graph resolves one, else the server's default branch, else 'main'.
+export function resolveMergeTarget(
+  parentLaneName: string | undefined,
+  branches: LoreBranch[]
+): string {
+  return parentLaneName ?? branches.find(branch => branch.isDefault)?.name ?? 'main';
+}
+
+export interface ReviewEntryInputs {
+  readonly selectedRepo: Repository | null;
+  readonly showClone: boolean;
+  readonly branchName: string;
+  readonly currentRevision: string;
+  readonly mergeTarget: string;
+  // Dirty (working-set) file count: with nothing dirty there is nothing to
+  // review, so the Review entry is withheld.
+  readonly dirtyFileCount: number;
+  // The merge service's ancestry predicate (useRevisionsToLand): Merge is
+  // offered only when the branch really carries revisions the target lacks —
+  // never a merge that would land nothing.
+  readonly hasRevisionsToLand: boolean;
+  // Receives the built open request — the card morphs into the Project View.
+  readonly openProjectView: (request: ReviewOpenRequest) => void;
+}
+
+// The WorkingSet header's single entry into the Project View: Review when
+// the working set has dirty files (the merge workflow stays reachable from
+// inside the view — never both entries at once); Merge only when the working
+// set is CLEAN, the target is a different branch, and the branch is ahead of
+// it. A dirty working set can carry staged files, which the merge pre-flight
+// refuses — Review is the only honest entry then. Kept out of the component
+// body (complexity limit), like buildTransportProps.
+export function buildReviewEntryProps(
+  inputs: ReviewEntryInputs
+): Pick<WorkingSetProps, 'onReview' | 'onMerge'> {
+  const { selectedRepo, showClone, branchName, currentRevision, mergeTarget } = inputs;
+  if (selectedRepo === null || showClone) {
+    return {};
+  }
+  const open = (workflow: ReviewWorkflowMode): void =>
+    inputs.openProjectView(
+      buildReviewOpenRequest({
+        repository: selectedRepo,
+        branchName,
+        currentRevision,
+        targetBranch: mergeTarget,
+        workflow,
+      })
+    );
+  if (inputs.dirtyFileCount > 0) {
+    return { onReview: () => open('commit') };
+  }
+  return mergeTarget !== branchName && inputs.hasRevisionsToLand
+    ? { onMerge: () => open('merge') }
+    : {};
+}
+
 // A content signature for the revisions list. useBranchGraph returns a fresh
 // empty graph on every render while loading/disconnected, so comparing by
 // array reference would reset (and re-render) on every render; comparing by
@@ -156,6 +221,12 @@ export interface SyncViewProps {
   readonly workingSetOpen: boolean;
   readonly onToggleWorkingSetOpen: () => void;
   readonly onToggleFile: (path: string) => void;
+  // Receives the built open request — the card morphs into the Project View.
+  readonly onOpenProjectView: (request: ReviewOpenRequest) => void;
+  // The merge workflow's landing target and the land predicate, owned by
+  // MiniPlayer (shared with the Project View's workflow switcher).
+  readonly mergeTarget: string;
+  readonly hasRevisionsToLand: boolean;
 }
 
 // The sync view: repository picker, the branch-switcher-anchored header, and
@@ -179,10 +250,23 @@ export function SyncView({
   workingSetOpen,
   onToggleWorkingSetOpen,
   onToggleFile,
+  onOpenProjectView,
+  mergeTarget,
+  hasRevisionsToLand,
 }: SyncViewProps): ReactElement {
   const branchGraph = graph.graph;
   const revisions = branchGraph.branch.revisions;
   const [selectedRevisionIndex, setSelectedRevisionIndex] = useSelectedRevisionIndex(revisions);
+  const reviewEntry = buildReviewEntryProps({
+    selectedRepo: repos.selectedRepo,
+    showClone,
+    branchName: branches.currentBranch,
+    currentRevision: branchGraph.current,
+    mergeTarget,
+    dirtyFileCount: workingSetFiles.length,
+    hasRevisionsToLand,
+    openProjectView: onOpenProjectView,
+  });
   // Push refreshes branch divergence on success — it typically flips from
   // "out of sync" to "up to date".
   const handlePush = useCallback(async (): Promise<void> => {
@@ -236,6 +320,8 @@ export function SyncView({
         onToggleOpen={onToggleWorkingSetOpen}
         onToggleFile={onToggleFile}
         isLoading={fileStaging.isLoadingFiles}
+        conflictRevisionNumber={revisions[0]?.revisionNumber}
+        {...reviewEntry}
       />
       {!showClone && (
         <HistorySection

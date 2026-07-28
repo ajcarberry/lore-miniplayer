@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { withServer, seedAndClone, secondClient, sampleFiles, abs } from '../support/world';
-import type { LoreFileStatus } from '../../../src/shared/types';
 
 // A non-conflicting divergence (user1's unpushed commit vs user2's unrelated
 // pushed commit) reads behindOrDiverged, and a plain sync auto-merges both
@@ -60,14 +59,13 @@ test('diverged (non-overlapping) histories read behindOrDiverged and a plain syn
   });
 });
 
-// KNOWN BUG. When user1 and user2 both edit the same region of the same file,
-// the SDK surfaces the pending merge (flagConflict / flagConflictUnresolved on
-// the REPOSITORY_STATUS_FILE event, plus ~mine/~theirs/~base sibling files),
-// but getFileStatus() and LoreFileStatus drop that flag, so a conflicted file
-// is indistinguishable from an ordinary staged file. This asserts the correct
-// behavior and is `todo` (non-blocking) until getFileStatus and LoreFileStatus
-// surface the conflict.
-test('an overlapping conflict must be visibly surfaced, not reported as a plain staged file', { todo: 'getFileStatus() drops the SDK conflict flag, so merge conflicts are invisible to users' }, async () => {
+// When user1 and user2 both edit the same region of the same file, the SDK
+// surfaces the pending merge (flagConflict / flagConflictUnresolved on the
+// REPOSITORY_STATUS_FILE event, plus ~mine/~theirs/~base sibling files), and
+// getFileStatus() maps the flagConflict* family onto LoreFileStatus
+// (conflict is a required field), so a conflicted file is distinguishable
+// from an ordinary staged file.
+test('an overlapping conflict must be visibly surfaced, not reported as a plain staged file', async () => {
   await withServer(async ({ server, service }) => {
     const { repo, clonePath: user1Path } = await seedAndClone(
       server,
@@ -108,16 +106,17 @@ test('an overlapping conflict must be visibly surfaced, not reported as a plain 
       `expected the conflicting file to appear staged (pending merge), got: ${JSON.stringify(statusAfter)}`
     );
 
-    // getFileStatus() maps REPOSITORY_STATUS_FILE to { path, isUntracked,
-    // isStaged } only, and LoreFileStatus has no conflict field, so
-    // isConflicted is always undefined here.
-    const conflictedWithFlag = conflictedFile as LoreFileStatus & { isConflicted?: boolean };
+    // getFileStatus() maps REPOSITORY_STATUS_FILE's flagConflict /
+    // flagConflictUnresolved onto LoreFileStatus.conflict / conflictUnresolved.
     assert.equal(
-      conflictedWithFlag.isConflicted,
+      conflictedFile.conflict,
       true,
-      `getFileStatus() does not surface the SDK's flagConflict for a pending merge ` +
-        `conflict -- the file reads as an ordinary staged change. Expected isConflicted === true, ` +
-        `got: ${JSON.stringify(conflictedFile)}`
+      `expected the pending merge to surface conflict: true, got: ${JSON.stringify(conflictedFile)}`
+    );
+    assert.equal(
+      conflictedFile.conflictUnresolved,
+      true,
+      `expected the pending merge to surface conflictUnresolved: true, got: ${JSON.stringify(conflictedFile)}`
     );
   });
 });

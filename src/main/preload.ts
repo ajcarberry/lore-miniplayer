@@ -10,6 +10,16 @@ import type {
   LoreFileStatusGroup,
   BranchDivergence,
   BranchGraph,
+  DiffRequest,
+  DiffResponse,
+  MergeStartRequest,
+  MergeStartResponse,
+  MergeResolveRequest,
+  MergeResolveResponse,
+  MergeAbortRequest,
+  MergeAbortResponse,
+  MergeCompleteRequest,
+  MergeCompleteResponse,
   Result,
   VoidResult,
 } from '../shared/types';
@@ -44,6 +54,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     openTerminal: async (path: string): Promise<VoidResult> => {
       return ipcRenderer.invoke('window:open-terminal', path) as Promise<VoidResult>;
+    },
+    // The card <-> Project View morph: main resizes the window between the
+    // card and review footprints (and toggles always-on-top) while the
+    // renderer crossfades the surfaces.
+    setView: async (view: 'card' | 'projectView'): Promise<void> => {
+      await ipcRenderer.invoke('window:setView', view);
     },
   },
   repository: {
@@ -82,6 +98,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     currentRevision: async (repositoryPath: string): Promise<Result<string>> => {
       return ipcRenderer.invoke('lore:currentRevision', repositoryPath) as Promise<Result<string>>;
+    },
+    // The card's merge-entry gate: whether sourceBranch carries revisions
+    // targetBranch lacks (false once landed, even by another client).
+    revisionsToLand: async (request: {
+      repositoryPath: string;
+      sourceBranch: string;
+      targetBranch: string;
+    }): Promise<Result<boolean>> => {
+      return ipcRenderer.invoke('lore:revisionsToLand', request) as Promise<Result<boolean>>;
     },
     repository: {
       listBranches: async (repositoryPath: string): Promise<Result<LoreBranch[]>> => {
@@ -132,12 +157,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
           options
         ) as Promise<VoidResult>;
       },
-      commit: async (repositoryPath: string, message: string): Promise<VoidResult> => {
-        return ipcRenderer.invoke(
-          'lore:repository:commit',
-          repositoryPath,
-          message
-        ) as Promise<VoidResult>;
+      // Resolves the committed revision hash.
+      commit: async (repositoryPath: string, message: string): Promise<Result<string>> => {
+        return ipcRenderer.invoke('lore:repository:commit', repositoryPath, message) as Promise<
+          Result<string>
+        >;
       },
       push: async (repositoryPath: string): Promise<VoidResult> => {
         return ipcRenderer.invoke('lore:repository:push', repositoryPath) as Promise<VoidResult>;
@@ -198,6 +222,31 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     basename: async (path: string): Promise<Result<string>> => {
       return ipcRenderer.invoke('path:basename', { path }) as Promise<Result<string>>;
+    },
+  },
+  // The Project View's compare picker.
+  diff: {
+    compare: async (request: DiffRequest): Promise<Result<DiffResponse>> => {
+      return ipcRenderer.invoke('diff:compare', request) as Promise<Result<DiffResponse>>;
+    },
+  },
+  // The Project View's merge workflow: start a branch→target merge, resolve
+  // conflicts accept-mine/accept-theirs per file, abort, or complete
+  // (commit + push). One merge in flight per repository.
+  merge: {
+    start: async (request: MergeStartRequest): Promise<Result<MergeStartResponse>> => {
+      return ipcRenderer.invoke('merge:start', request) as Promise<Result<MergeStartResponse>>;
+    },
+    resolve: async (request: MergeResolveRequest): Promise<Result<MergeResolveResponse>> => {
+      return ipcRenderer.invoke('merge:resolve', request) as Promise<Result<MergeResolveResponse>>;
+    },
+    abort: async (request: MergeAbortRequest): Promise<Result<MergeAbortResponse>> => {
+      return ipcRenderer.invoke('merge:abort', request) as Promise<Result<MergeAbortResponse>>;
+    },
+    complete: async (request: MergeCompleteRequest): Promise<Result<MergeCompleteResponse>> => {
+      return ipcRenderer.invoke('merge:complete', request) as Promise<
+        Result<MergeCompleteResponse>
+      >;
     },
   },
 });

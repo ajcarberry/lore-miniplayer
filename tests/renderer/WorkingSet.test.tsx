@@ -17,6 +17,7 @@ function baseProps(overrides: Partial<WorkingSetProps> = {}): WorkingSetProps {
     onToggleOpen: jest.fn(),
     onToggleFile: jest.fn(),
     isLoading: false,
+    conflictRevisionNumber: undefined,
     ...overrides,
   };
 }
@@ -120,5 +121,118 @@ describe('WorkingSet', () => {
     // Then: the toggle callback fires exactly once with that file's path
     expect(onToggleFile).toHaveBeenCalledTimes(1);
     expect(onToggleFile).toHaveBeenCalledWith('src/deep/nested/dir/changed.ts');
+  });
+
+  it('renders no review or merge actions when no handlers are provided', () => {
+    // When: rendering without review/merge handlers
+    renderWorkingSet(baseProps({ files, open: true }));
+
+    // Then: the header carries no review/merge affordances
+    expect(screen.queryByRole('button', { name: 'Review' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Merge' })).not.toBeInTheDocument();
+  });
+
+  it('opens the review workflow from the header without toggling the section', async () => {
+    // Given: a working set with a review handler
+    const user = userEvent.setup();
+    const onReview = jest.fn();
+    const onToggleOpen = jest.fn();
+    renderWorkingSet(baseProps({ files, open: true, onToggleOpen, onReview }));
+
+    // When: clicking the Review action in the header
+    await user.click(screen.getByRole('button', { name: 'Review' }));
+
+    // Then: the review handler fires and the header click does not collapse
+    expect(onReview).toHaveBeenCalledTimes(1);
+    expect(onToggleOpen).not.toHaveBeenCalled();
+  });
+
+  it('opens the merge workflow from the header without toggling the section', async () => {
+    // Given: a working set with review and merge handlers
+    const user = userEvent.setup();
+    const onMerge = jest.fn();
+    const onToggleOpen = jest.fn();
+    renderWorkingSet(baseProps({ files, open: true, onToggleOpen, onReview: jest.fn(), onMerge }));
+
+    // When: clicking the Merge action in the header
+    await user.click(screen.getByRole('button', { name: 'Merge' }));
+
+    // Then: the merge handler fires and the header click does not collapse
+    expect(onMerge).toHaveBeenCalledTimes(1);
+    expect(onToggleOpen).not.toHaveBeenCalled();
+  });
+
+  describe('conflict rows', () => {
+    const conflictedFiles: WorkingSetFile[] = [
+      {
+        path: 'levels/act2/encounters.toml',
+        kind: 'edit',
+        staged: false,
+        conflictUnresolved: true,
+      },
+      { path: 'levels/act2/pacing.toml', kind: 'edit', staged: false },
+    ];
+
+    it('replaces the checkbox with a warning glyph on an unresolved conflict row', () => {
+      // When: rendering a working set with one conflicted, one clean file
+      renderWorkingSet(
+        baseProps({ files: conflictedFiles, open: true, conflictRevisionNumber: 128 })
+      );
+
+      // Then: the conflicted row has no checkbox (staging is blocked); the
+      // clean row keeps its checkbox
+      expect(screen.getAllByRole('checkbox')).toHaveLength(1);
+      expect(screen.getByLabelText('Conflicted — cannot stage until resolved')).toBeInTheDocument();
+    });
+
+    it('shows "conflicts with rN" using the supplied conflict revision number', () => {
+      // When: rendering with a known conflict revision
+      renderWorkingSet(
+        baseProps({ files: conflictedFiles, open: true, conflictRevisionNumber: 128 })
+      );
+
+      // Then: the row names the revision it conflicts with
+      expect(screen.getByText('conflicts with r128')).toBeInTheDocument();
+    });
+
+    it('falls back to a bare "conflicts" label when no revision number is known', () => {
+      // When: rendering without a conflict revision number (branch graph
+      // hasn't resolved a tip yet)
+      renderWorkingSet(baseProps({ files: conflictedFiles, open: true }));
+
+      // Then: the row still flags the conflict, without a fabricated number
+      expect(screen.getByText('conflicts')).toBeInTheDocument();
+      expect(screen.queryByText(/conflicts with r/)).not.toBeInTheDocument();
+    });
+
+    it('does not call onToggleFile when a conflicted row is clicked', async () => {
+      // Given: a rendered working set with a conflicted row
+      const user = userEvent.setup();
+      const onToggleFile = jest.fn();
+      renderWorkingSet(
+        baseProps({ files: conflictedFiles, open: true, onToggleFile, conflictRevisionNumber: 128 })
+      );
+
+      // When: clicking the conflicted row's filename
+      await user.click(screen.getByText('encounters.toml'));
+
+      // Then: staging is blocked — the toggle callback never fires
+      expect(onToggleFile).not.toHaveBeenCalled();
+    });
+
+    it('still stages the clean row alongside a conflicted one', async () => {
+      // Given: a rendered working set with one conflicted, one clean file
+      const user = userEvent.setup();
+      const onToggleFile = jest.fn();
+      renderWorkingSet(
+        baseProps({ files: conflictedFiles, open: true, onToggleFile, conflictRevisionNumber: 128 })
+      );
+
+      // When: clicking the clean row's filename
+      await user.click(screen.getByText('pacing.toml'));
+
+      // Then: the clean row still toggles normally
+      expect(onToggleFile).toHaveBeenCalledWith('levels/act2/pacing.toml');
+    });
   });
 });

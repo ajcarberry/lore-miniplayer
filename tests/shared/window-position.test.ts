@@ -3,6 +3,7 @@ import {
   resolveRestorePosition,
   computeExpandedBounds,
   computeCollapsedBounds,
+  computeReviewBounds,
 } from '../../src/shared/window-position';
 import type { WorkArea, WindowSize, Display, Bounds } from '../../src/shared/window-position';
 
@@ -175,5 +176,58 @@ describe('computeCollapsedBounds', () => {
       width: 368,
       height: 108,
     });
+  });
+});
+
+describe('computeReviewBounds', () => {
+  const REVIEW: WindowSize = { width: 1220, height: 840 };
+
+  it('grows left and up from a bottom-anchored card, keeping the bottom-right corner', () => {
+    // Given: an expanded card near the bottom-right of the display
+    const card: Bounds = { x: 1000, y: 195, width: 360, height: 680 };
+
+    // When: morphing to the review footprint
+    const bounds = computeReviewBounds(card, REVIEW, 'bottom', WORK_AREA);
+
+    // Then: the bottom-right corner stays fixed and the surface grows left/up
+    expect(bounds).toEqual({ x: 140, y: 35, width: 1220, height: 840 });
+  });
+
+  it('keeps the top edge fixed for a top-anchored card', () => {
+    // Given: an expanded card anchored to the top
+    const card: Bounds = { x: 1000, y: 25, width: 360, height: 680 };
+
+    // When: morphing to the review footprint
+    const bounds = computeReviewBounds(card, REVIEW, 'top', WORK_AREA);
+
+    // Then: the top edge stays fixed and the surface grows left/down
+    expect(bounds).toEqual({ x: 140, y: 25, width: 1220, height: 840 });
+  });
+
+  it('clamps into the work area when the anchored growth would leave it', () => {
+    // Given: a card hugging the left edge, where growing left would go
+    // off-screen
+    const card: Bounds = { x: 0, y: 195, width: 360, height: 680 };
+
+    // When: morphing to the review footprint
+    const bounds = computeReviewBounds(card, REVIEW, 'bottom', WORK_AREA);
+
+    // Then: the surface is pinned inside the work area at full size
+    expect(bounds).toEqual({ x: 0, y: 35, width: 1220, height: 840 });
+  });
+
+  it('caps the footprint to the work area on a small display', () => {
+    // Given: a work area smaller than the review footprint
+    const small: WorkArea = { x: 0, y: 25, width: 1024, height: 640 };
+    const card: Bounds = { x: 600, y: 25, width: 360, height: 615 };
+
+    // When: morphing to the review footprint
+    const bounds = computeReviewBounds(card, REVIEW, 'bottom', small);
+
+    // Then: the surface fills what the display can give, fully visible
+    expect(bounds.width).toBe(1024);
+    expect(bounds.height).toBe(640);
+    expect(bounds.x).toBe(0);
+    expect(bounds.y).toBe(25);
   });
 });

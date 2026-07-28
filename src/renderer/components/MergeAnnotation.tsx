@@ -14,10 +14,12 @@ interface MergeAnnotationProps {
   // (arrowhead at the parent lane).
   readonly direction: 'down' | 'up';
   readonly title: string;
-  // When computeLaneLayout anchored both ends to one x the connector points
-  // at the real nodes; otherwise a small label names the true source so the
-  // annotation doesn't imply the wrong node.
-  readonly anchored: boolean;
+  // The true source node's x on the OTHER lane, when that node is rendered:
+  // the connector runs from it to `x` — vertical when the layout anchored
+  // both to one x, diagonal otherwise. Undefined = the source isn't on the
+  // canvas, so a vertical stub at `x` carries a label naming it instead of
+  // a line implying the wrong node.
+  readonly sourceX: number | undefined;
   readonly fallbackLabel: string;
   readonly testId: string;
 }
@@ -29,7 +31,7 @@ export function MergeAnnotation({
   x,
   direction,
   title,
-  anchored,
+  sourceX,
   fallbackLabel,
   testId,
 }: MergeAnnotationProps): ReactElement {
@@ -39,11 +41,18 @@ export function MergeAnnotation({
   const apexY = down ? CHILD_CY - 4 : PARENT_CY + 4;
   const flareY = down ? CHILD_CY - 7.5 : PARENT_CY + 7.5;
   const labelY = down ? PARENT_CY + 2 : CHILD_CY - 2;
+  // Align the chevron with the connector: the angle between its base
+  // orientation (straight down/up) and the source→receiver direction,
+  // pivoting on the apex so the tip stays at the receiving node. Zero on
+  // vertical connectors and label-fallback stubs.
+  const angleDeg =
+    (Math.atan2(lineY2 - lineY1, x - (sourceX ?? x)) - Math.atan2(down ? 1 : -1, 0)) *
+    (180 / Math.PI);
   return (
     <g data-testid={testId} aria-hidden='true'>
       <title>{title}</title>
       <line
-        x1={x}
+        x1={sourceX ?? x}
         y1={lineY1}
         x2={x}
         y2={lineY2}
@@ -59,8 +68,9 @@ export function MergeAnnotation({
         strokeOpacity={0.9}
         strokeWidth={1.4}
         strokeLinecap='round'
+        {...(angleDeg !== 0 && { transform: `rotate(${angleDeg} ${x} ${apexY})` })}
       />
-      {!anchored && (
+      {sourceX === undefined && (
         <text
           data-testid={`${testId}-fallback-label`}
           x={x + 4}

@@ -9,6 +9,16 @@ import type {
   LoreFileStatusGroup,
   BranchDivergence,
   BranchGraph,
+  DiffRequest,
+  DiffResponse,
+  MergeStartRequest,
+  MergeStartResponse,
+  MergeResolveRequest,
+  MergeResolveResponse,
+  MergeAbortRequest,
+  MergeAbortResponse,
+  MergeCompleteRequest,
+  MergeCompleteResponse,
   Result,
   VoidResult,
 } from '../shared/types';
@@ -29,6 +39,9 @@ declare global {
         setNoticeActive: (active: boolean) => void;
         setExpanded: (expanded: boolean) => Promise<{ anchor: 'bottom' | 'top' }>;
         openTerminal: (path: string) => Promise<VoidResult>;
+        // The card <-> Project View morph: main resizes the window between
+        // the card and review footprints (and toggles always-on-top).
+        setView: (view: 'card' | 'projectView') => Promise<void>;
       };
       repository: {
         list: () => Promise<Result<Repository[]>>;
@@ -42,6 +55,13 @@ declare global {
         branchInfo: (repositoryPath: string, branch: string) => Promise<Result<BranchDivergence>>;
         branchGraph: (repositoryPath: string, branch: string) => Promise<Result<BranchGraph>>;
         currentRevision: (repositoryPath: string) => Promise<Result<string>>;
+        // The card's merge-entry gate: whether sourceBranch carries revisions
+        // targetBranch lacks (false once landed, even by another client).
+        revisionsToLand: (request: {
+          repositoryPath: string;
+          sourceBranch: string;
+          targetBranch: string;
+        }) => Promise<Result<boolean>>;
         repository: {
           listBranches: (repositoryPath: string) => Promise<Result<LoreBranch[]>>;
           listRemoteRepositories: (
@@ -58,7 +78,8 @@ declare global {
             targetBranch?: string,
             options?: LoreSyncOptions
           ) => Promise<VoidResult>;
-          commit: (repositoryPath: string, message: string) => Promise<VoidResult>;
+          // Resolves the committed revision hash.
+          commit: (repositoryPath: string, message: string) => Promise<Result<string>>;
           push: (repositoryPath: string) => Promise<VoidResult>;
         };
         files: {
@@ -78,6 +99,18 @@ declare global {
       path: {
         join: (segments: string[]) => Promise<Result<string>>;
         basename: (path: string) => Promise<Result<string>>;
+      };
+      // The Project View's compare picker.
+      diff: {
+        compare: (request: DiffRequest) => Promise<Result<DiffResponse>>;
+      };
+      // The Project View's merge workflow; one merge in flight per
+      // repository.
+      merge: {
+        start: (request: MergeStartRequest) => Promise<Result<MergeStartResponse>>;
+        resolve: (request: MergeResolveRequest) => Promise<Result<MergeResolveResponse>>;
+        abort: (request: MergeAbortRequest) => Promise<Result<MergeAbortResponse>>;
+        complete: (request: MergeCompleteRequest) => Promise<Result<MergeCompleteResponse>>;
       };
     };
   }

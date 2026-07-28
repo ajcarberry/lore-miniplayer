@@ -16,6 +16,21 @@ import type {
   MergeFromParentSchema,
   MergeToParentSchema,
   BranchGraphSchema,
+  FileDiffActionSchema,
+  LineStatsSchema,
+  FileDiffResultSchema,
+  CompareTargetSchema,
+  MergeFileResolutionSchema,
+  MergeFileStateSchema,
+  MergeStateSchema,
+  ReviewWorkflowModeSchema,
+  ReviewCompareSchema,
+  ReviewOpenRequestSchema,
+  DiffRequestSchema,
+  MergeStartRequestSchema,
+  MergeResolveRequestSchema,
+  MergeAbortRequestSchema,
+  MergeCompleteRequestSchema,
 } from './schemas';
 
 export type ThemeMode = 'auto' | 'light' | 'dark';
@@ -97,11 +112,23 @@ export type RepositoryUpdateInput = z.infer<typeof RepositoryUpdateInputSchema>;
 // Lore Sync Options
 export type LoreSyncOptions = z.infer<typeof LoreSyncOptionsSchema>;
 
-// Lore File Status types
+// Lore File Status types. The conflict-state fields mirror the SDK's
+// flagConflict* flags (REPOSITORY_STATUS_FILE), mapped at the one existing
+// producer (src/main/services/lore-repository.ts). `conflict` is always
+// reported; the other conflict* fields stay optional/false-shaped
+// sub-states of a conflict (unresolved, automerged, resolved mine/theirs).
 export interface LoreFileStatus {
   readonly path: string;
   readonly isUntracked: boolean;
   readonly isStaged: boolean;
+  // Non-zero when the change comes from a merge (the SDK's flagMerged) —
+  // set on conflict rows AND on files a merge imported from the target.
+  readonly merged?: boolean;
+  readonly conflict: boolean;
+  readonly conflictUnresolved?: boolean;
+  readonly conflictAutomerged?: boolean;
+  readonly conflictMine?: boolean;
+  readonly conflictTheirs?: boolean;
 }
 
 export interface LoreFileStatusGroup {
@@ -122,3 +149,49 @@ export interface PathValidationResult {
   readonly error?: string;
   readonly normalizedPath?: string;
 }
+
+// Project View: diff/merge review of the working directory (commit and merge
+// workflows).
+
+export type FileDiffAction = z.infer<typeof FileDiffActionSchema>;
+
+export type LineStats = z.infer<typeof LineStatsSchema>;
+
+export type FileDiffResult = z.infer<typeof FileDiffResultSchema>;
+
+export type CompareTarget = z.infer<typeof CompareTargetSchema>;
+
+export type MergeFileResolution = z.infer<typeof MergeFileResolutionSchema>;
+
+export type MergeFileState = z.infer<typeof MergeFileStateSchema>;
+
+export type MergeState = z.infer<typeof MergeStateSchema>;
+
+// Which contextual primary action the Project View's bottom bar shows.
+export type ReviewWorkflowMode = z.infer<typeof ReviewWorkflowModeSchema>;
+
+// The Project View's compare picker selection and the full open-review
+// request the card view emits.
+export type ReviewCompare = z.infer<typeof ReviewCompareSchema>;
+
+export type ReviewOpenRequest = z.infer<typeof ReviewOpenRequestSchema>;
+
+// IPC request/response payload types (the `T` inside each channel's
+// `Result<T>`; channel names are declared at their call sites).
+// Requests are inferred from their boundary-validated Zod schemas; responses
+// are plain aliases of the underlying result types (nothing parses a
+// response at runtime).
+export type DiffRequest = z.infer<typeof DiffRequestSchema>;
+export type DiffResponse = FileDiffResult[];
+
+export type MergeStartRequest = z.infer<typeof MergeStartRequestSchema>;
+export type MergeStartResponse = MergeState;
+
+export type MergeResolveRequest = z.infer<typeof MergeResolveRequestSchema>;
+export type MergeResolveResponse = MergeState;
+
+export type MergeAbortRequest = z.infer<typeof MergeAbortRequestSchema>;
+export type MergeAbortResponse = { aborted: boolean };
+
+export type MergeCompleteRequest = z.infer<typeof MergeCompleteRequestSchema>;
+export type MergeCompleteResponse = { revision: string };

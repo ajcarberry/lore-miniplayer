@@ -4,12 +4,18 @@ import { spawn } from 'node:child_process';
 import {
   COLLAPSED_WINDOW_SIZE,
   EXPANDED_WINDOW_SIZE,
+  REVIEW_VIEW_SIZE,
   computeCollapsedBounds,
   computeExpandedBounds,
+  computeReviewBounds,
 } from '../../shared/window-position';
 import type { Bounds, ExpandAnchor } from '../../shared/window-position';
 import { handleResult } from './result-helpers';
-import { WindowNoticeActiveSchema, WindowOpenTerminalArgsSchema } from './validators';
+import {
+  WindowNoticeActiveSchema,
+  WindowOpenTerminalArgsSchema,
+  WindowViewSchema,
+} from './validators';
 import type { MainLogger } from './logger';
 
 // Focus dimming with a notice override. The window dims to 70% opacity when it
@@ -216,6 +222,43 @@ export function registerWindowHandlers(log: MainLogger): void {
       computeCollapsedBounds(current, COLLAPSED_WINDOW_SIZE, lastAnchor)
     );
     return { anchor: lastAnchor };
+  });
+
+  // The card ↔ Project View morph: while the Project View is open the window
+  // grows to the review footprint (anchored like the card morph, clamped to
+  // the work area) and stops floating above other windows — a near-fullscreen
+  // always-on-top surface would be obnoxious; the ambient behavior returns
+  // with the card. The card's exact bounds are remembered and restored.
+  let cardBoundsBeforeReview: Bounds | null = null;
+  ipcMain.handle('window:setView', (event, rawView: unknown): void => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const parsed = WindowViewSchema.safeParse(rawView);
+    if (!parsed.success) {
+      log.error('Invalid setView payload', { rawView, operation: 'window:setView' });
+      return;
+    }
+    if (!win) {
+      return;
+    }
+    if (parsed.data === 'projectView') {
+      const current = win.getBounds();
+      // Only the FIRST card → view transition remembers the card's bounds; a
+      // repeat request (the workflow switcher re-opening the view) would
+      // otherwise overwrite them with the review footprint.
+      cardBoundsBeforeReview ??= current;
+      const workArea = screen.getDisplayMatching(current).workArea;
+      setBoundsAllowingResize(
+        win,
+        computeReviewBounds(current, REVIEW_VIEW_SIZE, lastAnchor, workArea)
+      );
+      win.setAlwaysOnTop(false);
+      return;
+    }
+    if (cardBoundsBeforeReview !== null) {
+      setBoundsAllowingResize(win, cardBoundsBeforeReview);
+      cardBoundsBeforeReview = null;
+    }
+    win.setAlwaysOnTop(true);
   });
 
   handleResult(log, 'window:open-terminal', WindowOpenTerminalArgsSchema, workingDirectory =>

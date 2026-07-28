@@ -9,6 +9,17 @@ import {
   RevisionSummarySchema,
   RepositoryNotificationSchema,
   CloneProgressSchema,
+  FileDiffResultSchema,
+  CompareTargetSchema,
+  MergeFileStateSchema,
+  MergeStateSchema,
+  ReviewWorkflowModeSchema,
+  ReviewOpenRequestSchema,
+  DiffRequestSchema,
+  MergeStartRequestSchema,
+  MergeResolveRequestSchema,
+  MergeAbortRequestSchema,
+  MergeCompleteRequestSchema,
 } from '../../src/shared/schemas';
 
 const validRepository = {
@@ -366,5 +377,375 @@ describe('CloneProgressSchema', () => {
     );
     expect(CloneProgressSchema.safeParse({ percent: 50 }).success).toBe(false);
     expect(CloneProgressSchema.safeParse({ localPath: '', percent: 50 }).success).toBe(false);
+  });
+});
+
+describe('FileDiffResultSchema', () => {
+  const base = { path: 'src/index.ts', binary: false, truncated: false };
+
+  it.each(['added', 'modified', 'deleted', 'moved'])('accepts the %s action', action => {
+    // When: parsing each valid diff action
+    const result = FileDiffResultSchema.safeParse({ ...base, action });
+
+    // Then: parsing succeeds
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects an unrecognized action', () => {
+    // When: parsing an action outside the defined set
+    const result = FileDiffResultSchema.safeParse({ ...base, action: 'renamed' });
+
+    // Then: parsing fails
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts a modified file with a patch and lineStats', () => {
+    // When: parsing a full text-diff result
+    const result = FileDiffResultSchema.safeParse({
+      ...base,
+      action: 'modified',
+      patch: '@@ -1 +1 @@\n-old\n+new',
+      lineStats: { added: 1, removed: 1 },
+    });
+
+    // Then: parsing succeeds
+    expect(result.success).toBe(true);
+  });
+
+  it('round-trips a binary file without patch or lineStats', () => {
+    // When: parsing a binary diff result with the optional fields omitted
+    const result = FileDiffResultSchema.safeParse({
+      path: 'assets/logo.png',
+      action: 'added',
+      binary: true,
+      truncated: false,
+    });
+
+    // Then: parsing succeeds and the optional fields stay absent
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.patch).toBeUndefined();
+      expect(result.data.lineStats).toBeUndefined();
+    }
+  });
+
+  it('rejects negative lineStats', () => {
+    // When: parsing with a negative removed count
+    const result = FileDiffResultSchema.safeParse({
+      ...base,
+      action: 'modified',
+      lineStats: { added: 1, removed: -1 },
+    });
+
+    // Then: parsing fails
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('CompareTargetSchema', () => {
+  it('accepts a revision target', () => {
+    // When: parsing a revision compare target
+    const result = CompareTargetSchema.safeParse({ kind: 'revision', revision: 'a1b2c3' });
+
+    // Then: parsing succeeds
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a workingTree target with no extra fields', () => {
+    // When: parsing the working-tree compare target
+    const result = CompareTargetSchema.safeParse({ kind: 'workingTree' });
+
+    // Then: parsing succeeds
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a branchHead target', () => {
+    // When: parsing a branch-head compare target
+    const result = CompareTargetSchema.safeParse({ kind: 'branchHead', branch: 'main' });
+
+    // Then: parsing succeeds
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a revision target missing the revision field', () => {
+    // When: parsing a revision target without a revision
+    const result = CompareTargetSchema.safeParse({ kind: 'revision' });
+
+    // Then: parsing fails
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects an unrecognized kind', () => {
+    // When: parsing a compare target with an unknown discriminant
+    const result = CompareTargetSchema.safeParse({ kind: 'staged' });
+
+    // Then: parsing fails
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('MergeFileStateSchema and MergeStateSchema', () => {
+  it('accepts a merged file with no resolution', () => {
+    // When: parsing an auto-merged file (needs no action)
+    const result = MergeFileStateSchema.safeParse({ path: 'src/index.ts', state: 'merged' });
+
+    // Then: parsing succeeds
+    expect(result.success).toBe(true);
+  });
+
+  it.each(['mine', 'theirs'])('accepts a conflict file resolved as %s', resolution => {
+    // When: parsing a resolved conflict file
+    const result = MergeFileStateSchema.safeParse({
+      path: 'src/index.ts',
+      state: 'conflict',
+      resolution,
+    });
+
+    // Then: parsing succeeds
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects an unrecognized file state', () => {
+    // When: parsing a state outside the merged/conflict union
+    const result = MergeFileStateSchema.safeParse({ path: 'src/index.ts', state: 'pending' });
+
+    // Then: parsing fails
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts a merge state with an empty files array (clean merge)', () => {
+    // When: parsing a merge with nothing to reconcile but commits still to land
+    const result = MergeStateSchema.safeParse({
+      sourceBranch: 'feat/topic',
+      targetBranch: 'main',
+      targetRevision: 'main-remote-tip',
+      files: [],
+      allResolved: true,
+      hasChangesToLand: true,
+    });
+
+    // Then: parsing succeeds
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a merge state with a mix of merged and conflicted files', () => {
+    // When: parsing a merge with one auto-merged and one unresolved file
+    const result = MergeStateSchema.safeParse({
+      sourceBranch: 'feat/topic',
+      targetBranch: 'main',
+      targetRevision: 'main-remote-tip',
+      files: [
+        { path: 'src/a.ts', state: 'merged' },
+        { path: 'src/b.ts', state: 'conflict' },
+      ],
+      allResolved: false,
+      hasChangesToLand: true,
+    });
+
+    // Then: parsing succeeds
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a merge state with nothing to land (branch tip already on target)', () => {
+    // When: parsing an empty, ready merge whose branch is not ahead
+    const result = MergeStateSchema.safeParse({
+      sourceBranch: 'feat/topic',
+      targetBranch: 'main',
+      targetRevision: 'main-remote-tip',
+      files: [],
+      allResolved: true,
+      hasChangesToLand: false,
+    });
+
+    // Then: parsing succeeds
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a merge state missing targetRevision', () => {
+    // When: parsing a merge state without the revision the merge brought in
+    const result = MergeStateSchema.safeParse({
+      sourceBranch: 'feat/topic',
+      targetBranch: 'main',
+      files: [],
+      allResolved: true,
+      hasChangesToLand: true,
+    });
+
+    // Then: parsing fails — consumers showing "theirs" depend on it
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a merge state missing hasChangesToLand', () => {
+    // When: parsing a merge state without the land signal
+    const result = MergeStateSchema.safeParse({
+      sourceBranch: 'feat/topic',
+      targetBranch: 'main',
+      targetRevision: 'main-remote-tip',
+      files: [],
+      allResolved: true,
+    });
+
+    // Then: parsing fails — the field is required
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('ReviewWorkflowModeSchema', () => {
+  it.each(['commit', 'merge'])('accepts the %s workflow mode', mode => {
+    // When: parsing each valid workflow mode
+    const result = ReviewWorkflowModeSchema.safeParse(mode);
+
+    // Then: parsing succeeds
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects an unrecognized workflow mode', () => {
+    // When: parsing a mode outside the commit/merge union
+    const result = ReviewWorkflowModeSchema.safeParse('review');
+
+    // Then: parsing fails
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('ReviewOpenRequestSchema', () => {
+  const valid = {
+    repositoryPath: '/Users/dev/repos/my-repo',
+    repositoryName: 'My Repo',
+    branchName: 'feat/topic',
+    targetBranch: 'main',
+    workflow: 'commit' as const,
+    compare: {
+      source: { kind: 'revision' as const, revision: 'r128' },
+      target: { kind: 'workingTree' as const },
+    },
+  };
+
+  it('accepts a fully-specified commit open request', () => {
+    // When: parsing a request carrying repository, workflow, and compare picker
+    const result = ReviewOpenRequestSchema.safeParse(valid);
+
+    // Then: parsing succeeds
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a request with an empty repository path', () => {
+    // When: parsing a request whose repository path is empty
+    const result = ReviewOpenRequestSchema.safeParse({ ...valid, repositoryPath: '' });
+
+    // Then: parsing fails
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a request with an unrecognized workflow', () => {
+    // When: parsing a request whose workflow is outside commit/merge
+    const result = ReviewOpenRequestSchema.safeParse({ ...valid, workflow: 'review' });
+
+    // Then: parsing fails
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a request whose compare target is malformed', () => {
+    // When: parsing a request whose compare target lacks its discriminant
+    const result = ReviewOpenRequestSchema.safeParse({
+      ...valid,
+      compare: { source: { kind: 'revision', revision: 'r1' }, target: { kind: 'nope' } },
+    });
+
+    // Then: parsing fails
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('DiffRequestSchema', () => {
+  it('accepts a compare-target based diff request without explicit paths', () => {
+    // When: parsing a whole-tree diff request
+    const result = DiffRequestSchema.safeParse({
+      repositoryPath: '/repos/a',
+      source: { kind: 'branchHead', branch: 'main' },
+      target: { kind: 'workingTree' },
+    });
+
+    // Then: parsing succeeds
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a diff request scoped to specific paths', () => {
+    // When: parsing a diff request limited to given paths
+    const result = DiffRequestSchema.safeParse({
+      repositoryPath: '/repos/a',
+      source: { kind: 'revision', revision: 'a1b2c3' },
+      target: { kind: 'revision', revision: 'd4e5f6' },
+      paths: ['src/index.ts'],
+    });
+
+    // Then: parsing succeeds
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a diff request with an invalid target', () => {
+    // When: parsing a diff request with a malformed compare target
+    const result = DiffRequestSchema.safeParse({
+      repositoryPath: '/repos/a',
+      source: { kind: 'workingTree' },
+      target: { kind: 'revision' },
+    });
+
+    // Then: parsing fails
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('Merge IPC request/response schemas', () => {
+  it('accepts a merge start request', () => {
+    // When: parsing a merge-start request
+    const result = MergeStartRequestSchema.safeParse({
+      repositoryPath: '/repos/a',
+      sourceBranch: 'feat/topic',
+      targetBranch: 'main',
+    });
+
+    // Then: parsing succeeds
+    expect(result.success).toBe(true);
+  });
+
+  it.each(['mine', 'theirs'])('accepts a merge resolve request choosing %s', resolution => {
+    // When: parsing a merge-resolve request
+    const result = MergeResolveRequestSchema.safeParse({
+      repositoryPath: '/repos/a',
+      path: 'src/index.ts',
+      resolution,
+    });
+
+    // Then: parsing succeeds
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a merge resolve request with an unrecognized resolution', () => {
+    // When: parsing a merge-resolve request with an invalid resolution
+    const result = MergeResolveRequestSchema.safeParse({
+      repositoryPath: '/repos/a',
+      path: 'src/index.ts',
+      resolution: 'ours',
+    });
+
+    // Then: parsing fails
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts a merge abort request', () => {
+    // When: parsing a merge-abort request
+    const requestResult = MergeAbortRequestSchema.safeParse({ repositoryPath: '/repos/a' });
+
+    // Then: parsing succeeds
+    expect(requestResult.success).toBe(true);
+  });
+
+  it('accepts a merge complete request', () => {
+    // When: parsing a merge-complete request
+    const requestResult = MergeCompleteRequestSchema.safeParse({ repositoryPath: '/repos/a' });
+
+    // Then: parsing succeeds
+    expect(requestResult.success).toBe(true);
   });
 });

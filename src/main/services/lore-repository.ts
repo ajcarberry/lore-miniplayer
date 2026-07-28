@@ -1,5 +1,4 @@
-import { lore, LoreError } from '@lore-vcs/sdk';
-import type { LoreFluentApi } from '@lore-vcs/sdk';
+import { lore } from '@lore-vcs/sdk';
 import {
   LoreBranchLocation,
   LoreEventTag,
@@ -18,13 +17,16 @@ import type {
   BranchDivergence,
   BranchGraph,
   CloneProgress,
-  RepositoryNotification,
   RepositoryNotificationKind,
 } from '../../shared/types';
 import type { LoreEventFFITyped } from '@lore-vcs/sdk/types/events';
 import { assembleBranchGraph, getCurrentRevision, isUnknownHash } from './branch-graph';
-import { collectEvents } from './lore-events';
-import type { LoreEventDataOf } from './lore-events';
+import { OperationError, operationHelpers } from './lore-operation';
+import {
+  readHasRevisionsToLand,
+  readWorkspaceRevisionStatus,
+  type WorkspaceRevisionStatus,
+} from './lore-status';
 
 // How far back to walk local revision history when looking for the
 // remote's latest hash to determine ahead-vs-behindOrDiverged direction.
@@ -74,24 +76,23 @@ export function cloneProgressPercent(count: {
   return Math.max(0, Math.min(100, Math.round(ratio * 100)));
 }
 
-// Push-notification event tags mapped to the kinds the app reacts to;
-// lock/unlock notifications are deliberately absent.
+// Push-notification event tags mapped to the kinds the app reacts to.
 const NOTIFICATION_KIND_BY_TAG: Partial<Record<LoreEventTag, RepositoryNotificationKind>> = {
   [LoreEventTag.NOTIFICATION_BRANCH_PUSHED]: 'branchPushed',
   [LoreEventTag.NOTIFICATION_BRANCH_CREATED]: 'branchCreated',
   [LoreEventTag.NOTIFICATION_BRANCH_DELETED]: 'branchDeleted',
 };
 
-export class LoreOperationError extends Error {
-  constructor(
-    message: string,
-    public readonly errorType?: number,
-    public readonly innerError?: string
-  ) {
+export class LoreOperationError extends OperationError {
+  constructor(message: string) {
     super(message);
     this.name = 'LoreOperationError';
   }
 }
+
+// Shared run/collect/toOperationError scaffold (see ./lore-operation), typed
+// to this service's error class.
+const { toOperationError, run, collect } = operationHelpers(LoreOperationError);
 
 export class LoreRepositoryService extends EventEmitter {
   // Repository paths with an active notification subscription. Guards
@@ -115,14 +116,13 @@ export class LoreRepositoryService extends EventEmitter {
         .callback(event => {
           const kind = NOTIFICATION_KIND_BY_TAG[event.tag];
           if (kind) {
-            const notification: RepositoryNotification = { repositoryPath, kind };
-            this.emit('notification', notification);
+            this.emit('notification', { repositoryPath, kind });
           }
         })
         .waitAsync();
     } catch (error) {
       this.notificationSubscriptions.delete(repositoryPath);
-      throw this.toOperationError('Failed to subscribe to repository notifications', error);
+      throw toOperationError('Failed to subscribe to repository notifications', error);
     }
   }
 
@@ -132,53 +132,15 @@ export class LoreRepositoryService extends EventEmitter {
     if (!this.notificationSubscriptions.has(repositoryPath)) {
       return;
     }
-    await this.run(
+    await run(
       lore.notificationUnsubscribe({ repositoryPath }, {}),
       'Failed to unsubscribe from repository notifications'
     );
     this.notificationSubscriptions.delete(repositoryPath);
   }
 
-  // Runs a fluent SDK operation, translating failures into
-  // LoreOperationError with the given context message
-  private async run(operation: LoreFluentApi, context: string): Promise<void> {
-    try {
-      await operation.waitAsync();
-    } catch (error) {
-      throw this.toOperationError(context, error);
-    }
-  }
-
-  // Companion to run() for operations whose result streams as events:
-  // collects the events matching `tag` through `map`, translating failures
-  // into LoreOperationError with the given context message
-  private async collect<TTag extends LoreEventTag, T>(
-    operation: LoreFluentApi,
-    tag: TTag,
-    map: (data: LoreEventDataOf<TTag>) => T | undefined,
-    context: string
-  ): Promise<T[]> {
-    return collectEvents(operation, tag, map, error => this.toOperationError(context, error));
-  }
-
-  private toOperationError(context: string, error: unknown): LoreOperationError {
-    if (error instanceof LoreOperationError) {
-      return error;
-    }
-    if (error instanceof LoreError) {
-      const firstError = error.loreErrors?.[0];
-      return new LoreOperationError(
-        `${context}: ${error.message}`,
-        firstError?.data.errorType,
-        error.message
-      );
-    }
-    const message = error instanceof Error ? error.message : String(error);
-    return new LoreOperationError(`${context}: ${message}`, undefined, message);
-  }
-
   async listBranches(repositoryPath: string): Promise<LoreBranch[]> {
-    const entries = await this.collect(
+    const entries = await collect(
       lore.branchList({ repositoryPath }, {}),
       LoreEventTag.BRANCH_LIST_ENTRY,
       data => ({ name: data.name, location: data.location, isCurrent: Boolean(data.isCurrent) }),
@@ -206,7 +168,7 @@ export class LoreRepositoryService extends EventEmitter {
   // revision history checks whether the remote's hash is a known local
   // ancestor (ahead) or not (behindOrDiverged) — see deriveDivergence.
   async getBranchDivergence(repositoryPath: string, branchName: string): Promise<BranchDivergence> {
-    const infoEntries = await this.collect(
+    const infoEntries = await collect(
       lore.branchInfo({ repositoryPath }, { branch: branchName }),
       LoreEventTag.BRANCH_INFO,
       data => ({ latest: data.latest, latestRemote: data.latestRemote }),
@@ -223,7 +185,7 @@ export class LoreRepositoryService extends EventEmitter {
     // Walk local history looking for latestRemote. `onlyBranch: false` is
     // used deliberately — the remote head may sit on a merge lineage, and
     // restricting the walk to the current branch risks stopping short of it.
-    const localRevisionHashes = await this.collect(
+    const localRevisionHashes = await collect(
       lore.revisionHistory(
         { repositoryPath },
         { branch: branchName, length: DIVERGENCE_HISTORY_WALK_LENGTH, onlyBranch: false }
@@ -240,6 +202,30 @@ export class LoreRepositoryService extends EventEmitter {
     };
   }
 
+  // The current checkout's branch, revision, and remote divergence from ONE
+  // cheap repositoryStatus({ revisionOnly: true }) call. The
+  // collection + derivation lives in ./lore-status.
+  async getWorkspaceRevisionStatus(
+    repositoryPath: string
+  ): Promise<WorkspaceRevisionStatus | undefined> {
+    return readWorkspaceRevisionStatus(repositoryPath, error =>
+      toOperationError('Failed to read workspace revision status', error)
+    );
+  }
+
+  // Whether `sourceBranch` still carries revisions `targetBranch` lacks — what
+  // gates the card's Merge entry and the merge workflow's landing (see
+  // readHasRevisionsToLand).
+  async hasRevisionsToLand(
+    repositoryPath: string,
+    sourceBranch: string,
+    targetBranch: string
+  ): Promise<boolean> {
+    return readHasRevisionsToLand(repositoryPath, sourceBranch, targetBranch, error =>
+      toOperationError(`Failed to compare '${sourceBranch}' against '${targetBranch}'`, error)
+    );
+  }
+
   // Assemble the branch graph for a branch — the current branch's full
   // lineage, the parent branch's lineage (when it resolves), the working
   // copy's current revision, and the merges accepted from the parent. The
@@ -249,7 +235,7 @@ export class LoreRepositoryService extends EventEmitter {
     return assembleBranchGraph(
       {
         emitLog: (level, message) => this.emit('log', { level, message }),
-        wrapError: (context, error) => this.toOperationError(context, error),
+        wrapError: toOperationError,
       },
       repositoryPath,
       branchName
@@ -263,7 +249,7 @@ export class LoreRepositoryService extends EventEmitter {
     return getCurrentRevision(
       {
         emitLog: (level, message) => this.emit('log', { level, message }),
-        wrapError: (context, error) => this.toOperationError(context, error),
+        wrapError: toOperationError,
       },
       repositoryPath
     );
@@ -295,7 +281,7 @@ export class LoreRepositoryService extends EventEmitter {
   // Clone a repository, re-emitting the SDK's streamed progress counts as
   // 'cloneProgress' events with a derived percent.
   async cloneRepository(repositoryUrl: string, localPath: string): Promise<void> {
-    await this.run(
+    await run(
       lore.repositoryClone({ repositoryPath: localPath }, { repositoryUrl }).callback(event => {
         if (event.tag === LoreEventTag.REPOSITORY_CLONE_PROGRESS) {
           const { count } = (
@@ -322,7 +308,7 @@ export class LoreRepositoryService extends EventEmitter {
     }
     const serverUrl = `${scheme}${host}`;
 
-    return this.collect(
+    return collect(
       lore.repositoryList({}, { url: serverUrl }),
       LoreEventTag.REPOSITORY_LIST_ENTRY,
       data => (data.name ? { name: data.name, url: `${serverUrl}/${data.name}` } : undefined),
@@ -332,7 +318,7 @@ export class LoreRepositoryService extends EventEmitter {
 
   // Switch to a different branch
   async switchBranch(repositoryPath: string, branchName: string): Promise<void> {
-    await this.run(
+    await run(
       lore.branchSwitch({ repositoryPath }, { branch: branchName }),
       `Failed to switch to branch '${branchName}'`
     );
@@ -359,12 +345,12 @@ export class LoreRepositoryService extends EventEmitter {
       ...(options?.forwardChanges && { forwardChanges: options.forwardChanges }),
     };
 
-    await this.run(lore.revisionSync(globals, args), 'Failed to sync repository');
+    await run(lore.revisionSync(globals, args), 'Failed to sync repository');
   }
 
   // Get file status - returns staged, untracked, and unstaged files
   async getFileStatus(repositoryPath: string): Promise<LoreFileStatusGroup> {
-    const files = await this.collect<LoreEventTag.REPOSITORY_STATUS_FILE, LoreFileStatus>(
+    const files = await collect<LoreEventTag.REPOSITORY_STATUS_FILE, LoreFileStatus>(
       lore.repositoryStatus({ repositoryPath }, { staged: true, scan: true }),
       LoreEventTag.REPOSITORY_STATUS_FILE,
       data => {
@@ -375,6 +361,12 @@ export class LoreRepositoryService extends EventEmitter {
           path: data.path,
           isUntracked: data.action === LoreFileAction.ADD,
           isStaged: Boolean(data.flagStaged),
+          merged: Boolean(data.flagMerged),
+          conflict: Boolean(data.flagConflict),
+          conflictUnresolved: Boolean(data.flagConflictUnresolved),
+          conflictAutomerged: Boolean(data.flagConflictAutomerged),
+          conflictMine: Boolean(data.flagConflictMine),
+          conflictTheirs: Boolean(data.flagConflictTheirs),
         };
       },
       'Failed to get file status'
@@ -400,30 +392,33 @@ export class LoreRepositoryService extends EventEmitter {
 
   // Stage files
   async stageFiles(repositoryPath: string, filePaths: string[]): Promise<void> {
-    await this.run(
-      lore.fileStage({ repositoryPath }, { paths: filePaths }),
-      'Failed to stage files'
-    );
+    await run(lore.fileStage({ repositoryPath }, { paths: filePaths }), 'Failed to stage files');
   }
 
   // Unstage files
   async unstageFiles(repositoryPath: string, filePaths: string[]): Promise<void> {
-    await this.run(
+    await run(
       lore.fileUnstage({ repositoryPath }, { paths: filePaths }),
       'Failed to unstage files'
     );
   }
 
-  // Commit staged changes (does not push)
-  async commit(repositoryPath: string, message: string): Promise<void> {
-    await this.run(
+  // Commit staged changes (does not push). Returns the committed revision
+  // hash, streamed by the commit itself (REVISION_COMMIT_REVISION) — no
+  // follow-up history read, and no race with a moving tip. '' when the SDK
+  // streamed no revision event.
+  async commit(repositoryPath: string, message: string): Promise<string> {
+    const revisions = await collect(
       lore.revisionCommit({ repositoryPath }, { message }),
+      LoreEventTag.REVISION_COMMIT_REVISION,
+      data => data.revision,
       'Failed to commit changes'
     );
+    return revisions[revisions.length - 1] ?? '';
   }
 
   // Push committed changes (does not commit)
   async push(repositoryPath: string): Promise<void> {
-    await this.run(lore.branchPush({ repositoryPath }, {}), 'Failed to push changes');
+    await run(lore.branchPush({ repositoryPath }, {}), 'Failed to push changes');
   }
 }

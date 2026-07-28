@@ -22,12 +22,19 @@ test('an empty repository degrades gracefully across every read', async () => {
 
     const branches = await service.listBranches(clonePath);
     const main = branches.find(branch => branch.name === 'main');
-    assert.ok(main, `expected a 'main' branch even with no revisions, got: ${JSON.stringify(branches)}`);
+    assert.ok(
+      main,
+      `expected a 'main' branch even with no revisions, got: ${JSON.stringify(branches)}`
+    );
     assert.equal(main?.isCurrent, true);
     assert.equal(main?.isDefault, true);
 
     const currentRevision = await service.getCurrentRevision(clonePath);
-    assert.equal(currentRevision, '', 'expected the current revision to degrade to an empty string');
+    assert.equal(
+      currentRevision,
+      '',
+      'expected the current revision to degrade to an empty string'
+    );
 
     const graph = await service.getBranchGraph(clonePath, 'main');
     assert.equal(graph.current, '');

@@ -520,6 +520,17 @@ describe('MergeView — start failure', () => {
     await waitFor(() => expect(onExit).toHaveBeenCalled());
   });
 
+  // A rejecting bridge (not a Result failure) must not strand the view on its
+  // loader: every other action clears its busy flag in a `finally`.
+  it('surfaces a rejected start bridge instead of spinning forever', async () => {
+    const api = installApi();
+    api.start.mockRejectedValue(new Error('bridge boom'));
+    renderView();
+
+    expect(await screen.findByText('Could not start the merge')).toBeInTheDocument();
+    expect(screen.getByText(/bridge boom/)).toBeInTheDocument();
+  });
+
   it('surfaces a failed abort from the error state instead of exiting', async () => {
     const api = installApi({ startError: 'A merge is already in progress' });
     api.abort.mockResolvedValue({ success: false, error: 'abort boom' });

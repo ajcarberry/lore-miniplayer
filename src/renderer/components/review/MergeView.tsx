@@ -143,44 +143,29 @@ function useMergeLeave(deps: MergeLeaveDeps): {
   };
 }
 
-// The Project View's merge workflow. Truthful semantics: the merge runs IN
-// the checkout (mine = the source branch, theirs = the target branch);
-// resolution is per FILE; and completion lands the merge revision on the
-// TARGET branch and pushes it. On mount it starts the merge through the merge
-// bridge, fetches both sides of each conflicted file via the diff bridge
-// (MergeState carries no content), and drives resolve / abort / complete.
-// Errors from start and complete surface as Mantine alerts, never silently.
-export function MergeView(props: MergeViewProps): ReactElement {
-  const { request, onExit, onCollapse, onSwitchWorkflow } = props;
-  const repositoryPath = request.repositoryPath;
-  const sourceBranch = request.branchName;
-  const targetBranch = request.targetBranch;
+interface MergeStart {
+  readonly mergeState: MergeState | null;
+  readonly setMergeState: (state: MergeState) => void;
+  readonly starting: boolean;
+  readonly startError: string | null;
+  readonly bothSides: Map<string, FileDiffResult>;
+}
 
+// Starts the merge once on mount (the view remounts per request, so `starting`
+// begins true), then fetches both sides of every conflicted file — MergeState
+// carries paths only, no content. Every write happens inside a resolved
+// promise and is dropped once cancelled. A failure to load the sides is
+// notified rather than fatal: the merge itself is live by then.
+function useMergeStart(
+  repositoryPath: string,
+  sourceBranch: string,
+  targetBranch: string
+): MergeStart {
   const [mergeState, setMergeState] = useState<MergeState | null>(null);
   const [starting, setStarting] = useState(true);
   const [startError, setStartError] = useState<string | null>(null);
   const [bothSides, setBothSides] = useState<Map<string, FileDiffResult>>(new Map());
-  const { revisions, parentBranchPoint } = useReviewMeta(repositoryPath, sourceBranch);
-  // Only the branch's OWN commits land — see ownCommits.
-  const aheadRevisions = useMemo(
-    () => ownCommits(revisions, parentBranchPoint),
-    [revisions, parentBranchPoint]
-  );
-  const [resolvingPath, setResolvingPath] = useState<string | null>(null);
-  const [completing, setCompleting] = useState(false);
-  const [completeError, setCompleteError] = useState<string | null>(null);
-  const [landedRevision, setLandedRevision] = useState<string | null>(null);
-  const leave = useMergeLeave({
-    repositoryPath,
-    live: mergeState !== null && landedRevision === null,
-    onExit,
-    onCollapse,
-    onSwitchWorkflow,
-  });
 
-  // Start the merge once (the view remounts per request, so `starting` begins
-  // true), then fetch both sides of every conflicted file. Both fetches set
-  // state only inside their resolved promises.
   useEffect(() => {
     let cancelled = false;
     void window.electronAPI.merge
@@ -191,14 +176,16 @@ export function MergeView(props: MergeViewProps): ReactElement {
         }
         if (!result.success) {
           setStartError(result.error);
-          setStarting(false);
           return;
         }
         setMergeState(result.data);
         const conflictPaths = result.data.files
           .filter(file => file.state === 'conflict')
           .map(file => file.path);
-        if (conflictPaths.length > 0) {
+        if (conflictPaths.length === 0) {
+          return;
+        }
+        try {
           // Theirs = the target revision the merge actually brought in, on the
           // diff's source side; mine = source head (branch) on the target side,
           // so removed lines are theirs and added lines are mine. The target
@@ -219,7 +206,18 @@ export function MergeView(props: MergeViewProps): ReactElement {
           } else {
             notifyError('Could not load conflict contents', diffResult.error);
           }
+        } catch (error) {
+          notifyError('Could not load conflict contents', String(error));
         }
+      })
+      .catch((error: unknown) => {
+        // The bridge itself rejected; without this the view would hold its
+        // loader forever with no way to reach the merge or clear it.
+        if (!cancelled) {
+          setStartError(error instanceof Error ? error.message : String(error));
+        }
+      })
+      .finally(() => {
         if (!cancelled) {
           setStarting(false);
         }
@@ -228,6 +226,45 @@ export function MergeView(props: MergeViewProps): ReactElement {
       cancelled = true;
     };
   }, [repositoryPath, sourceBranch, targetBranch]);
+
+  return { mergeState, setMergeState, starting, startError, bothSides };
+}
+
+// The Project View's merge workflow. Truthful semantics: the merge runs IN
+// the checkout (mine = the source branch, theirs = the target branch);
+// resolution is per FILE; and completion lands the merge revision on the
+// TARGET branch and pushes it. On mount it starts the merge through the merge
+// bridge, fetches both sides of each conflicted file via the diff bridge
+// (MergeState carries no content), and drives resolve / abort / complete.
+// Errors from start and complete surface as Mantine alerts, never silently.
+export function MergeView(props: MergeViewProps): ReactElement {
+  const { request, onExit, onCollapse, onSwitchWorkflow } = props;
+  const repositoryPath = request.repositoryPath;
+  const sourceBranch = request.branchName;
+  const targetBranch = request.targetBranch;
+
+  const { mergeState, setMergeState, starting, startError, bothSides } = useMergeStart(
+    repositoryPath,
+    sourceBranch,
+    targetBranch
+  );
+  const { revisions, parentBranchPoint } = useReviewMeta(repositoryPath, sourceBranch);
+  // Only the branch's OWN commits land — see ownCommits.
+  const aheadRevisions = useMemo(
+    () => ownCommits(revisions, parentBranchPoint),
+    [revisions, parentBranchPoint]
+  );
+  const [resolvingPath, setResolvingPath] = useState<string | null>(null);
+  const [completing, setCompleting] = useState(false);
+  const [completeError, setCompleteError] = useState<string | null>(null);
+  const [landedRevision, setLandedRevision] = useState<string | null>(null);
+  const leave = useMergeLeave({
+    repositoryPath,
+    live: mergeState !== null && landedRevision === null,
+    onExit,
+    onCollapse,
+    onSwitchWorkflow,
+  });
 
   const mergedFiles = useMemo(
     () => (mergeState?.files ?? []).filter(file => file.state === 'merged'),
@@ -254,7 +291,7 @@ export function MergeView(props: MergeViewProps): ReactElement {
         })
         .finally(() => setResolvingPath(null));
     },
-    [repositoryPath]
+    [repositoryPath, setMergeState]
   );
 
   const handleComplete = useCallback((): void => {

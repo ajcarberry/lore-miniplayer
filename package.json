@@ -56,7 +56,7 @@
   },
   "packageManager": "pnpm@10.17.1",
   "engines": {
-    "node": "^20.19.0 || >=22.12.0"
+    "node": ">=24.0.0"
   },
   "dependencies": {
     "@fontsource/cormorant-garamond": "^5.3.0",
@@ -80,7 +80,7 @@
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",
     "@types/jest": "^30.0.0",
-    "@types/node": "^26.1.2",
+    "@types/node": "^24.13.3",
     "@types/react": "^19.1.13",
     "@types/react-dom": "^19.1.9",
     "@typescript-eslint/eslint-plugin": "^8.64.0",

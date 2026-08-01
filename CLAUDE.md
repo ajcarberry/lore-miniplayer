@@ -6,6 +6,7 @@
 ## Architecture & Technology Stack
 
 ### Core Technologies
+- **Node.js 24 ("Krypton", active LTS)** - toolchain floor, pinned in `.nvmrc` and enforced by `engines` in `package.json`; CI reads the same `.nvmrc` via `node-version-file`, so bump the version in one place only
 - **Electron** - Cross-platform desktop framework with main/renderer process separation
 - **React + TypeScript** - UI framework with strict typing (ultra-strict mode, no `any` types)
 - **Mantine UI** - Primary component library for all UI elements
@@ -94,6 +95,9 @@
 - **E2E feature-coverage mandate**: every user-facing feature/UI capability needs a live-server e2e test driving the real app — see `code_standards.md` §5 and the coverage index in `docs/testing/e2e-coverage.md`
 
 ## Essential Commands
+
+Run everything on Node 24 (`nvm use` picks up `.nvmrc`). `pnpm install` fails the
+`engines` check on older runtimes.
 
 ### REQUIRED before task completion:
 ```bash

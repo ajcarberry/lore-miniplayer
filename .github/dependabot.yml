@@ -15,6 +15,13 @@ updates:
     commit-message:
       prefix: chore
       include: scope
+    ignore:
+      # @types/node tracks the runtime major, not "latest". The floor is Node 24
+      # (.nvmrc); typings from a newer major describe APIs that do not exist at
+      # runtime, so tsc would green-light calls that throw. Lift this deliberately
+      # when the toolchain moves to the next LTS.
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
     groups:
       # react-dom tracks react exactly; the @types packages track the major.
       react:

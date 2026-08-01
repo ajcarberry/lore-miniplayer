@@ -7,7 +7,7 @@ This is a minimal visual interface for managing Lore repositories. It provides b
 ## Quick Start
 
 ```bash
-# Prerequisites: Node.js 20.19+ or 22.12+ required
+# Prerequisites: Node.js 24+ required (24 "Krypton" is the active LTS)
 
 # Install pnpm (if not already installed)
 npm install -g pnpm
@@ -57,7 +57,7 @@ pnpm dist
 ## For Developers
 
 ### Prerequisites
-- Node.js 20.19+ or 22.12+
+- Node.js 24+ (24 "Krypton" is the active LTS; Node 20 reached end-of-life on 2026-04-30). The repo pins the line in `.nvmrc`, so `nvm use` picks it up.
 - pnpm package manager
 - A supported platform/architecture — the Lore SDK ships native binaries for:
   - macOS: Apple Silicon (arm64) only

@@ -59,7 +59,7 @@ jobs:
 
       - name: Cache Lore binaries
         if: runner.os == 'macOS'
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .lore-test-cache/lore-bins
           key: lore-bins-${{ steps.lore-bins.outputs.version }}-${{ steps.lore-bins.outputs.triple }}

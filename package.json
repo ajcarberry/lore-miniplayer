@@ -66,7 +66,7 @@
     "@mantine/core": "^9.5.0",
     "@mantine/hooks": "^9.5.0",
     "@mantine/notifications": "^9.5.0",
-    "@tabler/icons-react": "^3.35.0",
+    "@tabler/icons-react": "^3.46.0",
     "electron-log": "^5.4.3",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

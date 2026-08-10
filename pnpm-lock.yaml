@@ -18,8 +18,8 @@ importers:
         specifier: ^5.3.0
         version: 5.3.0
       '@lore-vcs/sdk':
-        specifier: ^0.8.5
-        version: 0.8.5
+        specifier: ^0.8.6
+        version: 0.8.6
       '@mantine/core':
         specifier: ^9.5.0
         version: 9.5.0(@mantine/hooks@9.5.0(react@19.2.8))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -972,28 +972,28 @@ packages:
   '@jridgewell/trace-mapping@0.3.9':
     resolution: {integrity: sha512-3Belt6tdc8bPgAtbcmdtNJlirVoTmEb5e2gC94PnkwEW9jI6CAHUeoG85tjWP5WquqfavoMtMwiG4P926ZKKuQ==}
 
-  '@lore-vcs/sdk-amd64-unknown-linux@0.8.5':
-    resolution: {integrity: sha512-5nkqjvVVH5lvF4B6dXHVb1XiKLrw7PFnpVA1CMp2/avdW+rIYe+9U1PYsam1BskSLOX5fYjxoky2stWEEi5QXw==}
+  '@lore-vcs/sdk-amd64-unknown-linux@0.8.6':
+    resolution: {integrity: sha512-teNKpKTvaa+MHrt5ILDpTm9Vfb6x8SqV8zvZZYhfj888Y9pHxTzm2QKZdv6HWuSe9ch6Bzl7gxQRpyGU8sUGkw==}
     cpu: [x64]
     os: [linux]
 
-  '@lore-vcs/sdk-amd64-unknown-windows@0.8.5':
-    resolution: {integrity: sha512-beGMGta2RsARgFR7ty/xOD4ERts8DZGmNxz1SXq5/j++KS5w2LNexeBnYhIKNvWhjN0KKVSZh9bWORs/LcYJHA==}
+  '@lore-vcs/sdk-amd64-unknown-windows@0.8.6':
+    resolution: {integrity: sha512-VxwNN61oqgUa+0VKlQsXYyJbV3u2gg3V0pwC9PbVxj30F8DpYDZUZw3+k/gQz3NDMS+4/XSQF9oZEswWGYGy9g==}
     cpu: [x64]
     os: [win32]
 
-  '@lore-vcs/sdk-arm64-apple-darwin@0.8.5':
-    resolution: {integrity: sha512-S4g76PRJbSsvQQQGej5+bK6n5A0dFi7WoS40kcdbGUK3IFENlCPs7OFBTmUv5CbC2GLkXBpSJ2mpDiN9G/kwFQ==}
+  '@lore-vcs/sdk-arm64-apple-darwin@0.8.6':
+    resolution: {integrity: sha512-mjx6ARDQ0q4FN3ne5lD6SWCoMc+zJ+3T9KTKcRttS1B62m/qNbuVrp+rTdByPby2LZ+QhdK7KJCfMjPh+zOyAg==}
     cpu: [arm64]
     os: [darwin]
 
-  '@lore-vcs/sdk-arm64-graviton-linux@0.8.5':
-    resolution: {integrity: sha512-wV0U+CaUCo5SeHHGJPO+vMSgN0188XyMVM1/ieip+yGem9w3dHxmW4mk67QFu2yOSzAjtAVfHuhkUo2w+hVksg==}
+  '@lore-vcs/sdk-arm64-graviton-linux@0.8.6':
+    resolution: {integrity: sha512-psyCxlOeAR4a6edDgjEKsPwjU3nuMsLIqgeBhWTWHL8LzdEqsoLblEZGJEK7ifZzGE8ysXIGkSHXjexPmRZ1uA==}
     cpu: [arm64]
     os: [linux]
 
-  '@lore-vcs/sdk@0.8.5':
-    resolution: {integrity: sha512-W14wgalESaD5+bF3pXCjOVI82Q0UOVO69qYAxv7N/7dV8Jz84t2AQT9ZGTlVVSmenOOaxAZswlrXaLzSPshzeg==}
+  '@lore-vcs/sdk@0.8.6':
+    resolution: {integrity: sha512-H37ULmzSbIKu9g02x8qz0/muFTlZBhxqL8VsLNGYCog4/9k5+TnKJL4BKPIoysQvPjXMveJnuJzSQ8xISqAqjw==}
 
   '@malept/cross-spawn-promise@2.0.0':
     resolution: {integrity: sha512-1DpKU0Z5ThltBwjNySMC14g0CkbyhCaz9FkhxqNsZI6uAPJXFS8cMXlBKo26FJ8ZuW6S9GCMcR9IO5k2X5/9Fg==}
@@ -5177,26 +5177,26 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@lore-vcs/sdk-amd64-unknown-linux@0.8.5':
+  '@lore-vcs/sdk-amd64-unknown-linux@0.8.6':
     optional: true
 
-  '@lore-vcs/sdk-amd64-unknown-windows@0.8.5':
+  '@lore-vcs/sdk-amd64-unknown-windows@0.8.6':
     optional: true
 
-  '@lore-vcs/sdk-arm64-apple-darwin@0.8.5':
+  '@lore-vcs/sdk-arm64-apple-darwin@0.8.6':
     optional: true
 
-  '@lore-vcs/sdk-arm64-graviton-linux@0.8.5':
+  '@lore-vcs/sdk-arm64-graviton-linux@0.8.6':
     optional: true
 
-  '@lore-vcs/sdk@0.8.5':
+  '@lore-vcs/sdk@0.8.6':
     dependencies:
       koffi: 2.16.2
     optionalDependencies:
-      '@lore-vcs/sdk-amd64-unknown-linux': 0.8.5
-      '@lore-vcs/sdk-amd64-unknown-windows': 0.8.5
-      '@lore-vcs/sdk-arm64-apple-darwin': 0.8.5
-      '@lore-vcs/sdk-arm64-graviton-linux': 0.8.5
+      '@lore-vcs/sdk-amd64-unknown-linux': 0.8.6
+      '@lore-vcs/sdk-amd64-unknown-windows': 0.8.6
+      '@lore-vcs/sdk-arm64-apple-darwin': 0.8.6
+      '@lore-vcs/sdk-arm64-graviton-linux': 0.8.6
 
   '@malept/cross-spawn-promise@2.0.0':
     dependencies:

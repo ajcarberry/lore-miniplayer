@@ -62,7 +62,7 @@
     "@fontsource/cormorant-garamond": "^5.3.0",
     "@fontsource/hanken-grotesk": "^5.3.0",
     "@fontsource/jetbrains-mono": "^5.3.0",
-    "@lore-vcs/sdk": "^0.8.5",
+    "@lore-vcs/sdk": "^0.8.6",
     "@mantine/core": "^9.5.0",
     "@mantine/hooks": "^9.5.0",
     "@mantine/notifications": "^9.5.0",
